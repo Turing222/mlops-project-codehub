@@ -1,0 +1,28 @@
+# Python 忽略项
+__pycache__/
+*.pyc
+venv/
+.venv/
+.mypy_cache/
+.pytest_cache/
+
+# 编辑器/IDE 忽略项
+.vscode/
+
+# Docker 忽略项
+*.o
+*.so
+.DS_Store
+
+# 测试数据
+data/
+src/
+
+#mlflow的本地数据存储
+mlruns/
+mlartifacts/
+
+# 忽略所有的环境配置文件
+.env
+key.env
+*.env
