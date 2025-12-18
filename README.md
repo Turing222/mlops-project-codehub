@@ -52,7 +52,7 @@ LLM :（vLLM/llama.cpp）本地模型 联网模型选择 gemini api
 
 fastapi：微服务框架
 
-fastapi-user:负责权限管理与
+fastapi-user:负责权限管理
 
 mysql：普通数据库
 

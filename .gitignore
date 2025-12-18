@@ -26,3 +26,9 @@ mlartifacts/
 .env
 key.env
 *.env
+
+# 忽略 Jupyter 的检查点备份
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+*-checkpoint.ipynb

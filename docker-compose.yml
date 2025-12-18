@@ -1,1 +1,51 @@
-#容器编排
+services:
+  # --- Service 1: The Database ---
+  # We use a specialized image that has pgvector pre-installed.
+  # This saves us from compiling extensions manually.
+  db:
+    image: ankane/pgvector:v0.5.1
+    container_name: mentor_db
+    restart: always
+    # Persistence: Mapping host directory to container directory
+    # 这一步是为了"持久化"，否则容器一删，数据就没了
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Environment Injection: Using the .env file we just made
+    # 这就是为什么我们要先做 Config Management
+    env_file:
+      - .env
+    # Port Mapping: Host:Container
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    # Healthcheck: Ensuring the DB is ready before other services start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- Service 2: The Application (Backend + UI) ---
+  app:
+    build: .
+    container_name: mentor_app
+    # Dependency Management: Wait for DB to be healthy
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    # Volume Mounting for Hot-Reloading (Dev Mode)
+    # 这一步至关重要：把本地代码挂载进容器，这样你改代码不需要重启容器
+    volumes:
+      - .:/app
+      # Mount the actual Obsidian Vault path defined in .env
+      - ${OBSIDIAN_VAULT_PATH}:/data/obsidian
+    ports:
+      - "8000:8000"
+    # Overriding the default command to run Chainlit
+    # -w means "watch" (auto-reload on file change)
+    command: chainlit run app/ui/chainlit_app.py -w --port 8000
+
+# Top-level volume declaration
+volumes:
+  postgres_data:
