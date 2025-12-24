@@ -23,10 +23,15 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
+      start_period: 30s   # <--- 新增关键配置：给它30秒时间完成初始化，这期间失败不算Unhealthy
+      
   # --- Service 2: The Application (Backend + UI) ---
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # 关键点：这是告诉 Docker 在构建镜像时使用宿主机网络
+      network: host
     container_name: mentor_app
     # Dependency Management: Wait for DB to be healthy
     depends_on:
