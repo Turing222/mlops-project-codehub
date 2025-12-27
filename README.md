@@ -66,3 +66,6 @@ Docker Compose: 一键编排。
 修改目标 关键在于fastapi中的web逻辑 核心放在工程化 日志 和 异常处理
 其次放在数据库上 如何优化链路
 最后实现小部分的llm逻辑 比如 prompt的修改 自然语言转sql然后输出结果之类的
+
+
+修改目录结构 把后端接口整合进app.api.endpoint
