@@ -2,7 +2,7 @@
 from typing import Generator
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-#from jose import jwt, JWTError
+from jose import jwt, JWTError
 from pydantic import ValidationError
 
 # 假设你在 core/config.py 中定义了配置
