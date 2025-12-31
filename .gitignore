@@ -32,3 +32,6 @@ key.env
 */.ipynb_checkpoints/
 **/.ipynb_checkpoints/
 *-checkpoint.ipynb
+
+#忽略postgres数据文件
+postgres_data/
