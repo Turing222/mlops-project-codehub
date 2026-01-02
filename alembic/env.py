@@ -13,6 +13,7 @@ import sys
 # --- [修正 1] 确保根目录被加入路径 ---
 # 获取 env.py 的绝对路径，再向上找两层，定位到根目录
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+#BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 
 # --- [重点 2] 引入你的逻辑 ---
