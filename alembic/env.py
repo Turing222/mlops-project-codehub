@@ -21,7 +21,7 @@ from app.core.config import get_settings
 from app.models import User
 from sqlmodel import SQLModel
 # 这里的 import User 非常重要，没它 metadata 就是空的
-from models.user import User 
+#from models.user import User 
 
 settings = get_settings()
 config = context.config
