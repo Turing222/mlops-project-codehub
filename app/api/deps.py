@@ -1,9 +1,11 @@
 #依赖注入
-from typing import Generator
+#from typing import Generator
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from pydantic import ValidationError
+from app.core.database import get_session
+from app.models.user import User
 
 # 假设你在 core/config.py 中定义了配置
 # 假设你在 core/security.py 中定义了算法
@@ -11,16 +13,10 @@ from pydantic import ValidationError
 
 reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
 
-def get_db() -> Generator:
-    """每个请求创建一个数据库连接，处理完后自动关闭"""
-    try:
-        db = SessionLocal() # 你的数据库 Session 实例化逻辑
-        yield db
-    finally:
-        db.close()
+
 
 async def get_current_user(
-    db = Depends(get_db), 
+    db = Depends(get_session), 
     token: str = Depends(reusable_oauth2)
 ):
     """

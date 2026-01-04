@@ -1,12 +1,20 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-import os
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from app.core.config import get_settings
 
-# 这里的数据库地址会读取你的 .env 或默认值
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/my_db")
+# echo=True 可以让你在控制台看到所有生成的原生 SQL，DBA 必备
+settings = get_settings()
+engine = create_async_engine(settings.database_url, echo=True)
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
-# SessionLocal 是一个类，还不是真正的连接
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-Base = declarative_base()
+# expire_on_commit=False 防止提交后对象过期导致的二次查询
+async_session_maker = sessionmaker(
+    bind=engine, 
+    class_=AsyncSession, 
+    expire_on_commit=False
+)
+
+
+async def get_session():
+    async with async_session_maker() as session:
+        yield session

@@ -48,7 +48,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = None
+#target_metadata = None
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -88,12 +88,18 @@ def run_migrations_online() -> None:
 
     """
     # --- [重点 3] 动态覆盖 URL ---
-    # 我们通过代码强制指定 url，这样 alembic.ini 里的 sqlalchemy.url 填什么都不重要了
-    configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = settings.database_url
+    # 我们通过代码强制指定 url，这样 alembic.ini 里的 sqlalchemy.url 填什么都不重要了 
+    # 将异步驱动 asyncpg 替换为同步驱动 psycopg
+    # 这样 FastAPI 还是用异步，但 Alembic 运行时用同步
+    sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    config.set_main_option("sqlalchemy.url", sync_url)
+
+    # 2. 从配置节加载字典
+    section = config.get_section(config.config_ini_section, {})
+
 
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

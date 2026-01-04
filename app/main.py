@@ -1,31 +1,29 @@
 #串联所有程序
 from fastapi import FastAPI, Depends
 from sqlmodel import Session, select
-from database import engine  # 假设你把 create_engine 放在了 database.py
+from app.core.database import get_session,engine  # 假设你把 create_engine 放在了 database.py
 from models import User      # 假设你把 User 类放在了 models.py
+from contextlib import asynccontextmanager
+from app.api.v1.api import api_router
 
-app = FastAPI()
+# 1. 定义生命周期（DBA 关心的资源管理）
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 启动时：可以在这里打印连接池状态
+    print("🚀 System starting...")
+    yield
+    # 关闭时：优雅断开数据库连接
+    print("🛑 System shutting down...")
+    await engine.dispose()
 
-# 获取数据库会话的工具函数
-def get_session():
-    with Session(engine) as session:
-        yield session
+app = FastAPI(
+    title="我的AI Mentor后台系统", 
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 @app.get("/")
 def read_root():
     return {"message": "AI Mentor 数据库已就绪！"}
 
-# 接口：创建一个新用户
-@app.post("/users/")
-def create_user(username: str, email: str, session: Session = Depends(get_session)):
-    db_user = User(username=username, email=email)
-    session.add(db_user)
-    session.commit()
-    session.refresh(db_user)
-    return {"status": "成功", "user": db_user}
-
-# 接口：查看所有用户
-@app.get("/users/")
-def read_users(session: Session = Depends(get_session)):
-    users = session.exec(select(User)).all()
-    return users
+app.include_router(api_router, prefix="/api/v1")

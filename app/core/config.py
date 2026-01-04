@@ -16,11 +16,11 @@ class Settings(BaseSettings):
     # --- Database Configuration (PostgreSQL) ---
     # Field(...) indicates this field is required and has no default value.
     # If not found in env, the app will crash at startup (Fail Fast principle).
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
+    POSTGRES_USER: str ="admin"
+    POSTGRES_PASSWORD: str ="securepassword123"
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
-    POSTGRES_DB: str = "mentor_ai"
+    POSTGRES_DB: str = "mentor_db"
 
     # --- LLM & AI Configuration ---
     # Optional[str] means it can be None (e.g., if using local LLM only).
