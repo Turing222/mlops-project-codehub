@@ -1,8 +1,6 @@
 #串联所有程序
-from fastapi import FastAPI, Depends
-from sqlmodel import Session, select
-from app.core.database import get_session,engine  # 假设你把 create_engine 放在了 database.py
-from models import User      # 假设你把 User 类放在了 models.py
+from fastapi import FastAPI
+from app.core.database import engine  
 from contextlib import asynccontextmanager
 from app.api.v1.api import api_router
 

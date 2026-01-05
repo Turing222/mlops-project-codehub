@@ -3,6 +3,7 @@ from app.api import deps
 from app.core.database import get_session
 from app.crud.user import get_users, upsert_users,create_user
 from sqlmodel.ext.asyncio.session import AsyncSession
+from app.schemas.user import UserPublic
 
 router = APIRouter()
 
@@ -25,7 +26,7 @@ def create_user(
 '''
 
 # 路由：查询用户
-@router.get("/users")
+@router.get("/users",response_model=list[UserPublic])
 async def read_users(
     session: AsyncSession = Depends(get_session)):
     users = await get_users(session)
@@ -44,7 +45,7 @@ async def seed_data(session: AsyncSession = Depends(get_session)):
 # 接口：创建一个新用户
 @router.post("/users/")
 
-async def read_users(
+async def create_user_once(
     session: AsyncSession = Depends(get_session)):
     await create_user(session,)
     return {"status": "成功", "user": "admin"}
