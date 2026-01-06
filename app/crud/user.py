@@ -4,11 +4,20 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.models.user import User
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
 # 1. 查询：带分页的 Read
-async def get_users(session: AsyncSession, skip: int = 0, limit: int = 10):
+async def get_users(
+        session: AsyncSession, 
+        skip: int = 0, 
+        limit: int = 10,
+        username: str = None):
     statement = select(User).offset(skip).limit(limit)
-    result = await session.exec(statement)
-    return result.all()
+    if username:
+        # 增加过滤条件
+        statement = statement.where(User.username == username)
+
+    result = await session.execute(statement)
+    return result.scalars().all()
 
 # 2. 批量插入：带冲突处理 (Upsert)
 async def upsert_users(session: AsyncSession, user_maps: list[dict]):

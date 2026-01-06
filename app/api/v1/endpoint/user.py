@@ -4,7 +4,7 @@ from app.core.database import get_session
 from app.crud.user import get_users, upsert_users,create_user
 from sqlmodel.ext.asyncio.session import AsyncSession
 from app.schemas.user import UserPublic
-
+from app.api.params import SkipParam, LimitParam,UsernameQuery
 router = APIRouter()
 
 '''
@@ -28,8 +28,12 @@ def create_user(
 # 路由：查询用户
 @router.get("/users",response_model=list[UserPublic])
 async def read_users(
-    session: AsyncSession = Depends(get_session)):
-    users = await get_users(session)
+    session: AsyncSession = Depends(get_session),
+    username: UsernameQuery = None, # 使用我们定义的类型，默认为 None
+    skip: SkipParam = 0,
+    limit: LimitParam = 10
+    ):
+    users = await get_users(session, username=username, skip=skip, limit=limit)
     return users
 
 # 路由：初始化种子数据
