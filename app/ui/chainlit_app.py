@@ -1,5 +1,7 @@
-import chainlit as cl
 import asyncio
+
+import chainlit as cl
+
 
 # --- Domain Logic Stubs (模拟业务逻辑) ---
 # In Phase 3, we will replace these with real imports from app.services

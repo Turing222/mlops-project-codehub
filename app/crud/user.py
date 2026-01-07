@@ -1,8 +1,9 @@
 # app/crud/user.py
-from sqlmodel import select, insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from app.models.user import User
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import insert, select
+
+from app.models.user import User
 
 
 # 1. 查询：带分页的 Read
@@ -19,6 +20,7 @@ async def get_users(
     result = await session.execute(statement)
     return result.scalars().all()
 
+
 # 2. 批量插入：带冲突处理 (Upsert)
 async def upsert_users(session: AsyncSession, user_maps: list[dict]):
     """
@@ -33,7 +35,6 @@ async def upsert_users(session: AsyncSession, user_maps: list[dict]):
         )
         await session.execute(stmt)
     await session.commit()
-
 
 
 async def create_user(username: str, email: str, session: AsyncSession):

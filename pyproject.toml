@@ -18,3 +18,34 @@ dependencies = [
     "sqlalchemy>=2.0.45",
     "sqlmodel>=0.0.31",
 ]
+
+[tool.ruff]
+# 1. 设置行宽限制（PEP 8 建议 79，但现代开发通常用 88 或 100）
+line-length = 88
+
+# 2. 指定要检查的规则包
+# E/W: PEP 8
+# F: Pyflakes (基础错误)
+# B: Bugbear (代码陷阱)
+# I: Isort (导入排序)
+# UP: Pyupgrade (现代化语法)
+select = ["E", "F", "B", "I", "UP"]
+
+# 3. 指定要忽略的规则
+ignore = ["E501"] # 比如忽略“行太长”的警告，因为有些 URL 确实很长
+
+[tool.ruff.format]
+# 格式化器（类似 Black）的配置
+quote-style = "double"  # 使用双引号
+indent-style = "space"  # 使用空格缩进
+[tool.ruff.lint.flake8-bugbear]
+# 允许在默认参数中调用这些函数（专门针对 FastAPI）
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.params.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+    "Depends",  # 如果你是从 fastapi 直接 import Depends
+]

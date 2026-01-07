@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends
-from app.api import deps
-from app.core.database import get_session
-from app.crud.user import get_users, upsert_users,create_user
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.api import deps
+from app.api.params import LimitParam, SkipParam, UsernameQuery
+from app.core.database import get_session
+from app.crud.user import create_user, get_users, upsert_users
 from app.schemas.user import UserPublic
-from app.api.params import SkipParam, LimitParam,UsernameQuery
+
 router = APIRouter()
 
 '''
@@ -48,7 +50,6 @@ async def seed_data(session: AsyncSession = Depends(get_session)):
 
 # 接口：创建一个新用户
 @router.post("/users/")
-
 async def create_user_once(
     session: AsyncSession = Depends(get_session)):
     await create_user(session,)

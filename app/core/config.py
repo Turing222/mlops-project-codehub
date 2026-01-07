@@ -1,6 +1,7 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
-from typing import Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     """
@@ -24,8 +25,8 @@ class Settings(BaseSettings):
 
     # --- LLM & AI Configuration ---
     # Optional[str] means it can be None (e.g., if using local LLM only).
-    OPENAI_API_KEY: Optional[str] = None
-    GEMINI_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: str | None = None
+    GEMINI_API_KEY: str | None = None
     
     # Path to your Obsidian Vault (Local Volume Mount)
     OBSIDIAN_VAULT_PATH: str = "/data/obsidian"

@@ -1,8 +1,11 @@
 #串联所有程序
-from fastapi import FastAPI
-from app.core.database import engine  
 from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
 from app.api.v1.api import api_router
+from app.core.database import engine
+
 
 # 1. 定义生命周期（DBA 关心的资源管理）
 @asynccontextmanager

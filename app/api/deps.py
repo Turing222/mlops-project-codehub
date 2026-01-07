@@ -2,8 +2,9 @@
 #from typing import Generator
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
+from jose import JWTError, jwt
 from pydantic import ValidationError
+
 from app.core.database import get_session
 from app.models.user import User
 
@@ -30,11 +31,11 @@ async def get_current_user(
         user_id: str = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=401, detail="Invalid token")
-    except (JWTError, ValidationError):
+    except (JWTError, ValidationError) as e:
         raise HTTPException(
             status_code=status.HTTP_0403_FORBIDDEN,
             detail="Could not validate credentials",
-        )
+        ) from e
     
     # 假设从数据库查询用户
     user = db.query(User).filter(User.id == user_id).first()

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+
 
 # 所有的核心共有字段
 class UserBase(BaseModel):

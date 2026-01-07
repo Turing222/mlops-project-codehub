@@ -1,4 +1,5 @@
 from typing import Annotated
+
 from fastapi import Query
 
 # 把 T 和 Metadata 结合成一个新类型
