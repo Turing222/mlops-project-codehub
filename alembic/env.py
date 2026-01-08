@@ -1,13 +1,10 @@
-from logging.config import fileConfig
-
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
-from alembic import context
-
-
 import os
 import sys
+from logging.config import fileConfig
+
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 # --- [重点 1] 解决路径问题 ---
 # --- [修正 1] 确保根目录被加入路径 ---
@@ -17,9 +14,11 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
 # --- [重点 2] 引入你的逻辑 ---
+from sqlmodel import SQLModel
+
 from app.core.config import get_settings
 from app.models import User
-from sqlmodel import SQLModel
+
 # 这里的 import User 非常重要，没它 metadata 就是空的
 #from models.user import User 
 
@@ -106,7 +105,12 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, 
+            target_metadata=target_metadata,
+            # 强制检测类型变化
+            compare_type=True,
+            # 强制检测索引和唯一约束
+            compare_server_default=True,
         )
 
         with context.begin_transaction():

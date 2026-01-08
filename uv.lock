@@ -1927,6 +1927,7 @@ dependencies = [
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-settings" },
     { name = "python-jose", extra = ["cryptography"] },
+    { name = "python-ulid" },
     { name = "sqlalchemy" },
     { name = "sqlmodel" },
 ]
@@ -1943,6 +1944,7 @@ requires-dist = [
     { name = "pydantic", extras = ["email"], specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "python-jose", extras = ["cryptography"], specifier = ">=3.5.0" },
+    { name = "python-ulid", specifier = ">=3.1.0" },
     { name = "sqlalchemy", specifier = ">=2.0.45" },
     { name = "sqlmodel", specifier = ">=0.0.31" },
 ]
@@ -3531,6 +3533,15 @@ dependencies = [
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5c/b5/56d070ade9ae60ed90ce2cdb41da927791cdae31f1059aab4b6b60d223b3/python_socketio-5.15.1.tar.gz", hash = "sha256:54fe3e5580ea06a1b29b541e8ef32fe956846c99a76059e343e43aada754efdd", size = 127172, upload-time = "2025-12-16T23:48:40.577Z" }
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5c/47/45a805fc1e4c3104df1193a78aeb98734497e32931efd1dfe9897c19188b/python_socketio-5.15.1-py3-none-any.whl", hash = "sha256:abc3528803563ed9a2010bc76829afe21d7a308a1e5651171fdb582d12e2ace0", size = 79561, upload-time = "2025-12-16T23:48:39.164Z" },
+]
+
+[[package]]
+name = "python-ulid"
+version = "3.1.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/40/7e/0d6c82b5ccc71e7c833aed43d9e8468e1f2ff0be1b3f657a6fcafbb8433d/python_ulid-3.1.0.tar.gz", hash = "sha256:ff0410a598bc5f6b01b602851a3296ede6f91389f913a5d5f8c496003836f636", size = 93175, upload-time = "2025-08-18T16:09:26.305Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/6c/a0/4ed6632b70a52de845df056654162acdebaf97c20e3212c559ac43e7216e/python_ulid-3.1.0-py3-none-any.whl", hash = "sha256:e2cdc979c8c877029b4b7a38a6fba3bc4578e4f109a308419ff4d3ccf0a46619", size = 11577, upload-time = "2025-08-18T16:09:25.047Z" },
 ]
 
 [[package]]
