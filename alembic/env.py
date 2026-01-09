@@ -2,7 +2,7 @@ import os
 import sys
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool,MetaData
 
 from alembic import context
 
@@ -16,12 +16,13 @@ sys.path.insert(0, BASE_DIR)
 # --- [重点 2] 引入你的逻辑 ---
 from sqlmodel import SQLModel
 
+from app.core.database import SQLModel 
+
 from app.core.config import get_settings
-from app.models import User
+
 
 # 这里的 import User 非常重要，没它 metadata 就是空的
 #from models.user import User 
-
 settings = get_settings()
 config = context.config
 
@@ -30,7 +31,17 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # 设置元数据
+from app.models.user import User
 target_metadata = SQLModel.metadata
+
+#设置buckup忽略函数
+def include_object(object, name, type_, reflected, compare_to):
+    # 如果是表，且名字包含 "backup"，则忽略
+    if type_ == "table" and name and "backup" in name:
+        return False
+    return True
+
+import sys
 
 
 
@@ -111,6 +122,7 @@ def run_migrations_online() -> None:
             compare_type=True,
             # 强制检测索引和唯一约束
             compare_server_default=True,
+            include_object=include_object
         )
 
         with context.begin_transaction():

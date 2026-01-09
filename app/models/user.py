@@ -5,6 +5,7 @@ from pydantic import EmailStr
 from sqlmodel import Field, SQLModel
 from ulid import ULID
 
+print("DEBUG: 正在读取 models/user.py 文件...") 
 
 # 1. 封装 ID 生成器类，方便统一管理和 Mock 测试
 class IDGenerator:
@@ -21,7 +22,8 @@ class BaseIdModel(SQLModel):
         primary_key=True
     )
 
-class User_new(BaseIdModel, table=True):
+class User(BaseIdModel, table=True):
+    __tablename__ = 'user'
     # 限制长度
     username: str = Field(index=True, unique=True, min_length=3, max_length=20)
     # 严格校验邮箱格式 (需要安装 email-validator)
@@ -33,11 +35,4 @@ class User_new(BaseIdModel, table=True):
     def created_at_from_id(self) -> datetime:
         return ULID.from_uuid(self.id).datetime
 
-class User(SQLModel, table=True):
-    id: int | None = Field(
-        default=None, 
-        primary_key=True)
-    # 限制长度
-    username: str = Field(index=True, unique=True, min_length=3, max_length=20)
-    # 严格校验邮箱格式 (需要安装 email-validator)
-    email: EmailStr = Field(unique=True)
+print(f"DEBUG: User 类定义完毕。当前 SQLModel.metadata.tables keys: {list(SQLModel.metadata.tables.keys())}") # <--- 添加这行
