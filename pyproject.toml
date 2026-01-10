@@ -50,3 +50,10 @@ extend-immutable-calls = [
     "fastapi.Header",
     "Depends",  # 如果你是从 fastapi 直接 import Depends
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-mock>=3.15.1",
+    "pytest-xdist>=3.8.0",
+]

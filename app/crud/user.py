@@ -23,6 +23,8 @@ async def get_users(
 
 # 2. 批量插入：带冲突处理 (Upsert)
 async def upsert_users(session: AsyncSession, user_maps: list[dict]):
+    if not user_maps:
+        return
     """
     DBA 视角：这会生成 INSERT ... ON CONFLICT (email) DO UPDATE ...
     """
@@ -33,7 +35,7 @@ async def upsert_users(session: AsyncSession, user_maps: list[dict]):
             index_elements=['email'],
             set_=dict(username=mapping['username'])
         )
-        await session.execute(stmt)
+        await session.execute(stmt) 
     await session.commit()
 
 
