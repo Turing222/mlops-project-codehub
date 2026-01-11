@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -8,6 +10,10 @@ class Settings(BaseSettings):
     Application Settings configuration class.
     Inherits from BaseSettings to automatically load environment variables.
     """
+    # --- BASE DIR ---
+    BASE_DIR: Path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    # --- LOG DIR ---
+    LOG_DIR: Path = os.path.join(BASE_DIR, "logs")
 
     # --- Project Info ---
     PROJECT_NAME: str = "Obsidian Mentor AI"

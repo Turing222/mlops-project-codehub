@@ -45,3 +45,20 @@ async def create_user(username: str, email: str, session: AsyncSession):
     await session.commit()
     session.refresh(db_user)
     
+async def get_existing_usernames(session: AsyncSession, usernames: list[str]) -> set[str]:
+    """
+    输入一个用户名列表，返回数据库中已经存在的用户名集合。
+    使用 Core 风格，性能高。
+    """
+    if not usernames:
+        return set()
+
+    # 这里的 select(User.username) 就是 Core 风格
+    # 它只查询 username 字段，不会把整行数据都查出来
+    stmt = select(User.username).where(User.username.in_(usernames))
+    
+    result = await session.execute(stmt)
+    
+    # scalars().all() 会返回一个列表 ['zhangsan', 'lisi', ...]
+    # 转成 set 方便后续 O(1) 复杂度的查找比对
+    return set(result.scalars().all())

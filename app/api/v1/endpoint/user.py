@@ -6,6 +6,7 @@ from app.api.params import LimitParam, SkipParam, UsernameQuery
 from app.core.database import get_session
 from app.crud.user import create_user, get_users, upsert_users
 from app.schemas.user import UserPublic
+from app.services.user_service import process_user_import
 
 router = APIRouter()
 
@@ -53,4 +54,14 @@ async def seed_data(session: AsyncSession = Depends(get_session)):
 async def create_user_once(
     session: AsyncSession = Depends(get_session)):
     await create_user(session,)
+    return {"status": "成功", "user": "admin"}
+
+# 接口：通过文件上传批量插入客户
+@router.post("/init-data")
+async def csv_balk_insert_users(session: AsyncSession = Depends(get_session)):
+    mock_data = [
+        {"username": "admin", "email": "admin@bank.com"},
+        {"username": "dba_master", "email": "dba@bank.com"}
+    ]
+    await process_user_import(session, mock_data)
     return {"status": "成功", "user": "admin"}

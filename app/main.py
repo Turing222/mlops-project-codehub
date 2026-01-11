@@ -3,8 +3,37 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.v1.api import api_router
+import sys
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+print(ROOT)
+sys.path.insert(0, str(ROOT))
+
+
+from app.core.config import settings
 from app.core.database import engine
+from app.core.logger import setup_logging
+from app.api.v1.api import api_router
+
+import logging
+
+# 1. 初始化
+setup_logging()
+
+# 2. 获取 logger
+logger = logging.getLogger(__name__)
+
+# 3. 产生日志
+logger.info("系统初始化完成")
+try:
+    1 / 0
+except Exception as e:
+    # exc_info=True 会自动把堆栈信息放入 JSON 的 exception 字段
+    logger.error("计算发生了错误", exc_info=True)
+
 
 
 # 1. 定义生命周期（DBA 关心的资源管理）
