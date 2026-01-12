@@ -74,3 +74,10 @@ class ServiceError(AppError):
 class ValidationError(AppError):
     """数据校验失败"""
     pass
+class DatabaseOperationError(AppError):
+    """数据库操作失败"""
+    pass
+
+class FileParseException(AppError):
+    """文件读取操作失败"""
+    pass

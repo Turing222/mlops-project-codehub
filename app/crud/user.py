@@ -44,6 +44,9 @@ async def create_user(username: str, email: str, session: AsyncSession):
     session.add(db_user)
     await session.commit()
     session.refresh(db_user)
+
+
+
     
 async def get_existing_usernames(session: AsyncSession, usernames: list[str]) -> set[str]:
     """

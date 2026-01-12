@@ -1,3 +1,5 @@
+from collections.abc import AsyncGenerator
+
 from sqlalchemy import MetaData
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -29,6 +31,11 @@ async_session_maker = sessionmaker(
 )
 
 
-async def get_session():
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session_maker() as session:
-        yield session
+        try:
+            async with session.begin():
+                yield session
+        except Exception:
+            await session.rollback()
+            raise

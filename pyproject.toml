@@ -58,3 +58,5 @@ dev = [
     "pytest-mock>=3.15.1",
     "pytest-xdist>=3.8.0",
 ]
+[tool.uvicorn]
+reload_excludes = ["postgres_data/**"]

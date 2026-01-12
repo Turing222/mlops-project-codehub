@@ -4,12 +4,11 @@ import io
 from io import BytesIO
 from typing import Any
 
+from app.core.exceptions import FileParseException
 from openpyxl import load_workbook
 
-
 # 定义一个异常，方便上层捕获处理
-class FileParseException(Exception):
-    pass
+
 
 def parse_excel_to_list(file_content: bytes) -> list[dict[str, Any]]:
     """解析 Excel 文件为 list[dict]"""

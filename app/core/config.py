@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "mentor_db"
 
+    BATCH_SIZE: int = 500
+
     # --- LLM & AI Configuration ---
     # Optional[str] means it can be None (e.g., if using local LLM only).
     OPENAI_API_KEY: str | None = None

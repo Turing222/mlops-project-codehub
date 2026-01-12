@@ -21,15 +21,22 @@ class BaseIdModel(SQLModel):
         default_factory=IDGenerator.new_ulid_as_uuid,
         primary_key=True
     )
-
-class User(BaseIdModel, table=True):
-    __tablename__ = 'user'
-    # 限制长度
+class UserBase(SQLModel):
     username: str = Field(index=True, unique=True, min_length=3, max_length=20)
-    # 严格校验邮箱格式 (需要安装 email-validator)
     email: EmailStr = Field(unique=True)
+
+# 3. API 输入模型 (Schema)
+class UserCreate(UserBase):
+    password: str = Field(min_length=8)
+
+# 4. API 输出模型 (Schema)
+# 这里需要 ID，所以它同时继承 UserBase 和 BaseIdModel，但 table=False
+class UserPublic(UserBase):
+    id: uuid.UUID
+
+class User(BaseIdModel,UserBase, table=True):
+    __tablename__ = 'user'
     old_id: int | None 
-    
     # 甚至可以从 ID 中反推创建时间（ULID 特性）
     @property
     def created_at_from_id(self) -> datetime:
