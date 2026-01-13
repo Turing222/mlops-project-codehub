@@ -12,11 +12,11 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.crud.user import create_user, get_users, upsert_users
-from app.schemas.user import UserPublic
+from app.models.user import UserPublic
 from app.services.user_service import process_user_import
 
 from app.api.dependencies import get_user_repo
-
+from app.repositories.user_repo import UserRepository
 router = APIRouter()
 
 '''
@@ -38,14 +38,14 @@ def create_user(
 '''
 
 # 路由：查询用户
-@router.get("/users",response_model=list[UserPublic])
+@router.get("/get_users",response_model=list[UserPublic])
 async def read_users(
-    session: AsyncSession = Depends(get_session),
+    repo: UserRepository = Depends(get_user_repo),
     username: UsernameQuery = None, # 使用我们定义的类型，默认为 None
     skip: SkipParam = 0,
     limit: LimitParam = 10
     ):
-    users = await get_users(session, username=username, skip=skip, limit=limit)
+    users = await repo.get_users(username=username, skip=skip, limit=limit)
     return users
 
 # 路由：初始化种子数据
@@ -68,8 +68,8 @@ async def create_user_once(
 # 接口：通过文件上传批量插入客户
 @router.post("/csv_upload")
 async def csv_balk_insert_users(
-    file: UploadFile = File(...),  
-    session: AsyncSession = Depends(get_session)
+    file: UploadFile = File(...),  # noqa: B008
+    repo: UserRepository = Depends(get_user_repo)
 ):
     # 1. 读取文件内容到内存
     # 注意：如果文件巨大（几百MB），不能直接 read()，需要流式处理。
@@ -107,7 +107,7 @@ async def csv_balk_insert_users(
 
     # 3. 调用 Service 层入库 (Load)
     try:
-        await process_user_import(cleaned_data,session)
+        await process_user_import(cleaned_data,repo)
     except ValidationError :
         # 捕获 Service 层抛出的“用户名重复”等业务错误
         raise  
