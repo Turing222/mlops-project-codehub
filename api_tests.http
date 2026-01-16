@@ -1,0 +1,19 @@
+### 定义变量（方便切换环境）
+@baseUrl = http://localhost:8000
+
+### 1. 测试健康检查（确认 API 连上了数据库）
+GET {{baseUrl}}/health
+Accept: application/json
+
+### 2. 获取用户列表（对应你刚才的 SQL 操作）
+GET {{baseUrl}}/users
+Content-Type: application/json
+
+### 3. 创建一个新用户（模拟向数据库写数据）
+POST {{baseUrl}}/users
+Content-Type: application/json
+
+{
+    "username": "AI_Mentor_User",
+    "email": "test@example.com"
+}

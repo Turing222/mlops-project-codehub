@@ -1,29 +1,34 @@
-import logging
-import sys
 import datetime
 import json
-from pathlib import Path
-import os
-from app.core.config import settings
+import logging
 import logging.handlers
+import os
+import sys
+from pathlib import Path
+
+from app.core.config import settings
+
 
 # --- 1. 自定义 JSON 格式化器 ---
 class JSONFormatter(logging.Formatter):
     """
     将日志输出为 JSON 格式，方便机器解析
     """
+
     def format(self, record):
         # 提取日志记录中的基本信息
         log_record = {
-            "timestamp": datetime.datetime.fromtimestamp(record.created).isoformat(), # ISO8601 时间格式
+            "timestamp": datetime.datetime.fromtimestamp(
+                record.created
+            ).isoformat(),  # ISO8601 时间格式
             "level": record.levelname,
             "message": record.getMessage(),
             "logger": record.name,
             "module": record.module,
             "func_name": record.funcName,
-            "line_no": record.lineno
+            "line_no": record.lineno,
         }
-        
+
         # 如果有异常堆栈信息，也加入到 JSON 中
         if record.exc_info:
             log_record["exception"] = self.formatException(record.exc_info)
@@ -38,10 +43,9 @@ def setup_logging():
     """
     # 确保日志文件夹存在（无论从哪启动，路径都由 settings 决定）
     settings.LOG_DIR.mkdir(parents=True, exist_ok=True)
-    log_dir = settings.LOG_DIR 
-    
+    log_dir = settings.LOG_DIR
 
-    logger = logging.getLogger() # 获取根日志记录器
+    logger = logging.getLogger()  # 获取根日志记录器
     logger.setLevel(logging.INFO)
 
     # 创建通用的 JSON Formatter 实例化
@@ -67,9 +71,9 @@ def setup_logging():
         when="midnight",
         interval=1,
         backupCount=30,
-        encoding="utf-8"
+        encoding="utf-8",
     )
-    info_handler.setLevel(logging.INFO) # 包含 INFO, WARNING, ERROR
+    info_handler.setLevel(logging.INFO)  # 包含 INFO, WARNING, ERROR
     info_handler.setFormatter(json_formatter)
     logger.addHandler(info_handler)
 
@@ -82,15 +86,15 @@ def setup_logging():
         when="midnight",
         interval=1,
         backupCount=30,
-        encoding="utf-8"
+        encoding="utf-8",
     )
-    error_handler.setLevel(logging.ERROR) # 只包含 ERROR, CRITICAL
+    error_handler.setLevel(logging.ERROR)  # 只包含 ERROR, CRITICAL
     error_handler.setFormatter(json_formatter)
     logger.addHandler(error_handler)
-
 
     # 降低一些第三方库冗余日志的级别
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+
 
 # 在 app/main.py 启动时调用此函数
