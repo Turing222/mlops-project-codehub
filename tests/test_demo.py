@@ -32,4 +32,15 @@ b = next(a)
 print(b)
 b = next(a)
 print(b)
+
+
+# %%
+def create_multipliers():
+    return [lambda x: i * x for i in range(5)]
+
+
+multipliers = create_multipliers()
+
+# 我们预想输出 0, 2, 4, 6, 8
+print([m(2) for m in multipliers])
 # %%

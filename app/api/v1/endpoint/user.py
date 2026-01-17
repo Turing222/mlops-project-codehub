@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api import deps
@@ -79,11 +80,10 @@ async def csv_balk_insert_users(
     # 1. 读取文件内容到内存
     # 注意：如果文件巨大（几百MB），不能直接 read()，需要流式处理。
     # 但通常用户导入文件在 10MB 以内，直接读入内存没问题。
-    try:
-        content = await file.read()
-        raw_data = parse_file(file.filename, content)
-    except Exception as e:
-        raise FileParseException("发生未知文件导入异常") from e
+
+    content = await file.read()
+    # raw_data = parse_file(file.filename, content) 修改为线程池处理减少同步函数造成的堵塞
+    raw_data = await run_in_threadpool(parse_file, file.filename, content)
 
     # 2. 数据字段映射 (Transform)
     # Excel 表头可能是 "用户名", "邮箱"，我们需要映射成数据库的 "username", "email"
