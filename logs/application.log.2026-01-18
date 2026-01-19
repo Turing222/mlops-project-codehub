@@ -1,0 +1,6 @@
+{"timestamp": "2026-01-18T16:43:53.882945", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-18T23:26:26.672450", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-18T23:33:11.373159", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-18T23:33:11.600371", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-18T23:33:32.668469", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-18T23:33:32.697888", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}

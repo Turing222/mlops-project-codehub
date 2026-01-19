@@ -1,13 +1,14 @@
 import functools
 import json
-import time
 import logging
-from typing import Any, Callable, Optional
+import time
+from collections.abc import Callable
+
 from tenacity import (
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
 )
 
 # 假设你的日志工具已经配置好可以自动抓取 contextvars 中的 request_id
