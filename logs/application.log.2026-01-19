@@ -1,0 +1,2 @@
+{"timestamp": "2026-01-19T23:30:38.823145", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-19T23:40:24.743961", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}

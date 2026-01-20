@@ -44,3 +44,15 @@ multipliers = create_multipliers()
 # 我们预想输出 0, 2, 4, 6, 8
 print([m(2) for m in multipliers])
 # %%
+name = ["username", "email"]
+a = ["zhangsan", "aaa@111"]
+data = []
+c = dict(zip(name, a))
+data.append(c)
+print(c)
+print(data)
+print(c.items())
+
+# %%
+print("1")
+# %%
