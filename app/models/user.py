@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import EmailStr
 from sqlmodel import Field, SQLModel
 from ulid import ULID
+
 from app.utils.validators import NormalizedEmail
 
 # print("DEBUG: 正在读取 models/user.py 文件...")

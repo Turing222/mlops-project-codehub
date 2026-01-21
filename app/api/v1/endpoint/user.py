@@ -14,8 +14,8 @@ from app.core.exceptions import (
 from app.crud.user import create_user, get_users, upsert_users
 from app.models.user import UserPublic
 from app.repositories.user_repo import UserRepository
+from app.services.user_import_service import UserImportService
 from app.services.user_service import process_user_import
-from app.services.user_import_service import transform_and_validate
 from app.utils.file_parser import parse_file
 
 router = APIRouter()
@@ -76,30 +76,17 @@ async def create_user_once(session: AsyncSession = Depends(get_session)):
 async def csv_balk_insert_users(
     file: UploadFile = File(...),  # noqa: B008
     repo: UserRepository = Depends(get_user_repo),
+    import_service: UserImportService = Depends(),
 ):
     # 1. 读取文件内容到内存
     # 注意：如果文件巨大（几百MB），不能直接 read()，需要流式处理。
     # 但通常用户导入文件在 10MB 以内，直接读入内存没问题。
-
     content = await file.read()
     # raw_data = parse_file(file.filename, content) 修改为线程池处理减少同步函数造成的堵塞 run_in_threadpool用的是fastapi自己设置的默认的线程池
     raw_data = await run_in_threadpool(parse_file, file.filename, content)
-
-    cleaned_data = await transform_and_validate(raw_data)
+    # 字典映射与数据校验
+    cleaned_data = await import_service.transform_and_validate(raw_data)
     # 3. 调用 Service 层入库 (Load)
-    try:
-        await process_user_import(cleaned_data, repo)
-    except ValidationError:
-        # 捕获 Service 层抛出的“用户名重复”等业务错误
-        raise
-    except DatabaseOperationError:
-        # 捕获 Service 层抛出的“用户名重复”等业务错误
-        raise
-    except ServiceError:
-        # 捕获 Service 层抛出的“用户名重复”等业务错误
-        raise
-    except Exception as e:
-        # 捕获数据库未知错误
-        raise ServiceError("服务器内部错误") from e
+    process_user_import(cleaned_data, repo)
 
     return {"message": f"成功导入 {len(cleaned_data)} 条用户数据"}
