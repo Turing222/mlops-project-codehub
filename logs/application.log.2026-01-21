@@ -1,0 +1,25 @@
+{"timestamp": "2026-01-21T00:07:32.046826", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T00:21:27.055774", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T03:26:38.270615", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T03:27:13.331111", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T03:58:18.721216", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T03:58:23.516180", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T04:00:03.343351", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T04:00:03.402709", "level": "INFO", "message": "select pg_catalog.version()", "logger": "sqlalchemy.engine.Engine", "module": "base", "func_name": "_execute_context", "line_no": 1846}
+{"timestamp": "2026-01-21T04:00:03.402933", "level": "INFO", "message": "[raw sql] ()", "logger": "sqlalchemy.engine.Engine", "module": "base", "func_name": "_execute_context", "line_no": 1846}
+{"timestamp": "2026-01-21T04:00:03.415677", "level": "INFO", "message": "select current_schema()", "logger": "sqlalchemy.engine.Engine", "module": "base", "func_name": "_execute_context", "line_no": 1846}
+{"timestamp": "2026-01-21T04:00:03.415871", "level": "INFO", "message": "[raw sql] ()", "logger": "sqlalchemy.engine.Engine", "module": "base", "func_name": "_execute_context", "line_no": 1846}
+{"timestamp": "2026-01-21T04:00:03.418301", "level": "INFO", "message": "show standard_conforming_strings", "logger": "sqlalchemy.engine.Engine", "module": "base", "func_name": "_execute_context", "line_no": 1846}
+{"timestamp": "2026-01-21T04:00:03.418441", "level": "INFO", "message": "[raw sql] ()", "logger": "sqlalchemy.engine.Engine", "module": "base", "func_name": "_execute_context", "line_no": 1846}
+{"timestamp": "2026-01-21T04:00:03.419658", "level": "INFO", "message": "BEGIN (implicit)", "logger": "sqlalchemy.engine.Engine", "module": "base", "func_name": "_connection_begin_impl", "line_no": 2710}
+{"timestamp": "2026-01-21T04:00:03.422617", "level": "INFO", "message": "SELECT \"user\".username, \"user\".email, \"user\".id, \"user\".old_id \nFROM \"user\" \nWHERE \"user\".username = $1::VARCHAR \n LIMIT $2::INTEGER OFFSET $3::INTEGER", "logger": "sqlalchemy.engine.Engine", "module": "base", "func_name": "_execute_context", "line_no": 1846}
+{"timestamp": "2026-01-21T04:00:03.422783", "level": "INFO", "message": "[generated in 0.00024s] ('test2', 10, 0)", "logger": "sqlalchemy.engine.Engine", "module": "base", "func_name": "_execute_context", "line_no": 1846}
+{"timestamp": "2026-01-21T04:00:03.443052", "level": "INFO", "message": "COMMIT", "logger": "sqlalchemy.engine.Engine", "module": "base", "func_name": "_connection_commit_impl", "line_no": 2716}
+{"timestamp": "2026-01-21T04:00:03.444037", "level": "INFO", "message": "HTTP Request: GET http://test/api/v1/users/get_users?username=test2 \"HTTP/1.1 200 OK\"", "logger": "httpx", "module": "_client", "func_name": "_send_single_request", "line_no": 1740}
+{"timestamp": "2026-01-21T04:04:42.530522", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T05:10:18.166608", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T05:10:55.173596", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T05:14:32.833660", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T05:14:32.834763", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T05:16:29.942593", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
+{"timestamp": "2026-01-21T05:16:31.259504", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
