@@ -5,6 +5,7 @@ from app.models.userb import UserBase
 from app.repositories.user_repo import UserRepository
 from app.core.exceptions import ValidationError
 from unittest.mock import ANY
+import respx
 
 
 @pytest.fixture
@@ -59,6 +60,8 @@ def test_order_fulfillment(mocker, mock_email_service):
     # 执行业务逻辑
     # result = fulfill_order(order_id="ORD-123")
     service = lambda a: a + 10
+    service = lambda a, f: f(a.order_id)
+
     result = service(process_payment)
 
     # 断言调用细节（Idempotency 幂等性检查常考点）

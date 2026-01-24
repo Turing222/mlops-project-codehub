@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from app.models.user import User
+from app.models.orm.user import User
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,7 @@
 # app/services/user_import_service.py
 from typing import Any
 
-from app.models.user import UserBase  # 复用我们之前讨论的带 Annotated 的 Schema
+from app.models.orm.user import UserBase  # 复用我们之前讨论的带 Annotated 的 Schema
 
 
 class UserImportService:

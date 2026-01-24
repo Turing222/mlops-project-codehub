@@ -1,12 +1,12 @@
-#依赖注入
-#from typing import Generator
+# 依赖注入
+# from typing import Generator
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import ValidationError
 
 from app.core.database import get_session
-from app.models.user import User
+from app.models.orm.user import User
 
 # 假设你在 core/config.py 中定义了配置
 # 假设你在 core/security.py 中定义了算法
@@ -15,10 +15,8 @@ from app.models.user import User
 reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
 
 
-
 async def get_current_user(
-    db = Depends(get_session), 
-    token: str = Depends(reusable_oauth2)
+    db=Depends(get_session), token: str = Depends(reusable_oauth2)
 ):
     """
     鉴权中间逻辑：
@@ -36,7 +34,7 @@ async def get_current_user(
             status_code=status.HTTP_0403_FORBIDDEN,
             detail="Could not validate credentials",
         ) from e
-    
+
     # 假设从数据库查询用户
     user = db.query(User).filter(User.id == user_id).first()
     if not user:

@@ -12,7 +12,7 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.crud.user import create_user, get_users, upsert_users
-from app.models.user import UserPublic
+from app.models.orm.user import UserPublic
 from app.repositories.user_repo import UserRepository
 from app.services.user_import_service import UserImportService
 from app.services.user_service import process_user_import

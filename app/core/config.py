@@ -10,8 +10,11 @@ class Settings(BaseSettings):
     Application Settings configuration class.
     Inherits from BaseSettings to automatically load environment variables.
     """
+
     # --- BASE DIR ---
-    BASE_DIR: Path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    BASE_DIR: Path = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
     # --- LOG DIR ---
     LOG_DIR: Path = os.path.join(BASE_DIR, "logs")
 
@@ -23,8 +26,8 @@ class Settings(BaseSettings):
     # --- Database Configuration (PostgreSQL) ---
     # Field(...) indicates this field is required and has no default value.
     # If not found in env, the app will crash at startup (Fail Fast principle).
-    POSTGRES_USER: str ="admin"
-    POSTGRES_PASSWORD: str ="securepassword123"
+    POSTGRES_USER: str = "admin"
+    POSTGRES_PASSWORD: str = "securepassword123"
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "mentor_db"
@@ -35,19 +38,19 @@ class Settings(BaseSettings):
     # Optional[str] means it can be None (e.g., if using local LLM only).
     OPENAI_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
-    
+
     # Path to your Obsidian Vault (Local Volume Mount)
     OBSIDIAN_VAULT_PATH: str = "/data/obsidian"
 
     # --- Security ---
     # Secret key for JWT token generation (FastAPI Users)
-    SECRET_KEY: str
+    SECRET_KEY: str = "asdvzxcvasdf"  # "CHANGE_THIS_TO_A_STRONG_RANDOM_STRING"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # Configuration for loading .env file
     model_config = SettingsConfigDict(
-        env_file=".env", 
-        env_file_encoding="utf-8",
-        case_sensitive=True
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=True
     )
 
     @property
@@ -61,6 +64,7 @@ class Settings(BaseSettings):
             f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
 
+
 # --- Singleton Pattern Implementation ---
 @lru_cache
 def get_settings() -> Settings:
@@ -69,6 +73,7 @@ def get_settings() -> Settings:
     lru_cache ensures we read the .env file only once per execution context.
     """
     return Settings()
+
 
 # Global settings instance
 settings = get_settings()

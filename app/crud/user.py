@@ -3,7 +3,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import insert, select
 
-from app.models.user import User
+from app.models.orm.user import User
 
 
 # 1. 查询：带分页的 Read
