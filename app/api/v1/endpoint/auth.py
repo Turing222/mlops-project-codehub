@@ -1,69 +1,48 @@
 from datetime import timedelta
 from typing import Any
 
+from app.schemas.user import Token, UserCreate, UserPublic
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlmodel import Session, select
+from sqlmodel.ext.asyncio.session import AsyncSession  # ⚠️ 引用异步 Session
 
-from app.api.deps import get_current_active_user, get_session
-from app.core.security import (
-    ACCESS_TOKEN_EXPIRE_MINUTES,
-    create_access_token,
-    get_password_hash,
-    verify_password,
-)
-from app.models.orm.user import User
-from app.models.schemas.user import Token, UserCreate, UserPublic
+from app.api.deps import get_session
+from app.core.security import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token
+from app.services.user_auth_service import UserService  # ⚠️ 引用 Service
 
 router = APIRouter()
 
 
 @router.post("/register", response_model=UserPublic)
-def register(user_in: UserCreate, session: Session = Depends(get_session)) -> Any:
-    """
-    用户注册
-    """
-    # 1. 检查邮箱是否已存在
-    statement = select(User).where(User.email == user_in.email)
-    if session.exec(statement).first():
-        raise HTTPException(status_code=400, detail="该邮箱已被注册")
+async def register(
+    user_in: UserCreate, session: AsyncSession = Depends(get_session)
+) -> Any:
+    # 1. 检查唯一性
+    await UserService.get_by_email(session, user_in.email)
+    await UserService.get_by_username(session, user_in.username)
 
-    # 2. 检查用户名
-    statement = select(User).where(User.username == user_in.username)
-    if session.exec(statement).first():
-        raise HTTPException(status_code=400, detail="该用户名已被占用")
-
-    # 3. 创建用户 (密码加密)
-    user = User.model_validate(
-        user_in, update={"hashed_password": get_password_hash(user_in.password)}
-    )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
+    # 2. 调用 Service 创建
+    user = await UserService.create(session, user_in)
     return user
 
 
 @router.post("/login", response_model=Token)
-def login(
-    session: Session = Depends(get_session),
+async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
+    session: AsyncSession = Depends(get_session),
 ) -> Any:
-    """
-    OAuth2 兼容的登录接口
-    注意：form_data.username 接收的是用户名或邮箱，取决于前端传什么
-    """
-    # 1. 查询用户 (支持邮箱登录逻辑可选，这里假设只用 username)
-    statement = select(User).where(User.username == form_data.username)
-    user = session.exec(statement).first()
+    # 1. 调用 Service 验证
+    user = await UserService.authenticate(
+        session, username=form_data.username, password=form_data.password
+    )
 
-    # 2. 验证密码
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    if not user:
         raise HTTPException(status_code=400, detail="用户名或密码错误")
 
     if not user.is_active:
         raise HTTPException(status_code=400, detail="账户未激活")
 
-    # 3. 生成 Token
+    # 2. 发放 Token (Token 生成是纯 CPU 计算，无需 await)
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         subject=user.id, expires_delta=access_token_expires
@@ -72,11 +51,3 @@ def login(
         "access_token": access_token,
         "token_type": "bearer",
     }
-
-
-@router.get("/me", response_model=UserPublic)
-def read_users_me(current_user: User = Depends(get_current_active_user)):
-    """
-    测试接口：获取当前登录用户信息
-    """
-    return current_user

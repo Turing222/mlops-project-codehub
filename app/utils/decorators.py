@@ -15,6 +15,51 @@ from tenacity import (
 logger = logging.getLogger("app.decorators")
 
 
+def transactional(
+    *,
+    name: str | None = None,
+    log_args: bool = False,
+):
+    """
+    name: 业务名（不传默认用函数名）
+    log_args: 是否记录入参（默认 false，避免日志爆炸或泄露敏感信息）
+    """
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            session = self.session
+            action = name or func.__name__
+            start = time.time()
+
+            logger.info(f"[TX-START] {action}")
+
+            try:
+                if log_args:
+                    logger.debug(f"[TX-ARGS] {action} args={args} kwargs={kwargs}")
+
+                result = func(self, *args, **kwargs)
+
+                session.commit()
+
+                cost = (time.time() - start) * 1000
+                logger.info(f"[TX-COMMIT] {action} cost={cost:.2f}ms")
+
+                return result
+
+            except Exception as e:
+                session.rollback()
+
+                cost = (time.time() - start) * 1000
+                logger.exception(f"[TX-ROLLBACK] {action} cost={cost:.2f}ms error={e}")
+
+                raise
+
+        return wrapper
+
+    return decorator
+
+
 def log_performance(func: Callable):
     """
     耗时统计装饰器

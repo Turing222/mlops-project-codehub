@@ -1,14 +1,14 @@
-from typing import Optional
-
-from app.models.user import User
-from app.schemas.user import UserCreate
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.security import get_password_hash, verify_password
+from app.models.orm.user import User
+from app.models.schemas.user import UserCreate
+from app.repositories.user_repo import UserRepository
+from app.services.base import BaseService
 
 
-class UserService:
+class User_Auth_Service(BaseService(UserRepository)):
     @staticmethod
     async def get_by_username(session: AsyncSession, username: str) -> User:
         statement = select(User).where(User.username == username)
@@ -18,7 +18,11 @@ class UserService:
     @staticmethod
     async def get_by_email(session: AsyncSession, email: str) -> User:
         statement = select(User).where(User.email == email)
-        result = await session.exec(statement)
+        try:
+            result = await session.exec(statement)
+        except Exception as e:
+            # HTTPException
+            raise Exception(status_code=400, detail="该邮箱已被注册") from e
         return result.first()
 
     @staticmethod
@@ -37,7 +41,7 @@ class UserService:
     @staticmethod
     async def authenticate(session: AsyncSession, username: str, password: str) -> User:
         """验证用户名和密码"""
-        user = await UserService.get_by_username(session, username)
+        user = await User_Auth_Service.get_by_username(session, username)
         if not user:
             return None
         if not verify_password(password, user.hashed_password):

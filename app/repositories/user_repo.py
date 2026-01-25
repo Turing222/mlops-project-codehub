@@ -16,17 +16,19 @@ class UserRepository(CRUDBase[User]):
 
     async def get_by_email(self, email: str, session: AsyncSession) -> User | None:
         statement = select(self.model).where(self.model.email == email)
-        result = await self.session.exec(statement)
+        result = await session.exec(statement)
+        return result.first()
+
+    async def get_by_username(
+        self, username: str, session: AsyncSession
+    ) -> User | None:
+        statement = select(self.model).where(self.model.username == username)
+        result = await session.exec(statement)
         return result.first()
 
     async def get_by_username(
         self, skip: int = 0, limit: int = 10, username: str = None
     ):
-        """
-        查询用户 默认不跳过 默认上限10条
-        使用 Core 风格，性能高。
-        """
-
         statement = select(User).offset(skip).limit(limit)
         if username:
             # 增加过滤条件
