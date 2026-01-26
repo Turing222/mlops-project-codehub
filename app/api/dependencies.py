@@ -10,11 +10,19 @@ from app.core.database import get_session  # 假设这是你获取 session 的�
 from app.core.security import ALGORITHM, SECRET_KEY
 from app.models.orm.user import User
 from app.repositories.user_repo import UserRepository
+from app.services.user_service import UserService
 
 
 # 1. 这里的逻辑只负责：拿连接 -> 实例化 Repo
 async def get_user_repo(session: AsyncSession = Depends(get_session)) -> UserRepository:
     return UserRepository(session)
+
+
+async def get_user_service(
+    # FastAPI 会自动先执行 get_user_repo 拿到 repo 实例
+    repo: UserRepository = Depends(get_user_repo),
+) -> UserService:
+    return UserService(repo)
 
 
 # 指向你的登录接口 URL，这样 Swagger UI 里的 "Authorize" 按钮才能工作

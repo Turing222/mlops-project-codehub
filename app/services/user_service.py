@@ -1,72 +1,177 @@
+# app/services/user_service.py
 import logging
+from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.core.config import settings
 from app.core.exceptions import DatabaseOperationError, ServiceError, ValidationError
+from app.core.security import get_password_hash, verify_password
+from app.models.orm.user import User, UserBase
+from app.models.schemas.user import UserLogin, UserSearch, UserUpdate
 from app.repositories.user_repo import UserRepository
+from app.services.base import BaseService
 
-# 获取 logger 实例
+# 模块级 logger，或者放在类里也可以
 logger = logging.getLogger(__name__)
 
 
-async def process_user_import(user_maps: list[dict], repo: UserRepository):
-    """
-    业务逻辑层：负责解析文件并执行批量插入
-    """
-    # logger.info(f"Starting user import: filename={file.filename}")
+class UserService(BaseService[UserRepository]):
+    def __init__(self, repo: UserRepository):
+        super().__init__(repo)
 
-    # 1. 提取所有待注册的用户名
-    # 假设 user_maps 结构: [{"email": "a@a.com", "username": "u1"}, ...]
-    incoming_usernames = [u["username"] for u in user_maps]
+    async def import_users(self, user_maps: list[dict]) -> int:
+        """
+        批量导入用户逻辑
+        返回: 成功导入的数量
+        """
+        # 1. 基础校验
+        async with self.repo.session.begin():
+            if not user_maps:
+                logger.info("No valid user data found in file")
+                raise ValidationError("有效客户为0")
 
-    if not user_maps:
-        logger.info("No valid user data found in file")
-        raise ValidationError("有效客户为0")
+            incoming_usernames = [u["username"] for u in user_maps]
 
-    size = settings.BATCH_SIZE
-    batches = [user_maps[i : i + size] for i in range(0, len(user_maps), size)]
-    total_batches = len(batches)
-    total_records = sum(len(b) for b in batches)
+            try:
+                # 2. 调用 CRUD 进行预验证 (直接用 self.repo)
+                existing_names = await self.repo.get_existing_usernames(
+                    incoming_usernames
+                )
 
-    try:
-        # 2. 【关键步骤】调用 CRUD 进行预验证
-        existing_names = await repo.get_existing_usernames(incoming_usernames)
+                # 3. 业务规则校验
+                if existing_names:
+                    raise ValidationError(
+                        f"以下用户名已被占用，无法注册: {existing_names}"
+                    )
 
-        # 3. 过滤数据（或者报错）
-        # 方案 A：直接报错，告诉前端哪些名字重复了（推荐）
-        if existing_names:
-            raise ValidationError(f"以下用户名已被占用，无法注册: {existing_names}")
+                # 4. 分批处理
+                size = settings.BATCH_SIZE
+                batches = [
+                    user_maps[i : i + size] for i in range(0, len(user_maps), size)
+                ]
+                total_records = sum(len(b) for b in batches)
+                total_batches = len(batches)
 
-        for i, batch in enumerate(batches, 1):
-            if not batch:
-                continue
-            # --- 你的核心逻辑 ---
-            await repo.bulk_upsert(batch)
-            # 记录进度（debug 级别，防止生产环境日志刷屏）
-            logger.debug(f"批次 [{i}/{total_batches}] 处理完成，本批 {len(batch)} 条")
+                for i, batch in enumerate(batches, 1):
+                    if not batch:
+                        continue
 
-        # 退出 async with 后自动 commit
-        logger.info(f"批量处理成功,事务已提交,成功提交 {total_records} 用户")
+                    # 调用 Repo
+                    await self.repo.bulk_upsert(batch)
+                    logger.debug(
+                        f"批次 [{i}/{total_batches}] 处理完成，本批 {len(batch)} 条"
+                    )
 
-    except UnicodeDecodeError as e:
-        # logger.error(f"文件编码异常: {str(e)}")
-        raise ValidationError("Only UTF-8 CSV files are supported") from e
+                logger.info(f"批量处理成功, 成功提交 {total_records} 用户")
+                return total_records
 
-    except IntegrityError as e:
-        # 捕获完整性错误（比如违反了其他唯一约束，且没在 on_conflict 处理）
-        # logger.error(f"数据完整性错误: {str(e)}")
-        # 抛出自定义异常，并不让上层看到原始 SQL 报错
-        raise DatabaseOperationError("数据违反了唯一性约束或其他限制") from e
+            except UnicodeDecodeError as e:
+                raise ValidationError("Only UTF-8 CSV files are supported") from e
+            except IntegrityError as e:
+                raise DatabaseOperationError("数据违反了唯一性约束或其他限制") from e
+            except SQLAlchemyError as e:
+                raise DatabaseOperationError("数据库操作执行失败") from e
+            except Exception as e:
+                # Service 层捕获未知异常，转为统一的 ServiceError
+                logger.exception("导入过程发生未知错误")  # 自动记录堆栈
+                raise ServiceError("Internal server error during import") from e
 
-    except SQLAlchemyError as e:
-        # 捕获其他数据库错误（如连接断开、SQL 语法错误等）
-        # logger.error(f"数据库底层异常: {str(e)}")
-        # 使用 'from e' 保留原始异常链，方便 traceback 追踪
-        raise DatabaseOperationError("数据库操作执行失败") from e
+    # --- 新增功能的扩展位置 ---
 
-    except Exception as e:
-        # 在这里记录堆栈信息，这对排查生产环境 bug 至关重要
-        # logger.exception(f"Unexpected error during user import: {str(e)}")
-        # await session.rollback()
-        raise ServiceError("Internal server error during import") from e
+    HEADER_MAP = {
+        "用户名": "username",
+        "邮箱": "email",
+        "username": "username",
+        "email": "email",
+    }
+
+    @classmethod
+    async def transform_and_validate(
+        cls, raw_data: list[dict[str, Any]]
+    ) -> list[UserBase]:
+        """
+        核心中间层：执行字段映射、清洗和 Pydantic 校验
+        """
+        cleaned_schemas = []
+        errors = []
+
+        for index, row in enumerate(raw_data):
+            # 1. 字段名映射 (Transform)
+            mapped_row = {
+                cls.HEADER_MAP[k]: v for k, v in row.items() if k in cls.HEADER_MAP
+            }
+
+            # 2. 利用 Pydantic 进行深度清洗与类型校验 (Validate)
+            # 这样你就不需要手动写 if new_row.get("username") 了
+
+            # model_validate 会触发我们之前写的 Annotated[BeforeValidator]
+            # user_dto = UserBase.model_validate(mapped_row)if not mapped_row
+            if mapped_row.get("username") and mapped_row.get("email"):
+                cleaned_schemas.append(mapped_row)
+            # except Exception as e:
+            # B2B 场景建议记录哪一行出错了
+            else:
+                errors.append(f"Row {index}: {str(mapped_row)}")
+
+        if not cleaned_schemas:
+            raise ValueError(f"No valid data found. Errors: {errors}")
+        if errors:
+            raise ValueError(f"No valid data found. Errors: {errors}")
+        return cleaned_schemas
+
+    # --- 简单透传逻辑 (Proxy) ---
+    async def get_by_email(self, user_in: UserSearch) -> User | None:
+        """简单的透传，但保留了以后加逻辑的权利"""
+        return await self.repo.get_by_email(email=user_in.email)
+
+    async def get_by_username(self, user_in: UserSearch) -> User | None:
+        """简单的透传，但保留了以后加逻辑的权利"""
+        return await self.repo.get_by_username(username=user_in.username)
+
+    async def user_register(self, user_in: UserUpdate) -> User | None:
+        """
+        新增：用户注册功能
+        """
+        async with self.repo.session.begin():
+            # 1. 检查用户名是否存在
+            if await self.repo.get_by_email(email=user_in.email):
+                raise ValidationError("该邮箱已被注册")
+
+            # 2. 密码加密 (这里是业务逻辑，不该放在 Repo 里)
+            hashed_password = get_password_hash(user_in.password)
+            user_in.password = hashed_password
+
+            # 3. 创建用户
+            user = await self.repo.create(obj_in=user_in)
+
+            # 4. 可能还有后续动作，比如发送欢迎邮件...
+            # await email_service.send_welcome_email(user.email)
+
+            return user
+
+    async def user_update(self, user_in: UserUpdate) -> User | None:
+        """
+        用户更新功能
+        """
+        async with self.repo.session.begin():
+            user = await self.repo.update(obj_in=user_in)
+            return user
+
+    async def authenticate(self, user_in: UserLogin) -> User | None:
+        """验证用户名和密码"""
+        user = await self.repo.get_by_username(user_in.username)
+        if not user:
+            return None
+        if not verify_password(user_in.password, user.hashed_password):
+            return None
+        return user
+
+    async def get_multi(self, skip: int = 0, limit: int = 100) -> Sequence[User] | None:
+        return await self.repo.get_multi(skip=skip, limit=limit)
+
+    async def delete(self, id: int):
+        # 比如删除前要做个检查？在这里加检查逻辑很方便
+        # if id == 1: raise Error("不能删管理员")
+        return await self.repo.remove(id=id)

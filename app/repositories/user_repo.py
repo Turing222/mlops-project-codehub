@@ -1,4 +1,3 @@
-# %%
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -8,34 +7,19 @@ from app.repositories.base import CRUDBase
 
 
 class UserRepository(CRUDBase[User]):
-    def __init__(self):
+    def __init__(self, session: AsyncSession):
         # 1. 调用父类 CRUDBase 的构造函数，告诉它操作的是 User 模型
-        super().__init__(User)
+        super().__init__(User, session)
 
-        # 2. 保存当前实例特有的 session
-
-    async def get_by_email(self, email: str, session: AsyncSession) -> User | None:
+    async def get_by_email(self, email: str) -> User | None:
         statement = select(self.model).where(self.model.email == email)
-        result = await session.exec(statement)
-        return result.first()
-
-    async def get_by_username(
-        self, username: str, session: AsyncSession
-    ) -> User | None:
-        statement = select(self.model).where(self.model.username == username)
-        result = await session.exec(statement)
-        return result.first()
-
-    async def get_by_username(
-        self, skip: int = 0, limit: int = 10, username: str = None
-    ):
-        statement = select(User).offset(skip).limit(limit)
-        if username:
-            # 增加过滤条件
-            statement = statement.where(User.username == username)
-
         result = await self.session.exec(statement)
-        return result.scalars().all()
+        return result.first()
+
+    async def get_by_username(self, username: str) -> User | None:
+        statement = select(self.model).where(self.model.username == username)
+        result = await self.session.exec(statement)
+        return result.first()
 
     async def get_existing_usernames(self, usernames: list[str]) -> list[str]:
         """

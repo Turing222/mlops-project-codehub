@@ -1,22 +1,27 @@
-from pydantic import EmailStr
-from sqlmodel import Field, SQLModel
+from sqlalchemy import Boolean, String, text
+from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.orm.base import AuditMixin, BaseIdModel
-
-
-# 定义 User 独有的基础字段，供 ORM 和 Schema 复用
-class UserBase(SQLModel):
-    username: str = Field(index=True, unique=True, min_length=3, max_length=20)
-    email: EmailStr = Field(unique=True, index=True)
-    is_active: bool = Field(default=True)  # 登录/权限控制用
-    is_superuser: bool = Field(default=False)  # 权限控制用
+from app.models.orm.base import AuditMixin, Base, BaseIdModel
 
 
-class User(BaseIdModel, AuditMixin, UserBase, table=True):
+class User(Base, BaseIdModel, AuditMixin):
     __tablename__ = "users"
 
-    # 敏感字段：哈希后的密码，不需要在 UserBase 里出现
-    hashed_password: str = Field(nullable=False)
+    # 使用 Mapped 明确 Python 类型，mapped_column 明确数据库约束
+    username: Mapped[str] = mapped_column(
+        String(20), unique=True, index=True, nullable=False, comment="B端登录唯一标识"
+    )
+    email: Mapped[str] = mapped_column(
+        String(255), unique=True, index=True, nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("true"), default=True
+    )
+    is_superuser: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false"), default=False
+    )
 
+    # 核心安全字段：绝不出现在 Schema 中
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     # 将来可以在这里加 relationship
     # roles: List["Role"] = Relationship(...)
