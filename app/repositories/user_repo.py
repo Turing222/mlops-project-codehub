@@ -1,25 +1,26 @@
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import select
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orm.user import User  # 你的 SQLAlchemy 模型
+from app.models.schemas.user import UserCreate, UserUpdate
 from app.repositories.base import CRUDBase
 
 
-class UserRepository(CRUDBase[User]):
+class UserRepository(CRUDBase[User, UserCreate, UserUpdate]):
     def __init__(self, session: AsyncSession):
         # 1. 调用父类 CRUDBase 的构造函数，告诉它操作的是 User 模型
         super().__init__(User, session)
 
     async def get_by_email(self, email: str) -> User | None:
         statement = select(self.model).where(self.model.email == email)
-        result = await self.session.exec(statement)
-        return result.first()
+        result = await self.session.execute(statement)
+        return result.scalars().first()
 
     async def get_by_username(self, username: str) -> User | None:
         statement = select(self.model).where(self.model.username == username)
-        result = await self.session.exec(statement)
-        return result.first()
+        result = await self.session.execute(statement)
+        return result.scalars().first()
 
     async def get_existing_usernames(self, usernames: list[str]) -> list[str]:
         """

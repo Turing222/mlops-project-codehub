@@ -35,3 +35,6 @@ key.env
 
 #忽略postgres数据文件
 postgres_data/
+
+#chainlit
+.chainlit/

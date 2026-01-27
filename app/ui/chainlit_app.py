@@ -1,71 +1,113 @@
-import asyncio
+import logging
+import os
+import uuid
 
 import chainlit as cl
+import httpx
 
+# 1. 从环境变量读取配置，默认值适配本地开发
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-# --- Domain Logic Stubs (模拟业务逻辑) ---
-# In Phase 3, we will replace these with real imports from app.services
-async def mock_rag_search(query: str):
-    """
-    Simulates searching the vector database.
-    """
-    await asyncio.sleep(1) # Simulate network latency (Latency Simulation)
-    return [
-        {"source": "Python装饰器.md", "content": "装饰器本质是闭包...", "score": 0.92},
-        {"source": "Docker网络原理.md", "content": "Bridge模式是默认网络...", "score": 0.85}
-    ]
+API_VERSION = os.getenv("API_VERSION", "v1")
+API_PREFIX = os.getenv("API_PREFIX", "proxy")
 
-# --- The UI Logic (Frontend) ---
+LOGIN_PATH = "login"
+
+# 设置超时时间（AI 响应通常较慢，默认 5秒可能不够）
+HTTP_TIMEOUT = 60.0
+
+logger = logging.getLogger("chainlit")
+
 
 @cl.on_chat_start
 async def start():
     """
-    Event: Triggered when a new user session starts.
-    Use this to initialize user session or send a welcome message.
+    应用启动逻辑
     """
-    # Send a Welcome Message
-    await cl.Message(
-        content="👋 Welcome aboard! I am your Obsidian Mentor AI.\n\n"
-                "I am currently running in **Dev Mode** (Stubbed Logic). "
-                "The infrastructure is healthy!"
-    ).send()
+    # 真实场景建议使用 Chainlit 的 Authentication 机制
+    # 这里为了演示，增加 try-except 保护
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # 假设你的登录接口需要用户名密码，或者 API Key
+            resp = await client.post(
+                f"{BACKEND_URL}/login", json={"username": "demo", "password": "123"}
+            )
+            resp.raise_for_status()  # 如果状态码不是 2xx，抛出异常
 
-@cl.step(type="tool", name="🔍 Retrieval")
-async def retrieval_step(query: str):
-    """
-    This decorated function will appear as a collapsible "Step" in the UI.
-    This is your "X-Ray" feature for debugging.
-    """
-    # 1. Call the (mock) search logic
-    docs = await mock_rag_search(query)
-    
-    # 2. Update the Step UI with input/output data
-    current_step = cl.context.current_step
-    current_step.input = query
-    current_step.output = str(docs) # This shows the raw data in the UI expander
-    
-    return docs
+            token = resp.json().get("access_token")
+            cl.user_session.set("auth_token", token)
+
+            await cl.Message(content="✅ 系统连接成功，随时待命！").send()
+
+    except Exception as e:
+        logger.error(f"Login failed: {e}")
+        await cl.Message(content=f"❌ 无法连接到后端服务: {str(e)}").send()
+
 
 @cl.on_message
 async def main(message: cl.Message):
     """
-    Event: Triggered every time the user sends a message.
-    This is the Main Event Loop.
+    消息处理主逻辑
     """
-    user_query = message.content
+    token = cl.user_session.get("auth_token")
+    if not token:
+        await cl.Message(content="⚠️ 未登录，请刷新页面重试。").send()
+        return
 
-    # 1. Trigger the Retrieval Step (Visible in UI)
-    retrieved_docs = await retrieval_step(user_query)
+    # 生成本次请求的唯一 ID
+    request_id = str(uuid.uuid4())
 
-    # 2. Simulate LLM Generation (Visible in UI as streaming text)
-    msg = cl.Message(content="")
-    await msg.send()
-    
-    # Stream the response token by token (Simulating LLM streaming)
-    fake_response = f"Based on your note `{retrieved_docs[0]['source']}`, here is the answer..."
-    
-    for char in fake_response:
-        await msg.stream_token(char)
-        await asyncio.sleep(0.05) # Simulate token generation speed
+    # 定义 Step，给用户反馈
+    step = cl.Step(name="思考中", type="run")  # type="run" 会显示旋转图标
+    await step.send()
 
-    await msg.update()
+    try:
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+            response = await client.post(
+                f"{BACKEND_URL}/ai-query",
+                json={"content": message.content},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "X-Request-ID": request_id,
+                },
+            )
+            response.raise_for_status()  # 关键：检查 4xx/5xx 错误
+
+            data = response.json()
+
+            # 更新 Step 的信息
+            step.name = "处理完成"
+            # 可以在这里展示 SQL 语句或耗时
+            if "sql_latency" in data:
+                step.output = f"SQL Latency: {data['sql_latency']}"
+            await step.update()
+
+            # 发送回复
+            total_time = response.headers.get("X-Process-Time", "N/A")
+            latency_text = f"{float(total_time):.2f}s" if total_time != "N/A" else "N/A"
+
+            await cl.Message(
+                content=f"{data['answer']}\n\n_⏱️ 耗时: {latency_text}_"
+            ).send()
+
+    except httpx.HTTPStatusError as e:
+        # 处理 HTTP 错误 (404, 500, 401)
+        step.name = "调用失败"
+        step.status = cl.StepStatus.FAILED
+        await step.update()
+
+        error_msg = f"API Error ({e.response.status_code}): {e.response.text}"
+        await cl.Message(content=f"❌ 服务端报错: {error_msg}").send()
+
+    except httpx.RequestError as e:
+        # 处理网络连接错误 (超时, 连接拒绝)
+        step.name = "网络故障"
+        step.status = cl.StepStatus.FAILED
+        await step.update()
+
+        await cl.Message(content=f"❌ 网络连接失败: 请检查后端服务是否启动。").send()
+
+    except Exception as e:
+        # 其他未知错误
+        logger.exception("Unknown error")
+        await cl.Message(content=f"❌ 发生未知错误: {str(e)}").send()

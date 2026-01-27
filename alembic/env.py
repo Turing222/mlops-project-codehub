@@ -31,9 +31,10 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # 设置元数据
+from app.models.orm.base import Base, BaseIdModel, AuditMixin
 from app.models.orm.user import User
 
-target_metadata = SQLModel.metadata
+target_metadata = Base.metadata
 
 
 # 设置buckup忽略函数

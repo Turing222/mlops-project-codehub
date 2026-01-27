@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 
-from app.api.deps import get_user_service
+from app.api.dependencies import get_user_service
 
 # from app.api.params import LimitParam, SkipParam, UsernameQuery
 from app.models.schemas.user import UserResponse, UserSearch, UserUpdate

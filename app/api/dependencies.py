@@ -1,4 +1,3 @@
-# app/api/dependencies.py
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -6,8 +5,8 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session
 
+from app.core.config import settings
 from app.core.database import get_session  # 假设这是你获取 session 的地方
-from app.core.security import ALGORITHM, SECRET_KEY
 from app.models.orm.user import User
 from app.repositories.user_repo import UserRepository
 from app.services.user_service import UserService
@@ -39,7 +38,9 @@ def get_current_user(
     3. 查询数据库获取 User 对象
     """
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
         user_id = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=403, detail="Token 缺少身份标识")

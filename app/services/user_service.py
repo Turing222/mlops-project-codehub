@@ -1,15 +1,15 @@
-# app/services/user_service.py
 import logging
 from collections.abc import Sequence
 from typing import Any
 
+from pydantic import EmailStr
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.core.config import settings
 from app.core.exceptions import DatabaseOperationError, ServiceError, ValidationError
 from app.core.security import get_password_hash, verify_password
-from app.models.orm.user import User, UserBase
-from app.models.schemas.user import UserLogin, UserSearch, UserUpdate
+from app.models.orm.user import User
+from app.models.schemas.user import UserBase, UserLogin, UserUpdate
 from app.repositories.user_repo import UserRepository
 from app.services.base import BaseService
 
@@ -122,29 +122,36 @@ class UserService(BaseService[UserRepository]):
         return cleaned_schemas
 
     # --- 简单透传逻辑 (Proxy) ---
-    async def get_by_email(self, user_in: UserSearch) -> User | None:
+    async def get_by_email(self, email: EmailStr) -> User | None:
         """简单的透传，但保留了以后加逻辑的权利"""
-        return await self.repo.get_by_email(email=user_in.email)
+        return await self.repo.get_by_email(email)
 
-    async def get_by_username(self, user_in: UserSearch) -> User | None:
+    async def get_by_username(self, username: str) -> User | None:
         """简单的透传，但保留了以后加逻辑的权利"""
-        return await self.repo.get_by_username(username=user_in.username)
+        return await self.repo.get_by_username(username)
 
     async def user_register(self, user_in: UserUpdate) -> User | None:
         """
         新增：用户注册功能
         """
+        logger.debug(f"当前变量值: {user_in}")
         async with self.repo.session.begin():
             # 1. 检查用户名是否存在
             if await self.repo.get_by_email(email=user_in.email):
                 raise ValidationError("该邮箱已被注册")
 
             # 2. 密码加密 (这里是业务逻辑，不该放在 Repo 里)
-            hashed_password = get_password_hash(user_in.password)
-            user_in.password = hashed_password
+
+            obj_in_data = user_in.model_dump()  # Pydantic v2 用 model_dump
+            obj_in_data.pop("password")  # 弹出明文密码
+            obj_in_data.pop("confirm_password")  # 弹出明文密码
+            logger.debug(f"当前密码: {user_in.password}")
+            obj_in_data["hashed_password"] = await get_password_hash(
+                user_in.password
+            )  # 添加哈希密码
 
             # 3. 创建用户
-            user = await self.repo.create(obj_in=user_in)
+            user = await self.repo.create(obj_in=obj_in_data)
 
             # 4. 可能还有后续动作，比如发送欢迎邮件...
             # await email_service.send_welcome_email(user.email)
