@@ -4,7 +4,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 
-from app.api.dependencies import get_user_service
+from app.api.dependencies import get_current_active_user, get_user_service
+from app.models.orm.user import User
 
 # from app.api.params import LimitParam, SkipParam, UsernameQuery
 from app.models.schemas.user import UserResponse, UserSearch, UserUpdate
@@ -14,6 +15,15 @@ from app.utils.file_parser import parse_file
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 
 router = APIRouter()
+
+
+@router.get("/me", response_model=UserResponse)
+async def read_users_me(
+    current_user: User = Depends(get_current_active_user),
+):
+    # 如果代码运行到这里，说明 Token 验证已经通过了
+    # current_user 就是从数据库里查出来的当前用户对象
+    return current_user
 
 
 # 路由：查询用户

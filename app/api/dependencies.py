@@ -1,64 +1,77 @@
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import Session
 
 from app.core.config import settings
-from app.core.database import get_session  # 假设这是你获取 session 的地方
+from app.core.database import async_session_maker
+from app.domain.interfaces import AbstractUnitOfWork
 from app.models.orm.user import User
 from app.repositories.user_repo import UserRepository
+from app.services.unit_of_work import SQLAlchemyUnitOfWork
 from app.services.user_service import UserService
 
-
-# 1. 这里的逻辑只负责：拿连接 -> 实例化 Repo
-async def get_user_repo(session: AsyncSession = Depends(get_session)) -> UserRepository:
-    return UserRepository(session)
-
-
-async def get_user_service(
-    # FastAPI 会自动先执行 get_user_repo 拿到 repo 实例
-    repo: UserRepository = Depends(get_user_repo),
-) -> UserService:
-    return UserService(repo)
-
-
 # 指向你的登录接口 URL，这样 Swagger UI 里的 "Authorize" 按钮才能工作
-reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/login")
+reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
-def get_current_user(
-    session: Session = Depends(get_session), token: str = Depends(reusable_oauth2)
-) -> User:
+# 基础依赖：仅提供一个裸的 Session，不带任何业务事务逻辑
+async def get_session():
+    async with async_session_maker() as session:
+        yield session
+
+
+# 每次请求，实例化一个新的 UoW
+async def get_uow() -> AbstractUnitOfWork:
+    return SQLAlchemyUnitOfWork(async_session_maker)
+
+
+async def get_user_service(uow: AbstractUnitOfWork = Depends(get_uow)) -> UserService:
+    return UserService(uow)
+
+
+async def get_current_user(
+    # 1. 嵌套注入：直接拿到 service 实例
+    session: AsyncSession = Depends(get_session),
+    token: str = Depends(reusable_oauth2),
+) -> User:  # 注意：内部逻辑可以用 ORM，但为了后续属性访问，这里先返回 ORM 对象
     """
     核心鉴权依赖：
-    1. 解析 Token
-    2. 验证 Token 有效性
-    3. 查询数据库获取 User 对象
+    1. 解析并验证 Token
+    2. 通过 Service 层获取 User 实体
     """
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
-        user_id = payload.get("sub")
+        user_id: str = payload.get("sub")
         if user_id is None:
-            raise HTTPException(status_code=403, detail="Token 缺少身份标识")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Token 缺少身份标识"
+            )
     except (JWTError, ValidationError) as e:
-        raise HTTPException(status_code=403, detail="Token 无效或已过期") from e
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Token 无效或已过期"
+        ) from e
 
-    user = session.get(User, user_id)
+    # 2. 调用 Service 层而不是 session.get
+    # 这样以后你在 service 里加缓存或预加载(joinedload)逻辑，这里都会自动受益
+    user = await UserRepository(session).get_by(user_id)
+
     if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
     return user
 
 
 def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """校验用户是否处于激活状态（用于封禁逻辑）"""
+    """校验用户是否处于激活状态"""
     if not current_user.is_active:
-        raise HTTPException(status_code=400, detail="用户账户未激活")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="用户账户未激活"
+        )
     return current_user
 
 
@@ -67,5 +80,5 @@ def get_current_superuser(
 ) -> User:
     """权限校验：仅限超级管理员"""
     if not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="权限不足")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
     return current_user

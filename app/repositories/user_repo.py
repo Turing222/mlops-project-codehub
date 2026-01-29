@@ -33,7 +33,7 @@ class UserRepository(CRUDBase[User, UserCreate, UserUpdate]):
         # 这里的 select(User.username) 就是 Core 风格
         # 它只查询 username 字段，不会把整行数据都查出来
         stmt = select(User.username).where(User.username.in_(usernames))
-        result = await self.session.exec(stmt)
+        result = await self.session.execute(stmt)
 
         # scalars().all() 会返回一个列表 ['zhangsan', 'lisi', ...]
         # 转成 set 方便后续 O(1) 复杂度的查找比对
@@ -47,4 +47,4 @@ class UserRepository(CRUDBase[User, UserCreate, UserUpdate]):
         stmt = stmt.on_conflict_do_update(
             index_elements=["email"], set_={"username": stmt.excluded.username}
         )
-        await self.session.exec(stmt)
+        await self.session.execute(stmt)

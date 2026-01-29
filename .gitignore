@@ -38,3 +38,11 @@ postgres_data/
 
 #chainlit
 .chainlit/
+
+#前端
+.frontend/
+frontend/
+
+#日志
+logs/
+.logs/

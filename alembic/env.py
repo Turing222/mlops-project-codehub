@@ -2,7 +2,7 @@ import os
 import sys
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool, MetaData
+from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
@@ -14,9 +14,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
 # --- [重点 2] 引入你的逻辑 ---
-from sqlmodel import SQLModel
-
-from app.core.database import SQLModel
 
 from app.core.config import get_settings
 

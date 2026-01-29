@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.dependencies import get_user_service
-from app.core.security import create_access_token
 from app.core.config import settings
-from app.models.schemas.user import Token, UserCreate, UserResponse
+from app.core.security import create_access_token
+from app.models.schemas.user import Token, UserCreate, UserLogin, UserResponse
 from app.services.user_service import UserService
 
 router = APIRouter()
@@ -28,9 +28,8 @@ async def login(
     service: UserServiceDep, form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
     # 1. 调用 Service 验证
-    user = await service.authenticate(
-        username=form_data.username, password=form_data.password
-    )
+    login_data = UserLogin(username=form_data.username, password=form_data.password)
+    user = await service.authenticate(login_data)
     if not user:
         raise HTTPException(status_code=400, detail="用户名或密码错误")
 

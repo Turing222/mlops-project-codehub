@@ -2,8 +2,8 @@ from collections.abc import Sequence
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
-from sqlmodel import select
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 ModelType = TypeVar("ModelType")
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
@@ -39,7 +39,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         statement = select(self.model).filter_by(**kwargs)
         result = await self.session.exec(statement)
-        return result.first()
+        return result.scalars().first()
 
     # -----------------------------------------------------------
     # 3. GET MULTI (Read Many): 查询列表（通常带分页）

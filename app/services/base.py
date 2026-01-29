@@ -1,8 +1,8 @@
 from typing import Generic, TypeVar
 
-RepoT = TypeVar("RepoT")
+UowT = TypeVar("UowT")
 
 
-class BaseService(Generic[RepoT]):
-    def __init__(self, repo: RepoT):
-        self.repo = repo
+class BaseService(Generic[UowT]):
+    def __init__(self, uow: UowT):
+        self.uow = uow
