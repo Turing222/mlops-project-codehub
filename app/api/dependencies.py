@@ -9,6 +9,7 @@ from app.core.database import async_session_maker
 from app.domain.interfaces import AbstractUnitOfWork
 from app.models.orm.user import User
 from app.repositories.user_repo import UserRepository
+from app.services.ingestion import IngestionService
 from app.services.unit_of_work import SQLAlchemyUnitOfWork
 from app.services.user_service import UserService
 
@@ -29,6 +30,12 @@ async def get_uow() -> AbstractUnitOfWork:
 
 async def get_user_service(uow: AbstractUnitOfWork = Depends(get_uow)) -> UserService:
     return UserService(uow)
+
+
+async def get_ingestion_service(
+    uow: AbstractUnitOfWork = Depends(get_uow),
+) -> IngestionService:
+    return IngestionService(uow)
 
 
 async def get_current_user(

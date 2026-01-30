@@ -30,6 +30,7 @@ if config.config_file_name is not None:
 # 设置元数据
 from app.models.orm.base import Base, BaseIdModel, AuditMixin
 from app.models.orm.user import User
+from app.models.orm.knowledge import File, FileChunk
 
 target_metadata = Base.metadata
 
