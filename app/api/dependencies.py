@@ -12,9 +12,12 @@ from app.repositories.user_repo import UserRepository
 from app.services.ingestion import IngestionService
 from app.services.unit_of_work import SQLAlchemyUnitOfWork
 from app.services.user_service import UserService
+import logging
 
 # 指向你的登录接口 URL，这样 Swagger UI 里的 "Authorize" 按钮才能工作
 reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+logger = logging.getLogger(__name__)
 
 
 # 基础依赖：仅提供一个裸的 Session，不带任何业务事务逻辑
@@ -24,7 +27,7 @@ async def get_session():
 
 
 # 每次请求，实例化一个新的 UoW
-async def get_uow() -> AbstractUnitOfWork:
+async def get_uow():
     return SQLAlchemyUnitOfWork(async_session_maker)
 
 
@@ -64,7 +67,9 @@ async def get_current_user(
 
     # 2. 调用 Service 层而不是 session.get
     # 这样以后你在 service 里加缓存或预加载(joinedload)逻辑，这里都会自动受益
-    user = await UserRepository(session).get_by(user_id)
+    logger.debug(f"Current value of x: {user_id}, type: {type(user_id)}")
+    print(f"Current value of x: {user_id}, type: {type(user_id)}")
+    user = await UserRepository(session).get(user_id)
 
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")

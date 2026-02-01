@@ -28,9 +28,9 @@ class IngestionService:
             to_db.append({"file_id": file_id, "content": text, "embedding": embedding})
 
         # 3. 入库
-        async with self.uow:
-            await self.uow.knowledge.add_chunks(to_db)
-            await self.uow.commit()
+
+        await self.uow.knowledge.add_chunks(to_db)
+        await self.uow.commit()
 
         # 4. 💡 16G 内存保命操作：手动清理
         del chunks

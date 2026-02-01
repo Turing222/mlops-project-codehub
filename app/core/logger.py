@@ -46,8 +46,8 @@ def setup_logging():
     log_dir = settings.LOG_DIR
 
     logger = logging.getLogger()  # 获取根日志记录器
-    logger.setLevel(logging.INFO)
-
+    # logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     # 创建通用的 JSON Formatter 实例化
     json_formatter = JSONFormatter()
 
@@ -60,6 +60,7 @@ def setup_logging():
     console_formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
+    console_handler.setLevel(logging.DEBUG)
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
