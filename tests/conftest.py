@@ -1,9 +1,9 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
-from app.main import app  # 导入你的 FastAPI 实例
-from app.models.userb import UserBase
-from app.repositories.user_repo import UserRepository
-from app.core.exceptions import ValidationError
+from backend.main import app  # 导入你的 FastAPI 实例
+from backend.models.userb import UserBase
+from backend.repositories.user_repo import UserRepository
+from backend.core.exceptions import ValidationError
 from unittest.mock import ANY
 import respx
 

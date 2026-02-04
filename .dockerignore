@@ -1,0 +1,33 @@
+# 基础排除
+.venv
+.venv_test_313
+.git
+.gitignore
+.vscode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# 测试与监控
+.pytest_cache
+.coverage
+test/
+tests/
+htmlcov/
+
+# 数据与日志 (非常重要，防止镜像过大)
+logs/
+postgres_logs/
+postgres_data/
+redis_data/
+*.log
+
+# 前端 (因为后端镜像不需要前端源码)
+frontend/
+node_modules/
+
+# 其它系统冗余
+.DS_Store
+.files
+.ipynb_checkpoints/

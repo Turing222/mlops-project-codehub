@@ -9,7 +9,7 @@ async def test_get_user_service(mocker):
 
     mock_map = mocker.patch("services.user_service.UserRepository")
     # 2. 调用 Service 方法
-    from app.services.user_service import process_user_import
+    from backend.services.user_service import process_user_import
 
     # service = UserService()
     user = await process_user_import()

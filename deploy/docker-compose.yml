@@ -1,56 +1,100 @@
 services:
-  # --- Service 1: The Database ---
-  # We use a specialized image that has pgvector pre-installed.
-  # This saves us from compiling extensions manually.
-  db:
-    image: ankane/pgvector:v0.5.1
-    container_name: mentor_db
-    restart: always
-    # Persistence: Mapping host directory to container directory
-    # 这一步是为了"持久化"，否则容器一删，数据就没了
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    # Environment Injection: Using the .env file we just made
-    # 这就是为什么我们要先做 Config Management
+
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17-bookworm
+    container_name: pgvector-17-stable
     env_file:
-      - .env
-    # Port Mapping: Host:Container
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    # Healthcheck: Ensuring the DB is ready before other services start
+      - ../.env
+    # 1. 在服务内挂载卷
+    volumes:
+      - pg_data_v17:/var/lib/postgresql/data
+      - ../postgres_logs:/var/log/postgresql
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          #共享缓冲区
+          #工作内存
+          #维护工作内存
+          #有效缓存预测
+    command: >
+      postgres -c shared_buffers=256MB   -c work_mem=32MB   -c maintenance_work_mem=128MB  -c effective_cache_size=768MB
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s   # <--- 新增关键配置：给它30秒时间完成初始化，这期间失败不算Unhealthy
-      
-  # --- Service 2: The Application (Backend + UI) ---
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      # 关键点：这是告诉 Docker 在构建镜像时使用宿主机网络
-      network: host
-    container_name: mentor_app
-    # Dependency Management: Wait for DB to be healthy
-    depends_on:
-      db:
-        condition: service_healthy
-    env_file:
-      - .env
-    # Volume Mounting for Hot-Reloading (Dev Mode)
-    # 这一步至关重要：把本地代码挂载进容器，这样你改代码不需要重启容器
-    volumes:
-      - .:/app
-      # Mount the actual Obsidian Vault path defined in .env
-      - ${OBSIDIAN_VAULT_PATH}:/data/obsidian
-    ports:
-      - "8000:8000"
-    # Overriding the default command to run Chainlit
-    # -w means "watch" (auto-reload on file change)
-    command: chainlit run app/ui/chainlit_app.py -w --port 8000
 
-# Top-level volume declaration
+  redis:
+    image: redis:7.4-alpine
+    env_file:
+      - ../.env # 确保路径正确，读取刚才定义的变量
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    # 通过 --requirepass 参数启用密码
+    command: >
+      redis-server  --maxmemory 384mb  --maxmemory-policy allkeys-lru  --requirepass "${REDIS_PASSWORD}"
+  api:
+    image: ai-tutor-backend:latest
+    volumes:
+      # 将容器内的 /app/logs 映射到当前目录下的 logs 文件夹
+      - ../logs:/app/logs
+    # 限制 Docker 自身收集的控制台日志大小，防止撑爆磁盘
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # 模拟 2026 生产环境 Python 3.11 优化环境
+    env_file:
+      - ../.env
+    environment:
+      - PYTHONMALLOC=debug # 生产环境建议设为 default
+      - WEB_CONCURRENCY=2 # 充分利用 1.5GB 内存，启动 4 个 Worker
+    deploy:
+      resources:
+        limits:
+          memory: 800M
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c 'import http.client; conn = http.client.HTTPConnection(\"localhost\", 8000); conn.request(\"GET\", \"/health\"); res = conn.getresponse(); exit(0 if res.status == 200 else 1)'" ]
+
+  nginx:
+    image: nginx:stable-alpine
+    volumes:
+      # 挂载前端打包后的代码
+      - ../frontend/apps/admin/dist:/usr/share/nginx/html
+      # 引用你之前创建的那个配置文件
+      - ./nginx/project.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      # 限制数据只保留 7 天，防止硬盘撑爆
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+    deploy:
+      resources:
+        limits:
+          memory: 256M # 强制限制内存，防止它在数据多时疯狂扩容
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    environment:
+      - GF_ANALYTICS_REPORTING_ENABLED=false # 禁用统计上报
+      - GF_AUTH_ANONYMOUS_ENABLED=true # 调试阶段开启匿名访问（可选）
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
 volumes:
-  postgres_data:
+  pg_data_v17:
+    name: prod_db_volume

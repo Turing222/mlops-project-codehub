@@ -8,9 +8,7 @@ dependencies = [
     "alembic>=1.17.2",
     "asyncpg>=0.31.0",
     "bcrypt==4.0.1",
-    "docling>=2.70.0",
-    "jupyter>=1.1.1",
-    "numpy>=2.3.5",
+    "fastapi>=0.128.0",
     "openpyxl>=3.1.5",
     "passlib[bcrypt]>=1.7.4",
     "pgvector>=0.4.2",
@@ -20,7 +18,7 @@ dependencies = [
     "pydantic[email]>=2.12.5",
     "python-jose[cryptography]>=3.5.0",
     "python-ulid>=3.1.0",
-    "sentence-transformers>=5.2.2",
+    "redis>=7.1.0",
     "sqlalchemy>=2.0.45",
 ]
 
@@ -56,8 +54,14 @@ extend-immutable-calls = [
 ]
 
 [dependency-groups]
+compute = [
+    "docling>=2.72.0",
+    "numpy>=2.3.5",
+    "sentence-transformers>=5.2.2",
+]
 dev = [
     "httpx>=0.28.1",
+    "jupyter>=1.1.1",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",

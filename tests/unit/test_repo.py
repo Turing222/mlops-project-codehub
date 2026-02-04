@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.models.orm.user import User
+from backend.models.orm.user import User
 
 
 @pytest.mark.asyncio
@@ -22,7 +22,7 @@ async def test_get_users_repo(mocker):
     mock_scalars.all.return_value = fake_users
 
     # 3. 实例化 Repo 并传入 mock_session
-    from app.repositories.user_repo import UserRepository  # 换成你的实际路径
+    from backend.repositories.user_repo import UserRepository  # 换成你的实际路径
 
     repo = UserRepository(mock_session)
 

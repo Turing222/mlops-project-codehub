@@ -15,7 +15,7 @@ sys.path.insert(0, BASE_DIR)
 
 # --- [重点 2] 引入你的逻辑 ---
 
-from app.core.config import get_settings
+from backend.core.config import get_settings
 
 
 # 这里的 import User 非常重要，没它 metadata 就是空的
@@ -28,9 +28,9 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # 设置元数据
-from app.models.orm.base import Base, BaseIdModel, AuditMixin
-from app.models.orm.user import User
-from app.models.orm.knowledge import File, FileChunk
+from backend.models.orm.base import Base, BaseIdModel, AuditMixin
+from backend.models.orm.user import User
+from backend.models.orm.knowledge import File, FileChunk
 
 target_metadata = Base.metadata
 
