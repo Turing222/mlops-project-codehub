@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s # 每 15 秒抓取一次数据，默认是 1 分钟
+
+scrape_configs:
+  # Prometheus 监控它自己
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # 这里以后可以添加你的 FastAPI 后端
+  - job_name: "fastapi-backend"
+    static_configs:
+      - targets: ["host.docker.internal:8000"] # 指向你本地启动的后端

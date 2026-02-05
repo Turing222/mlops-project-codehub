@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from sqlalchemy import DateTime, func
+from sqlalchemy import DateTime, func, text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from ulid import ULID
 
@@ -36,26 +37,29 @@ class BaseIdModel:
     """
 
     id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),  # 显式指定存储类型
         primary_key=True,
         # 这里使用 default 而非 server_default，是因为 ULID 通常由应用层生成
         default=IDGenerator.new_ulid_as_uuid,
         # 显式指定 SQL 类型，确保跨库一致性
-        index=True,
         nullable=False,
         comment="基于ULID生成的唯一标识",
+        server_default=text("gen_random_uuid()"),  # 数据库侧的兜底逻辑
     )
 
 
 class AuditMixin:
-    """
-    审计混合类
-    """
+    # 1. 使用 datetime 类型
+    # 2. sort_order=999 确保这些审计字段在建表时排在最后（可选）
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),  # 建议开启时区支持
+        server_default=func.now(),
+        comment="创建时间",
+    )
 
-    # 使用 server_default 确保 DB 层面有默认值
-    created_at: Mapped[timestamp] = mapped_column(comment="创建时间")
-
-    # onupdate 由 SQLAlchemy 在应用层触发
-    # server_onupdate 可以由数据库触发（取决于 DB 支持）
-    updated_at: Mapped[timestamp] = mapped_column(
-        onupdate=func.now(), comment="最后更新时间"
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),  # 初始时更新时间等于创建时间
+        onupdate=func.now(),  # 应用层触发更新
+        comment="最后更新时间",
     )

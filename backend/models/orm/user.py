@@ -9,7 +9,7 @@ class User(Base, BaseIdModel, AuditMixin):
 
     # 使用 Mapped 明确 Python 类型，mapped_column 明确数据库约束
     username: Mapped[str] = mapped_column(
-        String(20), unique=True, index=True, nullable=False, comment="B端登录唯一标识"
+        String(50), unique=True, index=True, nullable=False, comment="B端登录唯一标识"
     )
     email: Mapped[str] = mapped_column(
         String(255), unique=True, index=True, nullable=False

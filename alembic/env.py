@@ -28,9 +28,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # 设置元数据
-from backend.models.orm.base import Base, BaseIdModel, AuditMixin
-from backend.models.orm.user import User
-from backend.models.orm.knowledge import File, FileChunk
+from backend.models.orm import Base
 
 target_metadata = Base.metadata
 
@@ -41,9 +39,6 @@ def include_object(object, name, type_, reflected, compare_to):
     if type_ == "table" and name and "backup" in name:
         return False
     return True
-
-
-import sys
 
 
 # this is the Alembic Config object, which provides

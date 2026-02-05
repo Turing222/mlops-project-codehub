@@ -1,3 +1,4 @@
+"""
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile, status
 
 from backend.api.dependencies import get_ingestion_service
@@ -19,3 +20,4 @@ async def upload_file(
     # 注意：在生产环境建议用 TaskIQ 异步跑，现在先直接 await
     await service.process_file(temp_path, file_id=123)
     return {"status": "success"}
+"""

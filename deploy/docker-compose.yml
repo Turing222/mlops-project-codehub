@@ -9,6 +9,8 @@ services:
     volumes:
       - pg_data_v17:/var/lib/postgresql/data
       - ../postgres_logs:/var/log/postgresql
+    ports:
+      - "5432:5432" # 将容器内的 5432 映射到 Windows/WSL 的 5432
     deploy:
       resources:
         limits:
@@ -37,7 +39,7 @@ services:
     command: >
       redis-server  --maxmemory 384mb  --maxmemory-policy allkeys-lru  --requirepass "${REDIS_PASSWORD}"
   api:
-    image: ai-tutor-backend:latest
+    image: ai-tutor-backend:v1
     volumes:
       # 将容器内的 /app/logs 映射到当前目录下的 logs 文件夹
       - ../logs:/app/logs
@@ -58,8 +60,13 @@ services:
         limits:
           memory: 800M
     healthcheck:
-      test: [ "CMD-SHELL", "python -c 'import http.client; conn = http.client.HTTPConnection(\"localhost\", 8000); conn.request(\"GET\", \"/health\"); res = conn.getresponse(); exit(0 if res.status == 200 else 1)'" ]
-
+      # 1. 确保路径与你的路由完全一致
+      # 2. 使用 python3 确保兼容性
+      test: [ "CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/v1/health_check/live\", timeout=5)' || exit 1" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s # 考虑到 FastAPI 启动和数据库连接，给 10 秒缓冲
   nginx:
     image: nginx:stable-alpine
     volumes:

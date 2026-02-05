@@ -1,3 +1,4 @@
+"""
 import gc
 
 import torch
@@ -37,3 +38,4 @@ class IngestionService:
         del to_db
         torch.cuda.empty_cache()  # 清理显存碎片
         gc.collect()  # 清理系统内存
+"""

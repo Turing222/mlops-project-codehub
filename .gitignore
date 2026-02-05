@@ -43,6 +43,10 @@ postgres_data/
 .frontend/
 frontend/
 
-#日志
-logs/
+# 数据与日志 (非常重要，防止镜像过大)
+logs/*
+postgres_logs/
+postgres_data/
+redis_data/
+*.log
 .logs/

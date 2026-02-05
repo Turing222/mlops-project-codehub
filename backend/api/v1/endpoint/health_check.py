@@ -11,7 +11,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/health/db_ready")
+@router.get("/db_ready")
 async def readiness_check(db: AsyncSession = Depends(get_session)):
     """
     就绪检查：确保 DB 能连通，且连接池没爆
@@ -37,7 +37,7 @@ async def readiness_check(db: AsyncSession = Depends(get_session)):
         raise HTTPException(status_code=503, detail="Database unreachable") from e
 
 
-@router.get("/health/live")
+@router.get("/live")
 async def liveness_check():
     """
     存活检查：仅确保 FastAPI 进程本身在线

@@ -46,15 +46,18 @@ WORKDIR /app
 # 关键：从 builder 阶段只拷贝最终的虚拟环境
 # 这样镜像里就不会包含 uv 及其缓存，也不会包含 build-essential 等编译工具
 COPY --from=builder /app/.venv /app/.venv
-COPY . .
+
 
 # 将虚拟环境的 bin 目录加入 PATH
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
-
+#迁移代码
+COPY alembic/ ./alembic/
+COPY alembic.ini .
+COPY backend/ ./backend/
 # 启动 (建议先跑迁移，再起服务)
 # 3. --proxy-headers 如果你前面有 Nginx 或负载均衡器，必须开启
-CMD ["/app/.venv/bin/uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
 #CMD ["/app/.venv/bin/uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
 # Expose the port
 EXPOSE 8000

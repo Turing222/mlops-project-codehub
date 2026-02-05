@@ -1,17 +1,19 @@
 import logging
+from collections.abc import AsyncGenerator
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncGenerator, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
 from backend.core.database import async_session_maker
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.user import User
 from backend.repositories.user_repo import UserRepository
-from backend.services.ingestion import IngestionService
+
+# from backend.services.ingestion import IngestionService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.user_service import UserService
 
@@ -36,10 +38,12 @@ async def get_user_service(uow: AbstractUnitOfWork = Depends(get_uow)) -> UserSe
     return UserService(uow)
 
 
+"""
 async def get_ingestion_service(
     uow: AbstractUnitOfWork = Depends(get_uow),
 ) -> IngestionService:
     return IngestionService(uow)
+"""
 
 
 async def get_current_user(

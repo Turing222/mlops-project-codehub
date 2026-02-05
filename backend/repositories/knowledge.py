@@ -1,6 +1,6 @@
 from sqlalchemy import insert
 
-from backend.models.orm.knowledge import FileChunk
+from backend.models.orm.file import FileChunk
 
 
 class KnowledgeRepository:

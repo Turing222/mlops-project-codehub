@@ -1,20 +1,19 @@
 services:
   # --- PostgreSQL 核心数据库 ---
   db:
-    image: ankane/pgvector:v0.5.1  # 使用 Postgres + Vector 插件
+    image: ankane/pgvector:v0.5.1 # 使用 Postgres + Vector 插件
     container_name: mentor_db_test_v1
-    restart: always            # 相当于 Systemd 的 Restart=always
+    restart: no # 相当于 Systemd 的 Restart=always
     env_file:
       - .env
     ports:
-      - "5432:5432"            # 将容器内的 5432 映射到 Windows/WSL 的 5432
+      - "5432:5432" # 将容器内的 5432 映射到 Windows/WSL 的 5432
     volumes:
       # 重要：将数据持久化到当前目录下的 postgres_data 文件夹
       # 这样即使你删掉容器，数据也不会丢
       - ./postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 5
-

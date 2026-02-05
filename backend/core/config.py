@@ -1,79 +1,56 @@
 import os
 from functools import lru_cache
 from pathlib import Path
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """
-    Application Settings configuration class.
-    Inherits from BaseSettings to automatically load environment variables.
-    """
+    # --- 目录配置 ---
+    # 使用 Path 的写法更现代、简洁
+    BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
+    LOG_DIR: Path = BASE_DIR / "logs"
 
-    # --- BASE DIR ---
-    BASE_DIR: Path = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
-    # --- LOG DIR ---
-    LOG_DIR: Path = os.path.join(BASE_DIR, "logs")
-
-    # --- Project Info ---
+    # --- 项目信息 ---
     PROJECT_NAME: str = "Obsidian Mentor AI"
     VERSION: str = "0.1.0"
     API_V1_STR: str = "/api/v1"
 
-    # --- Database Configuration (PostgreSQL) ---
-    # Field(...) indicates this field is required and has no default value.
-    # If not found in env, the app will crash at startup (Fail Fast principle).
-    POSTGRES_USER: str = "admin"
-    POSTGRES_PASSWORD: str = "securepassword123"
-    POSTGRES_SERVER: str = "localhost"
+    # --- 数据库配置 (敏感信息不设置默认值，强制从 env 读取) ---
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_SERVER: str = "localhost"  # 默认值可以保留，env 有则覆盖
     POSTGRES_PORT: int = 5432
-    POSTGRES_DB: str = "mentor_db"
+    POSTGRES_DB: str
 
     BATCH_SIZE: int = 500
 
-    # --- LLM & AI Configuration ---
-    # Optional[str] means it can be None (e.g., if using local LLM only).
+    # --- LLM & AI 配置 ---
     OPENAI_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
 
-    # Path to your Obsidian Vault (Local Volume Mount)
     OBSIDIAN_VAULT_PATH: str = "/data/obsidian"
 
-    # --- Security ---
-    # Secret key for JWT token generation (FastAPI Users)
-    SECRET_KEY: str = "asdvzxcvasdf"  # "CHANGE_THIS_TO_A_STRONG_RANDOM_STRING"
+    # --- 安全配置 (SECRET_KEY 必须从 env 读取) ---
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
-    # Configuration for loading .env file
+    # Pydantic Settings 配置
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", case_sensitive=True
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"
     )
 
     @property
     def database_url(self) -> str:
-        """
-        Constructs the SQLAlchemy connection string dynamically.
-        Format: postgresql+asyncpg://user:password@server:port/db
-        """
         return (
             f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
 
 
-# --- Singleton Pattern Implementation ---
 @lru_cache
 def get_settings() -> Settings:
-    """
-    Creates a singleton instance of Settings.
-    lru_cache ensures we read the .env file only once per execution context.
-    """
     return Settings()
 
 
-# Global settings instance
 settings = get_settings()
