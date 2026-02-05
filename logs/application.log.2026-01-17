@@ -1,9 +1,0 @@
-{"timestamp": "2026-01-17T21:03:32.401887", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
-{"timestamp": "2026-01-17T21:52:50.828217", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
-{"timestamp": "2026-01-17T21:53:06.761742", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
-{"timestamp": "2026-01-17T21:53:10.918928", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
-{"timestamp": "2026-01-17T21:53:15.666161", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
-{"timestamp": "2026-01-17T21:53:17.956508", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
-{"timestamp": "2026-01-17T23:28:04.264124", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
-{"timestamp": "2026-01-17T23:47:01.476087", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}
-{"timestamp": "2026-01-17T23:53:12.331962", "level": "INFO", "message": "系统初始化完成", "logger": "app.main", "module": "main", "func_name": "<module>", "line_no": 31}

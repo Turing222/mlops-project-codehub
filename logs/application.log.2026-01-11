@@ -1,4 +1,0 @@
-{"timestamp": "2026-01-11T03:03:34.649338", "level": "INFO", "message": "系统初始化完成", "logger": "__main__", "module": "main", "func_name": "<module>", "line_no": 30}
-{"timestamp": "2026-01-11T03:05:14.314186", "level": "INFO", "message": "系统初始化完成", "logger": "__main__", "module": "main", "func_name": "<module>", "line_no": 30}
-{"timestamp": "2026-01-11T03:05:59.072027", "level": "INFO", "message": "系统初始化完成", "logger": "__main__", "module": "main", "func_name": "<module>", "line_no": 30}
-{"timestamp": "2026-01-11T03:05:59.072195", "level": "ERROR", "message": "计算发生了错误", "logger": "__main__", "module": "main", "func_name": "<module>", "line_no": 35, "exception": "Traceback (most recent call last):\n  File \"/home/tongying/workspace/mlops-project/app/main.py\", line 32, in <module>\n    1 / 0\n    ~~^~~\nZeroDivisionError: division by zero"}
