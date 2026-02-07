@@ -9,8 +9,6 @@ services:
     volumes:
       - pg_data_v17:/var/lib/postgresql/data
       - ../postgres_logs:/var/log/postgresql
-    ports:
-      - "5432:5432" # 将容器内的 5432 映射到 Windows/WSL 的 5432
     deploy:
       resources:
         limits:
@@ -40,6 +38,7 @@ services:
       redis-server  --maxmemory 384mb  --maxmemory-policy allkeys-lru  --requirepass "${REDIS_PASSWORD}"
   api:
     image: ai-tutor-backend:v1
+
     volumes:
       # 将容器内的 /app/logs 映射到当前目录下的 logs 文件夹
       - ../logs:/app/logs
@@ -80,6 +79,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
+    profiles: [ "monitoring" ] # 打上标签
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       # 限制数据只保留 7 天，防止硬盘撑爆
@@ -94,6 +94,7 @@ services:
   grafana:
     image: grafana/grafana-oss:latest
     container_name: grafana
+    profiles: [ "monitoring" ] # 打上标签
     environment:
       - GF_ANALYTICS_REPORTING_ENABLED=false # 禁用统计上报
       - GF_AUTH_ANONYMOUS_ENABLED=true # 调试阶段开启匿名访问（可选）

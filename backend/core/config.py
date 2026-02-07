@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # --- 数据库配置 (敏感信息不设置默认值，强制从 env 读取) ---
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
-    POSTGRES_SERVER: str = "localhost"  # 默认值可以保留，env 有则覆盖
+    POSTGRES_SERVER: str = "postgres1"  # 默认值可以保留，env 有则覆盖
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str
 
@@ -37,7 +37,10 @@ class Settings(BaseSettings):
 
     # Pydantic Settings 配置
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"
+        env_file=".env" if os.path.exists(".env") else None,
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
     )
 
     @property

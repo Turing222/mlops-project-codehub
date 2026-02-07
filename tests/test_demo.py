@@ -9,11 +9,17 @@ def new_func():
 
 new_func()
 # %%
-print("My first GitHub commit.")
+x = 10
 
 
-def test_add():
-    assert 1 + 1 == 2
+def my_func():
+    x = 20
+    print(x)  # 你以为会打印 10
+    # 但因为这一行赋值，Python 会在编译阶段把 x 标记为“局部变量”
+
+
+my_func()
+# 报错：UnboundLocalError: local variable 'x' referenced before assignment
 
 
 # %%

@@ -1,0 +1,51 @@
+services:
+  # --- 1. 后端 API 服务：开发模式增强 ---
+  api:
+    # 如果你需要重新构建镜像，context 必须指向根目录（..）
+    build:
+      context: ..
+      dockerfile: ./Dockerfile # 假设你的 Dockerfile 在 deploy 文件夹内
+
+    # 狸猫换太子：将本地 backend 源码挂载到容器的 /app 目录
+    # 注意：这里的路径是相对于本文件（deploy/）的路径
+    volumes:
+      - ..:/app # 挂载所有代码（包括前端、.env、各种配置文件）
+      - /app/.venv
+    ports:
+      - "8000:8000"
+    # 覆盖镜像的启动命令，增加 --reload 参数实现热更新
+    # 假设你使用的是 uvicorn，如果是其他请自行替换
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers
+
+    # 开发环境特有的变量（会与 .env 合并）
+    environment:
+      - DEBUG=True
+      - PYTHONMALLOC=debug
+
+  # --- 2. 数据库服务：方便本地管理 ---
+  postgres:
+    # 在开发阶段，你可能想用 Windows 上的 pgAdmin 或 Navicat 直接连数据库
+    # 这里确保端口映射是打开的
+    ports:
+      - "5432:5432"
+
+  # --- 3. Redis 服务：方便查看缓存 ---
+  redis:
+    ports:
+      - "6379:6379"
+
+  # --- 4. Nginx 服务：前端热更新 ---
+  nginx:
+    volumes:
+      # 如果你本地也在开发前端，可以把 dist 挂载进去
+      # 这样你前端 npm run build 后，Nginx 里的内容立刻就变了
+      - ../frontend/apps/admin/dist:/usr/share/nginx/html:ro
+
+  # --- 5. 监控工具：通常开发阶段不需要一直开着，可以保持默认或按需修改 ---
+  prometheus:
+    ports:
+      - "9090:9090"
+
+  grafana:
+    ports:
+      - "3000:3000"
