@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     # --- 目录配置 ---
     # 使用 Path 的写法更现代、简洁
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
-    LOG_DIR: Path = BASE_DIR / "logs"
+    LOG_DIR: Path = BASE_DIR / "logs/backend"
 
     # --- 项目信息 ---
     PROJECT_NAME: str = "Obsidian Mentor AI"

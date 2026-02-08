@@ -11,14 +11,17 @@ services:
     volumes:
       - ..:/app # 挂载所有代码（包括前端、.env、各种配置文件）
       - /app/.venv
-    ports:
-      - "8000:8000"
+    #水平扩展时端口映射会冲突
+    #ports:
+    #  - "8000:8000"
     # 覆盖镜像的启动命令，增加 --reload 参数实现热更新
     # 假设你使用的是 uvicorn，如果是其他请自行替换
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers
 
     # 开发环境特有的变量（会与 .env 合并）
     environment:
+      - PYTHONDONTWRITEBYTECODE=1 # 必须：不生成 .pyc，避免缓存干扰热更新
+      - PYTHONUNBUFFERED=1 # 必须：让日志实时打印到 Docker logs
       - DEBUG=True
       - PYTHONMALLOC=debug
 

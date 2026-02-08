@@ -37,7 +37,9 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
-app = FastAPI(title="我的AI Mentor后台系统", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    root_path="/api", title="我的AI Mentor后台系统", version="1.0.0", lifespan=lifespan
+)
 
 # 全局异常处理
 setup_exception_handlers(app)
@@ -50,4 +52,4 @@ def read_root():
 
 
 # 前缀名
-app.include_router(api_router, prefix="/api/v1")
+app.include_router(api_router, prefix="/v1")
