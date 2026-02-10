@@ -50,3 +50,8 @@ postgres_data/
 redis_data/
 *.log
 .logs/
+
+#密钥
+deploy/nginx
+#本地测试
+tests/test_demo.py

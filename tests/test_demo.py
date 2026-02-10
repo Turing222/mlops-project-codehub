@@ -1,4 +1,15 @@
 # %%
+import sys
+
+a = []
+b = 1
+c = {}
+print(sys.getsizeof(a))
+print(sys.getsizeof(b))
+print(sys.getsizeof(c))
+
+
+# %%
 def new_func():
     print("Hello from WSL!")
     for i in range(10):
