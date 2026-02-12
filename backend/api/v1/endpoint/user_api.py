@@ -8,7 +8,7 @@ from backend.api.dependencies import get_current_active_user, get_uow
 from backend.models.orm.user import User
 
 # from app.api.params import LimitParam, SkipParam, UsernameQuery
-from backend.models.schemas.user import UserResponse, UserSearch, UserUpdate
+from backend.models.schemas.user_schema import UserResponse, UserSearch, UserUpdate
 from backend.services.user_service import UserService
 from backend.utils.file_parser import parse_file
 from backend.services.unit_of_work import AbstractUnitOfWork
@@ -25,7 +25,12 @@ async def read_users_me(
 ):
     # 如果代码运行到这里，说明 Token 验证已经通过了
     # current_user 就是从数据库里查出来的当前用户对象
-    return current_user
+    user_resp_data = UserResponse.model_validate(current_user)
+
+    # 复杂的、变动的、关联的字段，手动覆盖
+    # user_resp_data.org_name = current_user.organization.name if current_user.organization else "独立用户"
+
+    return user_resp_data
 
 
 # 路由：查询用户

@@ -51,6 +51,7 @@ services:
     # 限制 Docker 自身收集的控制台日志大小，防止撑爆磁盘
     #只管控制台日志
     logging: *default-logging
+    user: "${CURRENT_UID}:${CURRENT_GID}"
     # 模拟 2026 生产环境 Python 3.11 优化环境
     env_file:
       - ../.env
@@ -65,6 +66,11 @@ services:
         reservations:
           # 预留内存，确保容器不会因为内存碎片化启动失败
           memory: 128M
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     healthcheck:
       # 1. 确保路径与你的路由完全一致
       # 2. 使用 python3 确保兼容性
@@ -84,7 +90,8 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - ../logs/nginx:/var/log/nginx # 使用具名卷挂载日志
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443" # 映射 HTTPS

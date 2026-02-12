@@ -1,8 +1,8 @@
-"""initial_schema_after_sqlmodel_removal
+"""base table
 
-Revision ID: a4cf886d797c
+Revision ID: bef7eff16f62
 Revises:
-Create Date: 2026-02-06 00:16:14.126927
+Create Date: 2026-02-10 20:25:14.650273
 
 """
 
@@ -14,7 +14,7 @@ import pgvector
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "a4cf886d797c"
+revision: str = "bef7eff16f62"
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -52,13 +52,12 @@ def upgrade() -> None:
             nullable=False,
             comment="最后更新时间",
         ),
-        sa.PrimaryKeyConstraint("id"),
+        sa.PrimaryKeyConstraint("id", name=op.f("task_jobs_pkey")),
     )
-    op.create_index(op.f("ix_task_jobs_id"), "task_jobs", ["id"], unique=False)
     op.create_table(
         "users",
         sa.Column(
-            "username", sa.String(length=20), nullable=False, comment="B端登录唯一标识"
+            "username", sa.String(length=50), nullable=False, comment="B端登录唯一标识"
         ),
         sa.Column("email", sa.String(length=255), nullable=False),
         sa.Column(
@@ -92,10 +91,9 @@ def upgrade() -> None:
             nullable=False,
             comment="最后更新时间",
         ),
-        sa.PrimaryKeyConstraint("id"),
+        sa.PrimaryKeyConstraint("id", name=op.f("users_pkey")),
     )
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
-    op.create_index(op.f("ix_users_id"), "users", ["id"], unique=False)
     op.create_index(op.f("ix_users_username"), "users", ["username"], unique=True)
     op.create_table(
         "knowledge_bases",
@@ -123,11 +121,13 @@ def upgrade() -> None:
             nullable=False,
             comment="最后更新时间",
         ),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_knowledge_bases_id"), "knowledge_bases", ["id"], unique=False
+        sa.ForeignKeyConstraint(
+            ["user_id"],
+            ["users.id"],
+            name=op.f("fk_knowledge_bases_user_id_users"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("knowledge_bases_pkey")),
     )
     op.create_table(
         "chat_sessions",
@@ -164,11 +164,16 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["kb_id"],
             ["knowledge_bases.id"],
+            name=op.f("fk_chat_sessions_kb_id_knowledge_bases"),
         ),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(
+            ["user_id"],
+            ["users.id"],
+            name=op.f("fk_chat_sessions_user_id_users"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("chat_sessions_pkey")),
     )
-    op.create_index(op.f("ix_chat_sessions_id"), "chat_sessions", ["id"], unique=False)
     op.create_index(
         op.f("ix_chat_sessions_user_id"), "chat_sessions", ["user_id"], unique=False
     )
@@ -200,10 +205,14 @@ def upgrade() -> None:
             nullable=False,
             comment="最后更新时间",
         ),
-        sa.ForeignKeyConstraint(["kb_id"], ["knowledge_bases.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(
+            ["kb_id"],
+            ["knowledge_bases.id"],
+            name=op.f("fk_files_kb_id_knowledge_bases"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("files_pkey")),
     )
-    op.create_index(op.f("ix_files_id"), "files", ["id"], unique=False)
     op.create_table(
         "chat_messages",
         sa.Column("session_id", sa.UUID(), nullable=False),
@@ -239,9 +248,12 @@ def upgrade() -> None:
             comment="最后更新时间",
         ),
         sa.ForeignKeyConstraint(
-            ["session_id"], ["chat_sessions.id"], ondelete="CASCADE"
+            ["session_id"],
+            ["chat_sessions.id"],
+            name=op.f("fk_chat_messages_session_id_chat_sessions"),
+            ondelete="CASCADE",
         ),
-        sa.PrimaryKeyConstraint("id"),
+        sa.PrimaryKeyConstraint("id", name=op.f("chat_messages_pkey")),
     )
     op.create_index(
         "idx_msgs_session_created",
@@ -249,7 +261,6 @@ def upgrade() -> None:
         ["session_id", "created_at"],
         unique=False,
     )
-    op.create_index(op.f("ix_chat_messages_id"), "chat_messages", ["id"], unique=False)
     op.create_index(
         op.f("ix_chat_messages_session_id"),
         "chat_messages",
@@ -278,8 +289,13 @@ def upgrade() -> None:
             nullable=False,
             comment="基于ULID生成的唯一标识",
         ),
-        sa.ForeignKeyConstraint(["file_id"], ["files.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(
+            ["file_id"],
+            ["files.id"],
+            name=op.f("fk_file_chunks_file_id_files"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("file_chunks_pkey")),
     )
     op.create_index(
         "hnsw_idx_file_chunks_embedding",
@@ -290,14 +306,12 @@ def upgrade() -> None:
         postgresql_with={"m": 16, "ef_construction": 64},
         postgresql_ops={"embedding": "vector_cosine_ops"},
     )
-    op.create_index(op.f("ix_file_chunks_id"), "file_chunks", ["id"], unique=False)
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     # ### commands auto generated by Alembic - please adjust! ###
-    op.drop_index(op.f("ix_file_chunks_id"), table_name="file_chunks")
     op.drop_index(
         "hnsw_idx_file_chunks_embedding",
         table_name="file_chunks",
@@ -307,20 +321,14 @@ def downgrade() -> None:
     )
     op.drop_table("file_chunks")
     op.drop_index(op.f("ix_chat_messages_session_id"), table_name="chat_messages")
-    op.drop_index(op.f("ix_chat_messages_id"), table_name="chat_messages")
     op.drop_index("idx_msgs_session_created", table_name="chat_messages")
     op.drop_table("chat_messages")
-    op.drop_index(op.f("ix_files_id"), table_name="files")
     op.drop_table("files")
     op.drop_index(op.f("ix_chat_sessions_user_id"), table_name="chat_sessions")
-    op.drop_index(op.f("ix_chat_sessions_id"), table_name="chat_sessions")
     op.drop_table("chat_sessions")
-    op.drop_index(op.f("ix_knowledge_bases_id"), table_name="knowledge_bases")
     op.drop_table("knowledge_bases")
     op.drop_index(op.f("ix_users_username"), table_name="users")
-    op.drop_index(op.f("ix_users_id"), table_name="users")
     op.drop_index(op.f("ix_users_email"), table_name="users")
     op.drop_table("users")
-    op.drop_index(op.f("ix_task_jobs_id"), table_name="task_jobs")
     op.drop_table("task_jobs")
     # ### end Alembic commands ###

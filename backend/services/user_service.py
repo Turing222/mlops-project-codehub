@@ -16,7 +16,7 @@ from backend.core.exceptions import (
 from backend.core.security import get_password_hash, verify_password
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.user import User
-from backend.models.schemas.user import UserBase, UserLogin, UserUpdate
+from backend.models.schemas.user_schema import UserBase, UserLogin, UserUpdate
 from backend.services.base import BaseService
 
 # 模块级 logger，或者放在类里也可以

@@ -55,3 +55,5 @@ redis_data/
 deploy/nginx
 #本地测试
 tests/test_demo.py
+#历史数据库更新版本
+alembic/archive_versions

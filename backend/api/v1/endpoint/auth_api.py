@@ -1,18 +1,22 @@
 from datetime import timedelta
-from typing import Annotated, Any
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 
-from backend.api.dependencies import get_user_service, get_uow
+from backend.api.dependencies import get_uow
 from backend.core.config import settings
 from backend.core.security import create_access_token
-from backend.models.schemas.user import Token, UserCreate, UserLogin, UserResponse
-from backend.services.user_service import UserService
+from backend.models.schemas.user_schema import (
+    Token,
+    UserCreate,
+    UserLogin,
+    UserResponse,
+)
 from backend.services.unit_of_work import AbstractUnitOfWork
+from backend.services.user_service import UserService
 
 router = APIRouter()
-# UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 
 
 @router.post("/register", response_model=UserResponse)

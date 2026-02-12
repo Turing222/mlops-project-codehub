@@ -2,16 +2,25 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from sqlalchemy import DateTime, func, text
+from sqlalchemy import DateTime, MetaData, func, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from ulid import ULID
+import pgvector.sqlalchemy
 
 # 1. 定义一个通用的类型注解，方便全系统统一修改规格
 # 例如：将来想把所有时间戳改为带时区的，只需改这里
 timestamp = Annotated[
     datetime, mapped_column(DateTime(timezone=True), server_default=func.now())
 ]
+
+naming_convention = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "%(table_name)s_pkey",
+}
 
 
 class IDGenerator:
@@ -23,6 +32,7 @@ class IDGenerator:
 
 
 class Base(DeclarativeBase):
+    metadata = MetaData(naming_convention=naming_convention)
     """所有模型的祖先类"""
 
     pass

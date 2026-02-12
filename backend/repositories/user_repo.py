@@ -3,7 +3,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.orm.user import User  # 你的 SQLAlchemy 模型
-from backend.models.schemas.user import UserCreate, UserUpdate
+from backend.models.schemas.user_schema import UserCreate, UserUpdate
 from backend.repositories.base import CRUDBase
 
 

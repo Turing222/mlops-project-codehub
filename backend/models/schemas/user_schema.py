@@ -27,8 +27,8 @@ class UserBase(BaseModel):
     只放 API 层最通用的字段。
     """
 
-    username: UsernameStr = Field(..., description="唯一登录名")
-    email: EmailStr = Field(..., description="企业联系邮箱")
+    username: UsernameStr = Field(...)
+    email: EmailStr = Field(...)
 
 
 # --- Request Schemas (输入控制) ---
@@ -37,8 +37,10 @@ class UserBase(BaseModel):
 class UserSearch(BaseModel):
     """专门用于通过单一标识符查询用户的 Schema"""
 
-    username: UsernameStr | None = None
-    email: EmailStr | None = None
+    username: UsernameStr | None = Field(
+        None, description="登录名和邮箱必须至少提供一个"
+    )
+    email: EmailStr | None = Field(None, description="登录名和邮箱必须至少提供一个")
 
     @model_validator(mode="after")
     def check_at_least_one(self) -> Self:

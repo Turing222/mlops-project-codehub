@@ -11,6 +11,9 @@ services:
     volumes:
       - ..:/app # 挂载所有代码（包括前端、.env、各种配置文件）
       - /app/.venv
+      - ../logs/backend:/app/logs/backend
+      - /etc/passwd:/etc/passwd:ro
+      - /etc/group:/etc/group:ro
     #水平扩展时端口映射会冲突
     #ports:
     #  - "8000:8000"

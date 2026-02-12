@@ -1,6 +1,8 @@
 # app/services/unit_of_work.py
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.repositories.user_repo import UserRepository
+from backend.repositories.chat_repo import ChatRepository
+from backend.repositories.task_repo import TaskRepository
 
 
 class SQLAlchemyUnitOfWork(AbstractUnitOfWork):
@@ -10,6 +12,8 @@ class SQLAlchemyUnitOfWork(AbstractUnitOfWork):
     async def __aenter__(self):
         self.session = self.session_factory()  # 真正开启 Session
         self.users = UserRepository(self.session)  # 共享同一个 session
+        self.chat_repo = ChatRepository(self.session)
+        self.task = TaskRepository(self.session)
         return await super().__aenter__()
 
     async def __aexit__(self, *args):

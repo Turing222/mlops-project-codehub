@@ -1,19 +1,14 @@
 import logging
-from collections.abc import AsyncGenerator
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
 from backend.core.database import async_session_maker
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.user import User
-from backend.repositories.user_repo import UserRepository
-
-# from backend.services.ingestion import IngestionService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.user_service import UserService
 
@@ -23,32 +18,14 @@ reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 logger = logging.getLogger(__name__)
 
 
-# 基础依赖：仅提供一个裸的 Session，不带任何业务事务逻辑
-async def get_session() -> AsyncGenerator:
-    async with async_session_maker() as session:
-        yield session
-
-
 # 每次请求，实例化一个新的 UoW
 async def get_uow():
     return SQLAlchemyUnitOfWork(async_session_maker)
 
 
-async def get_user_service(uow: AbstractUnitOfWork = Depends(get_uow)) -> UserService:
-    return UserService(uow)
-
-
-"""
-async def get_ingestion_service(
-    uow: AbstractUnitOfWork = Depends(get_uow),
-) -> IngestionService:
-    return IngestionService(uow)
-"""
-
-
 async def get_current_user(
     # 1. 嵌套注入：直接拿到 service 实例
-    session: AsyncSession = Depends(get_session),
+    uow: AbstractUnitOfWork = Depends(get_uow),
     token: str = Depends(reusable_oauth2),
 ) -> User:  # 注意：内部逻辑可以用 ORM，但为了后续属性访问，这里先返回 ORM 对象
     """
@@ -73,8 +50,9 @@ async def get_current_user(
     # 2. 调用 Service 层而不是 session.get
     # 这样以后你在 service 里加缓存或预加载(joinedload)逻辑，这里都会自动受益
     logger.debug(f"Current value of x: {user_id}, type: {type(user_id)}")
-    print(f"Current value of x: {user_id}, type: {type(user_id)}")
-    user = await UserRepository(session).get(user_id)
+
+    async with uow:
+        user = await UserService(uow).get_by_id(user_id)
 
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
