@@ -1,12 +1,11 @@
 import logging
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import ValidationError
 
 from backend.core.config import settings
-from backend.core.database import async_session_maker
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.user import User
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
@@ -19,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 
 # 每次请求，实例化一个新的 UoW
-async def get_uow():
-    return SQLAlchemyUnitOfWork(async_session_maker)
+async def get_uow(request: Request) -> SQLAlchemyUnitOfWork:
+    return SQLAlchemyUnitOfWork(request.app.state.session_factory)
 
 
 async def get_current_user(

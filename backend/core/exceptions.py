@@ -1,7 +1,6 @@
 # app/core/exceptions.py
 
 import logging
-import traceback
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -12,59 +11,43 @@ logger = logging.getLogger(__name__)
 
 
 def setup_exception_handlers(app: FastAPI):
-    """
-    配置全局异常处理
-    """
 
-    # 1. 捕获所有常规 Python 异常 (500 Internal Server Error)
-    @app.exception_handler(Exception)
-    async def global_exception_handler(request: Request, exc: Exception):
-        """
-        当代码里抛出未处理的异常（如 1/0, KeyError）时触发
-        """
-        # 获取请求的详细信息，方便排查
-        error_info = {
-            "url": str(request.url),
-            "method": request.method,
-            "client_ip": request.client.host if request.client else "unknown",
-            "error_msg": str(exc),
-            # traceback.format_exc() 返回字符串形式的堆栈
-            "traceback": traceback.format_exc(),
-        }
-
-        # 【核心步骤】记录 ERROR 级别的日志
-        # exc_info=True 会自动把堆栈加入到 JSON 日志的 exception 字段中
-        # extra=... 可以把 request 信息注入（需要 Logging 配置支持 extra，或者直接写在 msg 里）
-
-        # 简单做法：直接拼接到 message 里，或者使用 structlog/loguru
-        # 这里为了配合之前的 JSON Logger，我们手动构造一个字典传给 message
-        # (注意：标准库 logging 的 message 通常是字符串，但如果你配置了 JSON formatter
-        # 且做了特殊处理，可以传 dict。如果没有，建议用 f-string)
-
-        logger.error(
-            f"全局异常捕获: {request.method} {request.url} - {exc}",
-            exc_info=True,  # 关键！这会让错误堆栈写入 error.log
-            extra=error_info,  # 如果你的 Formatter 支持 extra 字段，这很有用
-        )
-
+    # --- 1. 处理业务异常 (AppError 系列) ---
+    @app.exception_handler(AppError)
+    async def app_error_handler(request: Request, exc: AppError):
+        # 直接从异常对象获取状态码，不再写 if-else
         return JSONResponse(
-            status_code=500,
+            status_code=exc.status_code,
             content={
-                "code": 500,
-                "message": "服务器内部错误，请联系管理员",
-                "request_id": str(
-                    request.headers.get("x-request-id", "")
-                ),  # 如果有 trace ID 最好带上
+                "code": exc.status_code,
+                "message": exc.message,
+                "details": exc.details,
+                "request_id": request.state.request_id,  # 关联中间件生成的 ID
             },
         )
 
-    # 2. (可选) 捕获特定的自定义异常
-    # @app.exception_handler(MyCustomException)
-    # ...
+    # --- 2. 处理意料之外的系统异常 (真正的 Bug) ---
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        # 如果走到这一步，说明是没捕获的 1/0, AttributeError 等
+        # 这里才需要记录 exc_info=True (堆栈)
+        logger.error(f"系统崩溃: {str(exc)}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": "服务器开小差了",
+                "request_id": request.state.request_id,
+            },
+        )
+
+
+# ---  定义异常类 (Domain Layer) ---
 
 
 class AppError(Exception):
     """所有业务异常的基类"""
+
+    status_code = 400  # 默认 400
 
     def __init__(self, message: str, details: dict = None):
         super().__init__(message)
@@ -72,25 +55,37 @@ class AppError(Exception):
         self.details = details or {}
 
 
-class ServiceError(AppError):
-    """服务层发生的逻辑错误"""
-
-    pass
-
-
 class ValidationError(AppError):
-    """数据校验失败"""
+    """参数校验失败"""
 
-    pass
+    status_code = 422
 
 
-class DatabaseOperationError(AppError):
-    """数据库操作失败"""
+class ResourceNotFound(AppError):
+    """资源不存在"""
 
-    pass
+    status_code = 404
 
 
 class FileParseException(AppError):
     """文件读取操作失败"""
 
-    pass
+    status_code = 403
+
+
+class ServiceError(AppError):
+    """服务层发生的逻辑错误"""
+
+    status_code = 501
+
+
+class DatabaseOperationError(AppError):
+    """数据库操作失败"""
+
+    status_code = 502
+
+
+class DatabaseConnectionError(AppError):
+    """DBA 专属：数据库挂了"""
+
+    status_code = 503

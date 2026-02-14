@@ -1,3 +1,4 @@
+"""
 import torch
 from docling.document_converter import DocumentConverter
 from sentence_transformers import SentenceTransformer
@@ -26,3 +27,4 @@ def check_env():
 
 if __name__ == "__main__":
     check_env()
+"""

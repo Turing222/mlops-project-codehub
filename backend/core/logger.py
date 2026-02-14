@@ -2,9 +2,7 @@ import datetime
 import json
 import logging
 import logging.handlers
-import os
 import sys
-from pathlib import Path
 
 from backend.core.config import settings
 
@@ -96,6 +94,3 @@ def setup_logging():
     # 降低一些第三方库冗余日志的级别
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.INFO)
-
-
-# 在 app/main.py 启动时调用此函数

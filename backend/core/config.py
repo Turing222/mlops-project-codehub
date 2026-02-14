@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     POSTGRES_SERVER: str = "postgres1"  # 默认值可以保留，env 有则覆盖
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str
+    POSTGRES_DB_ECHO: bool = False  # 生产环境建议关闭，开发环境可开启
 
     BATCH_SIZE: int = 500
 

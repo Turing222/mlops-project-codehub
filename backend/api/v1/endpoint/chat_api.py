@@ -43,7 +43,7 @@ async def query_sent(
     except Exception as e:
         async with uow:
             chat_message_updater = ChatMessageUpdater(uow)
-            await chat_message_updater.update_message_status(session.id, "failed")
+            await chat_message_updater.update_as_failed(session.id, "failed")
         raise HTTPException(status_code=500, detail="处理查询时出错") from e
     # 更新消息状态为 done
     async with uow:

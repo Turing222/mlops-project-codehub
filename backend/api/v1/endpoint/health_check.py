@@ -1,40 +1,49 @@
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine
 
-from backend.api.dependencies import get_session
+# 建议：通过 app.state 共享 engine，避免每次都走 dependency injection 的完整生命周期
+# 或者定义一个更轻量级的 get_engine 依赖
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 @router.get("/db_ready")
-async def readiness_check(db: AsyncSession = Depends(get_session)):
+async def readiness_check(request: Request):
     """
-    就绪检查：确保 DB 能连通，且连接池没爆
+    就绪检查：DBA 级的精细化监控
     """
+    # 假设你在 app 初始化时将 engine 存入了 request.app.state
+    engine: AsyncEngine = request.app.state.db_engine
+
+    start_time = time.perf_counter()
     try:
-        # 1. 极简查询测试连通性
-        start_time = time.perf_counter()
-        await db.execute(text("SELECT 1"))
+        # 优化：使用 context manager 直接获取连接，绕过 Session 的各种状态管理
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+
         latency = time.perf_counter() - start_time
 
-        # 2. 如果延迟过高，可以在日志里报警（DBA 视角的预警）
-        if latency > 0.5:  # 500ms
-            logger.warning(f"Database slow response: {latency:.3f}s")
+        # 针对 DBA 经验：建议此处监控连接池状态
+        # SQLAlchemy 允许查看 Pool 统计
+        pool_status = engine.pool.status()  # 仅限部分 Pool 实现，如 QueuePool
+
+        if latency > 0.5:
+            logger.warning(f"DB Slow: {latency:.3f}s | Pool: {pool_status}")
 
         return {
             "status": "ready",
-            "database": "connected",
             "latency": f"{latency:.4f}s",
+            "pool": pool_status,  # 生产环境建议脱敏
         }
     except Exception as e:
-        # 这里的异常捕获非常重要，用于触发 K8s 的重启或剔除策略
-        logger.error(f"Health check failed: {str(e)}")
-        raise HTTPException(status_code=503, detail="Database unreachable") from e
+        logger.critical(f"Database readiness failed: {e}", exc_info=True)
+        # RFC 7807 标准：返回 503 Service Unavailable
+        raise HTTPException(status_code=503, detail="Database connection failed") from e
 
 
 @router.get("/live")

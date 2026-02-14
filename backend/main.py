@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 
 from backend.core.config import settings
-from backend.core.database import engine
+from backend.core.database import init_db
 from backend.core.logger import setup_logging
 from backend.api.v1.api import api_router
 from backend.core.exceptions import setup_exception_handlers
@@ -30,12 +30,14 @@ logger.info("系统初始化完成")
 # 1. 定义生命周期（DBA 关心的资源管理）
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 顺序组合不同的初始化逻辑
     # 启动时：可以在这里打印连接池状态
     print("🚀 System starting...")
-    yield
-    # 关闭时：优雅断开数据库连接
+    async with init_db(app):
+        # 如果以后有 Redis:
+        # async with init_redis(app):
+        yield
     print("🛑 System shutting down...")
-    await engine.dispose()
 
 
 app = FastAPI(

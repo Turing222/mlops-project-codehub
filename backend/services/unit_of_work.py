@@ -4,10 +4,13 @@ from backend.repositories.user_repo import UserRepository
 from backend.repositories.chat_repo import ChatRepository
 from backend.repositories.task_repo import TaskRepository
 
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+
 
 class SQLAlchemyUnitOfWork(AbstractUnitOfWork):
-    def __init__(self, session_factory):
+    def __init__(self, session_factory: async_sessionmaker):
         self.session_factory = session_factory  # 注入工厂而非 session
+        self.session: AsyncSession = None
 
     async def __aenter__(self):
         self.session = self.session_factory()  # 真正开启 Session
