@@ -6,10 +6,12 @@ from jose import JWTError, jwt
 from pydantic import ValidationError
 
 from backend.core.config import settings
-from backend.domain.interfaces import AbstractUnitOfWork
+from backend.domain.interfaces import AbstractLLMService, AbstractUnitOfWork
 from backend.models.orm.user import User
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.user_service import UserService
+from backend.services.llm_service import LLMService
+from backend.workflow.chat_workflow import ChatWorkflow
 
 # 指向你的登录接口 URL，这样 Swagger UI 里的 "Authorize" 按钮才能工作
 reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -76,3 +78,14 @@ def get_current_superuser(
     if not current_user.is_superuser:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
     return current_user
+
+
+def get_llm_service() -> AbstractLLMService:
+    return LLMService()
+
+
+def get_chat_workflow(
+    uow: AbstractUnitOfWork = Depends(get_uow),
+    llm_service: AbstractLLMService = Depends(get_llm_service),
+) -> ChatWorkflow:
+    return ChatWorkflow(uow, llm_service)

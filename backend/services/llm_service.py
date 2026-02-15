@@ -1,61 +1,121 @@
+"""
+LLM Service — 大语言模型调用封装
+
+企业级设计：
+- 统一的错误处理与日志
+- 流式 / 非流式两种调用模式
+- 通过 LLMQueryDTO / LLMResultDTO 与上层解耦
+"""
+
 import asyncio
 import logging
+import time
 from collections.abc import AsyncGenerator
+
+from backend.core.exceptions import ServiceError
+from backend.domain.interfaces import AbstractLLMService
+from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 
 logger = logging.getLogger(__name__)
 
 
-class LLMService:
+class LLMService(AbstractLLMService):
     """LLM 服务：处理大语言模型 API 调用"""
 
     async def stream_response(
         self,
-        query_text: str,
-        session_id: str | None = None,
-        conversation_history: list[dict] | None = None,
+        query: LLMQueryDTO,
     ) -> AsyncGenerator[str, None]:
         """
         流式返回 LLM 响应
 
         Args:
-            query_text: 用户问题
-            session_id: 会话 ID（用于上下文关联）
-            conversation_history: 历史对话记录
+            query: LLM 查询 DTO
 
         Yields:
             流式响应的文本片段
+
+        Raises:
+            ServiceError: LLM 调用失败
         """
-        # TODO: 实际项目中替换为真实的 LLM API 调用
-        # 例如：OpenAI, Claude, Azure OpenAI, 本地模型等
+        logger.info(
+            "LLM 流式请求开始: session_id=%s, query_len=%d",
+            query.session_id, len(query.query_text),
+        )
+        try:
+            # TODO: 实际项目中替换为真实的 LLM API 调用
+            # 例如：OpenAI, Claude, Azure OpenAI, 本地模型等
+            mock_response = self._generate_mock_response(query.query_text)
 
-        mock_response = self._generate_mock_response(query_text)
+            for i, char in enumerate(mock_response):
+                yield char
+                if (i + 1) % 10 == 0:
+                    await self._sleep(0.01)
 
-        # 模拟流式输出：每个字符逐个返回
-        for i, char in enumerate(mock_response):
-            yield char
-            # 模拟网络延迟
-            if (i + 1) % 10 == 0:
-                await self._sleep(0.01)
+            logger.info("LLM 流式请求完成: session_id=%s", query.session_id)
+        except Exception as e:
+            logger.error(
+                "LLM 流式请求失败: session_id=%s, error=%s",
+                query.session_id, str(e),
+                exc_info=True,
+            )
+            raise ServiceError(
+                "LLM 服务调用失败",
+                details={"session_id": str(query.session_id), "error": str(e)},
+            ) from e
 
     async def generate_response(
         self,
-        query_text: str,
-        session_id: str | None = None,
-        conversation_history: list[dict] | None = None,
-    ) -> str:
+        query: LLMQueryDTO,
+    ) -> LLMResultDTO:
         """
         非流式返回完整响应
 
+        Args:
+            query: LLM 查询 DTO
+
         Returns:
-            完整的 LLM 响应文本
+            LLMResultDTO 包含完整响应和性能指标
         """
-        # 收集所有流式输出
-        chunks = []
-        async for chunk in self.stream_response(
-            query_text, session_id, conversation_history
-        ):
-            chunks.append(chunk)
-        return "".join(chunks)
+        logger.info(
+            "LLM 非流式请求开始: session_id=%s, query_len=%d",
+            query.session_id, len(query.query_text),
+        )
+        start_time = time.time()
+
+        try:
+            chunks: list[str] = []
+            async for chunk in self.stream_response(query):
+                chunks.append(chunk)
+
+            content = "".join(chunks)
+            latency_ms = int((time.time() - start_time) * 1000)
+
+            logger.info(
+                "LLM 非流式请求完成: session_id=%s, content_len=%d, latency_ms=%d",
+                query.session_id, len(content), latency_ms,
+            )
+            return LLMResultDTO(
+                content=content,
+                latency_ms=latency_ms,
+                success=True,
+            )
+        except ServiceError:
+            # ServiceError 已在 stream_response 中记录日志，直接抛出
+            raise
+        except Exception as e:
+            latency_ms = int((time.time() - start_time) * 1000)
+            logger.error(
+                "LLM 非流式请求异常: session_id=%s, latency_ms=%d, error=%s",
+                query.session_id, latency_ms, str(e),
+                exc_info=True,
+            )
+            return LLMResultDTO(
+                content="",
+                latency_ms=latency_ms,
+                success=False,
+                error_message=str(e),
+            )
 
     def _generate_mock_response(self, query_text: str) -> str:
         """

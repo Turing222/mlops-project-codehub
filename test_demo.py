@@ -15,7 +15,7 @@ def new_func():
     for i in range(10):
         pass
 
-    print("Hello from WSL!")
+    print("Hello from WSL! im an other")
 
 
 new_func()
