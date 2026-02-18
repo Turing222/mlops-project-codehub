@@ -10,6 +10,7 @@ dependencies = [
     "bcrypt==4.0.1",
     "fastapi>=0.128.0",
     "ollama>=0.6.1",
+    "openai>=2.21.0",
     "openpyxl>=3.1.5",
     "passlib[bcrypt]>=1.7.4",
     "pgvector>=0.4.2",
@@ -79,3 +80,22 @@ pythonpath = ["."]
 norecursedirs = ["data", "logs", "config", "venv","postgres_data"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+[tool.ty]
+# 1. 核心：指定 Python 版本（建议和你项目一致）
+python-version = "3.11"
+
+# 2. 严苛程度：建议开启 strict，这能帮你抓到最隐蔽的逻辑漏洞
+strict = true
+
+# 3. 环境隔离：如果你没在项目里安装 ty，告诉它去哪里找你的三方库
+# 这样即使不装 ty 库，插件也能识别 FastAPI 等依赖的类型
+python-executable = ".venv/bin/python"
+
+# 4. 排除项：减少不必要的扫描
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+]

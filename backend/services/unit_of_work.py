@@ -1,10 +1,10 @@
 # app/services/unit_of_work.py
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from backend.domain.interfaces import AbstractUnitOfWork
-from backend.repositories.user_repo import UserRepository
 from backend.repositories.chat_repo import ChatRepository
 from backend.repositories.task_repo import TaskRepository
-
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from backend.repositories.user_repo import UserRepository
 
 
 class SQLAlchemyUnitOfWork(AbstractUnitOfWork):

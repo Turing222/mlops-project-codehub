@@ -4,16 +4,15 @@ Chat Workflow — 处理对话业务流程
 
 import logging
 import uuid
-from typing import Optional
 
 from backend.core.exceptions import ServiceError
+from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import (
     ChatQueryResponse,
     LLMQueryDTO,
     MessageResponse,
 )
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
-from backend.domain.interfaces import AbstractLLMService
 from backend.services.unit_of_work import AbstractUnitOfWork
 
 logger = logging.getLogger(__name__)

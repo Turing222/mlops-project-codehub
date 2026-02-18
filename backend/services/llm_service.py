@@ -12,6 +12,8 @@ import logging
 import time
 from collections.abc import AsyncGenerator
 
+import openai
+
 from backend.core.exceptions import ServiceError
 from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
@@ -40,23 +42,37 @@ class LLMService(AbstractLLMService):
         """
         logger.info(
             "LLM 流式请求开始: session_id=%s, query_len=%d",
-            query.session_id, len(query.query_text),
+            query.session_id,
+            len(query.query_text),
         )
         try:
             # TODO: 实际项目中替换为真实的 LLM API 调用
             # 例如：OpenAI, Claude, Azure OpenAI, 本地模型等
-            mock_response = self._generate_mock_response(query.query_text)
+            # mock_response = self._generate_mock_response(query.query_text)
+            client = openai.OpenAI(
+                base_url="http://win.host:11434/v1", api_key="ollama"
+            )
+            response = response = client.chat.completions.create(
+                model="qwen2.5:latest",
+                messages=[{"role": "user", "content": query.query_text}],
+                stream=True,
+            )
+            full_response_content = []
 
-            for i, char in enumerate(mock_response):
-                yield char
-                if (i + 1) % 10 == 0:
-                    await self._sleep(0.01)
+            for chunk in response:
+                # 注意：有的 chunk 可能是空的（比如开始或结束的信号），需要判断
+                content = chunk.choices[0].delta.content
+                if content:
+                    print(content, end="", flush=True)  # 实时打印到终端
+                    full_response_content.append(content)
+                    yield content  # 流式返回给调用方
 
             logger.info("LLM 流式请求完成: session_id=%s", query.session_id)
         except Exception as e:
             logger.error(
                 "LLM 流式请求失败: session_id=%s, error=%s",
-                query.session_id, str(e),
+                query.session_id,
+                str(e),
                 exc_info=True,
             )
             raise ServiceError(
@@ -79,7 +95,8 @@ class LLMService(AbstractLLMService):
         """
         logger.info(
             "LLM 非流式请求开始: session_id=%s, query_len=%d",
-            query.session_id, len(query.query_text),
+            query.session_id,
+            len(query.query_text),
         )
         start_time = time.time()
 
@@ -88,12 +105,14 @@ class LLMService(AbstractLLMService):
             async for chunk in self.stream_response(query):
                 chunks.append(chunk)
 
-            content = "".join(chunks)
+            content = "".join(map(str, chunks))
             latency_ms = int((time.time() - start_time) * 1000)
 
             logger.info(
                 "LLM 非流式请求完成: session_id=%s, content_len=%d, latency_ms=%d",
-                query.session_id, len(content), latency_ms,
+                query.session_id,
+                len(content),
+                latency_ms,
             )
             return LLMResultDTO(
                 content=content,
@@ -107,7 +126,9 @@ class LLMService(AbstractLLMService):
             latency_ms = int((time.time() - start_time) * 1000)
             logger.error(
                 "LLM 非流式请求异常: session_id=%s, latency_ms=%d, error=%s",
-                query.session_id, latency_ms, str(e),
+                query.session_id,
+                latency_ms,
+                str(e),
                 exc_info=True,
             )
             return LLMResultDTO(

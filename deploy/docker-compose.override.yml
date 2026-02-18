@@ -14,9 +14,11 @@ services:
       - ../logs/backend:/app/logs/backend
       - /etc/passwd:/etc/passwd:ro
       - /etc/group:/etc/group:ro
+    extra_hosts:
+      - "win.host:192.168.31.149"
     #水平扩展时端口映射会冲突
-    #ports:
-    #  - "8000:8000"
+    ports:
+      - "8000:8000"
     # 覆盖镜像的启动命令，增加 --reload 参数实现热更新
     # 假设你使用的是 uvicorn，如果是其他请自行替换
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers

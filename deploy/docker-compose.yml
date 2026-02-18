@@ -59,7 +59,7 @@ services:
       - PYTHONMALLOC=debug # 生产环境建议设为 default
       - WEB_CONCURRENCY=1 # 充分利用 1.5GB 内存，启动 4 个 Worker  Worker Process（工作进程）
     deploy:
-      replicas: 2
+      replicas: 1
       resources:
         limits:
           memory: 512M
