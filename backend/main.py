@@ -1,20 +1,14 @@
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
-import sys
-from pathlib import Path
 import json
+import logging
+from contextlib import asynccontextmanager
 
-ROOT = Path(__file__).resolve().parent.parent
-print(ROOT)
-sys.path.insert(0, str(ROOT))
+from fastapi import FastAPI, Request
 
-
+from backend.api.v1.api import api_router
 from backend.core.config import settings
 from backend.core.database import init_db
-from backend.core.logger import setup_logging
-from backend.api.v1.api import api_router
 from backend.core.exceptions import setup_exception_handlers
-import logging
+from backend.core.logger import setup_logging
 from backend.middleware.tracing import TracingMiddleware
 
 # 1. 初始化
@@ -41,7 +35,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    root_path="/api", title="我的AI Mentor后台系统", version="1.0.0", lifespan=lifespan
+    root_path="/api",
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    lifespan=lifespan,
 )
 
 # 全局异常处理

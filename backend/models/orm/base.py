@@ -6,7 +6,6 @@ from sqlalchemy import DateTime, MetaData, func, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from ulid import ULID
-import pgvector.sqlalchemy
 
 # 1. 定义一个通用的类型注解，方便全系统统一修改规格
 # 例如：将来想把所有时间戳改为带时区的，只需改这里

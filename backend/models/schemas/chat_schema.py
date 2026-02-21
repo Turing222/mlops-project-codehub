@@ -20,8 +20,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # --- Reusable Types (提升代码一致性) ---
 # ============================================================
 
-QueryStr = Annotated[str, Field(min_length=1, max_length=5000, description="用户查询内容")]
-SessionTitleStr = Annotated[str, Field(min_length=1, max_length=50, description="会话标题")]
+QueryStr = Annotated[
+    str, Field(min_length=1, max_length=5000, description="用户查询内容")
+]
+SessionTitleStr = Annotated[
+    str, Field(min_length=1, max_length=50, description="会话标题")
+]
 
 
 class MessageRole(StrEnum):

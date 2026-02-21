@@ -17,15 +17,19 @@ async def test_get_user_success(client):
     assert "email" in data  # 验证返回的 JSON 包含关键字段
     assert "username" in data
 '''
+
+
 @pytest.mark.asyncio
 async def test_read_users_filter_by_username(client):
     """测试通过 username 查询参数进行过滤"""
     # 假设你的数据库里有一个叫 "admin" 的用户
     search_name = "test2"
-    
+
     # 这里的 params 会被自动转换为 /users?username=admin
-    response = await client.get("/api/v1/users/get_users", params={"username": search_name})
-    
+    response = await client.get(
+        "/api/v1/users/get_users", params={"username": search_name}
+    )
+
     assert response.status_code == 200
     data = response.json()
     # 验证返回的结果是否符合过滤条件

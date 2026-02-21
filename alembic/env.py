@@ -1,8 +1,10 @@
+import asyncio
 import os
 import sys
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
@@ -15,12 +17,12 @@ sys.path.insert(0, BASE_DIR)
 
 # --- [重点 2] 引入你的逻辑 ---
 
-from backend.core.config import get_settings
-
+from backend.core.config import settings  # noqa: E402
+from backend.models.orm import Base  # noqa: E402
 
 # 这里的 import User 非常重要，没它 metadata 就是空的
 # from models.user import User
-settings = get_settings()
+
 config = context.config
 
 # 配置日志（保留默认）
@@ -28,7 +30,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # 设置元数据
-from backend.models.orm import Base
+
 
 target_metadata = Base.metadata
 
@@ -86,47 +88,53 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
+def do_run_migrations(connection):
+    """
+    这是被 run_sync 调用的同步钩子。
+    它接收一个被 SQLAlchemy 包装过的同步连接。
+    """
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        compare_server_default=True,
+        include_object=include_object,
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+async def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
 
     In this scenario we need to create an Engine
     and associate a connection with the context.
 
     """
-    # --- [重点 3] 动态覆盖 URL ---
-    # 我们通过代码强制指定 url，这样 alembic.ini 里的 sqlalchemy.url 填什么都不重要了
-    # 将异步驱动 asyncpg 替换为同步驱动 psycopg
-    # 这样 FastAPI 还是用异步，但 Alembic 运行时用同步
-    sync_url = settings.database_url.replace(
-        "postgresql+asyncpg://", "postgresql+psycopg://"
-    )
-    config.set_main_option("sqlalchemy.url", sync_url)
 
-    # 2. 从配置节加载字典
+    # 从配置节加载字典
     section = config.get_section(config.config_ini_section, {})
-
-    connectable = engine_from_config(
+    section["sqlalchemy.url"] = str(settings.database_url)
+    print(f"DEBUG: Connecting to {settings.database_url}")
+    # 创建异步引擎
+    connectable = async_engine_from_config(
         section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+    async with connectable.connect() as connection:
+        # 💡 桥接点：将同步的迁移函数跑在异步连接上
+        await connection.run_sync(do_run_migrations)
 
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            # 强制检测类型变化
-            compare_type=True,
-            # 强制检测索引和唯一约束
-            compare_server_default=True,
-            include_object=include_object,
-        )
-
-        with context.begin_transaction():
-            context.run_migrations()
+    await connectable.dispose()
 
 
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    run_migrations_online()
+    try:
+        # 开启事件循环
+        asyncio.run(run_migrations_online())
+    except (KeyboardInterrupt, SystemExit):
+        pass

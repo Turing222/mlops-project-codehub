@@ -1,11 +1,11 @@
 import logging
 import time
-import uuid
 from contextvars import ContextVar
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.types import ASGIApp
+from ulid import ULID
 
 # 这里的变量是“协程安全”的，每个请求都有自己独立的副本
 REQUEST_ID_CTX: ContextVar[str] = ContextVar("request_id", default="")
@@ -15,9 +15,13 @@ logger = logging.getLogger("uvicorn.error")
 
 
 class TracingMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: ASGIApp):
+        # 显式传递 app，这样类型检查器就能识别它是符合规格的 _MiddlewareFactory
+        super().__init__(app)
+
     async def dispatch(self, request: Request, call_next):
         # 1. 获取 ID：优先从 Nginx Header 拿，拿不到就自造一个
-        rid = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+        rid = request.headers.get("X-Request-ID", str(ULID()))
 
         # 2. 存入上下文，方便后续任何地方使用
         token = REQUEST_ID_CTX.set(rid)
@@ -30,7 +34,8 @@ class TracingMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         # 4. 计算耗时
-        process_time = (time.time() - start_time) * 1000
+        end_time = time.perf_counter()
+        process_time = (end_time - start_time) * 1000
 
         # 5. 把 ID 和耗时塞回 Response Header，让前端和 Nginx 也能看到
         response.headers["X-Request-ID"] = rid

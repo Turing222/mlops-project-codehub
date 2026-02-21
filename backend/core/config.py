@@ -1,6 +1,7 @@
 import os
 from functools import lru_cache
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,11 +17,11 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
 
     # --- 数据库配置 (敏感信息不设置默认值，强制从 env 读取) ---
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "password"
     POSTGRES_SERVER: str = "postgres1"  # 默认值可以保留，env 有则覆盖
     POSTGRES_PORT: int = 5432
-    POSTGRES_DB: str
+    POSTGRES_DB: str = "mentor_ai"
     POSTGRES_DB_ECHO: bool = False  # 生产环境建议关闭，开发环境可开启
 
     BATCH_SIZE: int = 500
@@ -32,7 +33,7 @@ class Settings(BaseSettings):
     OBSIDIAN_VAULT_PATH: str = "/data/obsidian"
 
     # --- 安全配置 (SECRET_KEY 必须从 env 读取) ---
-    SECRET_KEY: str
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 

@@ -37,7 +37,8 @@ class AbstractLLMService(ABC):
         query: LLMQueryDTO,
     ) -> AsyncGenerator[str, None]:
         """流式返回响应"""
-        ...
+        if False:
+            yield ""
 
     @abstractmethod
     async def generate_response(

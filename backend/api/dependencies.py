@@ -1,16 +1,17 @@
 import logging
 
-from fastapi import Depends, HTTPException, status, Request
+import jwt
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from jwt.exceptions import InvalidTokenError
 from pydantic import ValidationError
 
 from backend.core.config import settings
 from backend.domain.interfaces import AbstractLLMService, AbstractUnitOfWork
 from backend.models.orm.user import User
+from backend.services.llm_service import LLMService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.user_service import UserService
-from backend.services.llm_service import LLMService
 from backend.workflow.chat_workflow import ChatWorkflow
 
 # 指向你的登录接口 URL，这样 Swagger UI 里的 "Authorize" 按钮才能工作
@@ -43,7 +44,7 @@ async def get_current_user(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Token 缺少身份标识"
             )
-    except (JWTError, ValidationError) as e:
+    except (InvalidTokenError, ValidationError) as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Token 无效或已过期"
         ) from e

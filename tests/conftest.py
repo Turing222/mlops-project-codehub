@@ -1,10 +1,13 @@
+from unittest.mock import ANY
+
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
+
+from backend.core.exceptions import ValidationError
 from backend.main import app  # 导入你的 FastAPI 实例
 from backend.models.schemas.user_schema import UserBase
 from backend.repositories.user_repo import UserRepository
-from backend.core.exceptions import ValidationError
-from unittest.mock import ANY
+
 # import respx
 
 
@@ -59,10 +62,10 @@ def test_order_fulfillment(mocker, mock_email_service):
 
     # 执行业务逻辑
     # result = fulfill_order(order_id="ORD-123")
-    service = lambda a: a + 10
-    service = lambda a, f: f(a.order_id)
+    # service = lambda a: a + 10
+    # service = lambda a, f: f(a.order_id)
 
-    result = service(process_payment)
+    # result = service(process_payment)
 
     # 断言调用细节（Idempotency 幂等性检查常考点）
     process_payment.assert_called_once_with("ORD-123", amount=ANY)

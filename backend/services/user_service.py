@@ -16,7 +16,12 @@ from backend.core.exceptions import (
 from backend.core.security import get_password_hash, verify_password
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.user import User
-from backend.models.schemas.user_schema import UserBase, UserLogin, UserUpdate
+from backend.models.schemas.user_schema import (
+    UserBase,
+    UserLogin,
+    UserUpdate,
+    UserCreate,
+)
 from backend.services.base import BaseService
 
 # 模块级 logger，或者放在类里也可以
@@ -142,7 +147,7 @@ class UserService(BaseService[AbstractUnitOfWork]):
         user = await self.uow.users.get_by_username(username)
         return user
 
-    async def user_register(self, user_in: UserUpdate) -> User | None:
+    async def user_register(self, user_in: UserCreate) -> User | None:
         """
         新增：用户注册功能
         """

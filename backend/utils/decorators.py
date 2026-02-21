@@ -4,7 +4,6 @@ import logging
 import time
 from collections.abc import Callable
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import (
     retry,
     retry_if_exception_type,

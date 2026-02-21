@@ -7,14 +7,13 @@ ChatService 单元测试
 
 import time
 import uuid
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from backend.core.exceptions import ResourceNotFound, ValidationError
 from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
-
 
 # ============================================================
 # Fixtures
@@ -48,7 +47,9 @@ class TestSessionManagerEnsureSession:
     """ensure_session 方法测试"""
 
     @pytest.mark.asyncio
-    async def test_creates_new_session_when_no_session_id(self, session_manager, mock_uow):
+    async def test_creates_new_session_when_no_session_id(
+        self, session_manager, mock_uow
+    ):
         """无 session_id 时应创建新会话"""
         user_id = uuid.uuid4()
         query = "你好，请帮我分析一下数据"
@@ -74,7 +75,9 @@ class TestSessionManagerEnsureSession:
         mock_uow.chat_repo.get_session.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_creates_new_session_with_default_title(self, session_manager, mock_uow):
+    async def test_creates_new_session_with_default_title(
+        self, session_manager, mock_uow
+    ):
         """query_text 为空时标题应为 '新对话'"""
         user_id = uuid.uuid4()
         expected_session = MagicMock(spec=ChatSession)
@@ -113,7 +116,9 @@ class TestSessionManagerEnsureSession:
         mock_uow.chat_repo.create_session.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_raises_not_found_for_missing_session(self, session_manager, mock_uow):
+    async def test_raises_not_found_for_missing_session(
+        self, session_manager, mock_uow
+    ):
         """session_id 不存在时应抛出 ResourceNotFound"""
         user_id = uuid.uuid4()
         session_id = uuid.uuid4()
@@ -130,7 +135,9 @@ class TestSessionManagerEnsureSession:
         assert exc_info.value.details["session_id"] == str(session_id)
 
     @pytest.mark.asyncio
-    async def test_raises_validation_error_for_wrong_user(self, session_manager, mock_uow):
+    async def test_raises_validation_error_for_wrong_user(
+        self, session_manager, mock_uow
+    ):
         """user_id 不匹配时应抛出 ValidationError"""
         owner_id = uuid.uuid4()
         requester_id = uuid.uuid4()
@@ -205,11 +212,15 @@ class TestSessionManagerQueries:
         sessions = [MagicMock(spec=ChatSession) for _ in range(3)]
         mock_uow.chat_repo.get_user_sessions.return_value = sessions
 
-        result = await session_manager.get_user_sessions(user_id=user_id, skip=0, limit=10)
+        result = await session_manager.get_user_sessions(
+            user_id=user_id, skip=0, limit=10
+        )
 
         assert len(result) == 3
         mock_uow.chat_repo.get_user_sessions.assert_called_once_with(
-            user_id=user_id, skip=0, limit=10,
+            user_id=user_id,
+            skip=0,
+            limit=10,
         )
 
     @pytest.mark.asyncio
@@ -223,7 +234,9 @@ class TestSessionManagerQueries:
 
         assert len(result) == 5
         mock_uow.chat_repo.get_session_messages.assert_called_once_with(
-            session_id=session_id, skip=0, limit=100,
+            session_id=session_id,
+            skip=0,
+            limit=100,
         )
 
 
@@ -280,7 +293,9 @@ class TestChatMessageUpdater:
         assert call_kwargs["latency_ms"] >= 400  # 至少 400ms（留点误差）
 
     @pytest.mark.asyncio
-    async def test_update_as_success_raises_when_not_found(self, message_updater, mock_uow):
+    async def test_update_as_success_raises_when_not_found(
+        self, message_updater, mock_uow
+    ):
         """消息不存在时应抛出 ResourceNotFound"""
         message_id = uuid.uuid4()
         mock_uow.chat_repo.update_message_status.return_value = None
@@ -309,7 +324,9 @@ class TestChatMessageUpdater:
         )
 
     @pytest.mark.asyncio
-    async def test_update_as_failed_with_custom_message(self, message_updater, mock_uow):
+    async def test_update_as_failed_with_custom_message(
+        self, message_updater, mock_uow
+    ):
         """更新消息为失败状态（自定义错误内容）"""
         message_id = uuid.uuid4()
         error_msg = "服务暂时不可用"
@@ -322,6 +339,7 @@ class TestChatMessageUpdater:
             error_content=error_msg,
         )
 
+        assert result == updated_msg
         mock_uow.chat_repo.update_message_status.assert_called_once_with(
             message_id=message_id,
             status=MessageStatus.FAILED,
@@ -329,7 +347,9 @@ class TestChatMessageUpdater:
         )
 
     @pytest.mark.asyncio
-    async def test_update_as_failed_returns_none_when_not_found(self, message_updater, mock_uow):
+    async def test_update_as_failed_returns_none_when_not_found(
+        self, message_updater, mock_uow
+    ):
         """消息不存在时 update_as_failed 返回 None"""
         message_id = uuid.uuid4()
         mock_uow.chat_repo.update_message_status.return_value = None

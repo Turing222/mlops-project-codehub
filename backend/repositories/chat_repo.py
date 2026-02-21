@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models.orm.chat import ChatSession, ChatMessage, MessageStatus
+from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
 from backend.repositories.base import CRUDBase
 
 

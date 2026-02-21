@@ -7,7 +7,7 @@ async def test_get_user_service(mocker):
     mock_repo = mocker.patch("services.user_service.UserRepository")
     mock_repo.return_value = {"id": 1, "name": "Fake User"}
 
-    mock_map = mocker.patch("services.user_service.UserRepository")
+    # mock_map = mocker.patch("services.user_service.UserRepository")
     # 2. 调用 Service 方法
     from backend.services.user_service import process_user_import
 

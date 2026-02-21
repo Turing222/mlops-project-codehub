@@ -6,14 +6,12 @@ Mock 内部的 _sleep 方法来加速测试执行。
 """
 
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.core.exceptions import ServiceError
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 from backend.services.llm_service import LLMService
-
 
 # ============================================================
 # Fixtures
@@ -89,7 +87,9 @@ class TestGenerateResponse:
         assert result.error_message is None
 
     @pytest.mark.asyncio
-    async def test_generate_response_content_contains_query(self, llm_service, sample_query):
+    async def test_generate_response_content_contains_query(
+        self, llm_service, sample_query
+    ):
         """响应中应包含用户查询内容的引用"""
         result = await llm_service.generate_response(sample_query)
 

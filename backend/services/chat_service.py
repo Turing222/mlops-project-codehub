@@ -10,10 +10,9 @@ import logging
 import time
 import uuid
 
-from backend.core.exceptions import ResourceNotFound, ServiceError, ValidationError
+from backend.core.exceptions import ResourceNotFound, ValidationError
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
-from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 from backend.services.base import BaseService
 
 logger = logging.getLogger(__name__)
@@ -51,7 +50,9 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         if session_id:
             session = await self.uow.chat_repo.get_session(session_id)
             if not session:
-                logger.warning("会话不存在: session_id=%s, user_id=%s", session_id, user_id)
+                logger.warning(
+                    "会话不存在: session_id=%s, user_id=%s", session_id, user_id
+                )
                 raise ResourceNotFound(
                     f"会话不存在: {session_id}",
                     details={"session_id": str(session_id)},
@@ -59,7 +60,9 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
             if session.user_id != user_id:
                 logger.warning(
                     "用户无权访问会话: session_id=%s, owner=%s, requester=%s",
-                    session_id, session.user_id, user_id,
+                    session_id,
+                    session.user_id,
+                    user_id,
                 )
                 raise ValidationError(
                     "无权访问该会话",
@@ -75,7 +78,12 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
             title=title,
             kb_id=kb_id,
         )
-        logger.info("创建新会话: session_id=%s, title=%s, user_id=%s", session.id, title, user_id)
+        logger.info(
+            "创建新会话: session_id=%s, title=%s, user_id=%s",
+            session.id,
+            title,
+            user_id,
+        )
         return session
 
     async def create_user_message(
@@ -99,7 +107,9 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
             content=content.strip(),
             status=MessageStatus.SUCCESS,
         )
-        logger.debug("创建用户消息: message_id=%s, session_id=%s", message.id, session_id)
+        logger.debug(
+            "创建用户消息: message_id=%s, session_id=%s", message.id, session_id
+        )
         return message
 
     async def create_assistant_message(
@@ -123,7 +133,9 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
             content="",
             status=status,
         )
-        logger.debug("创建助手消息: message_id=%s, session_id=%s", message.id, session_id)
+        logger.debug(
+            "创建助手消息: message_id=%s, session_id=%s", message.id, session_id
+        )
         return message
 
     async def get_session(self, session_id: uuid.UUID) -> ChatSession | None:
@@ -209,7 +221,8 @@ class ChatMessageUpdater(BaseService[AbstractUnitOfWork]):
             )
         logger.info(
             "消息更新成功: message_id=%s, latency_ms=%s",
-            message_id, latency_ms,
+            message_id,
+            latency_ms,
         )
         return message
 
