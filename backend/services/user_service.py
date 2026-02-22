@@ -18,9 +18,9 @@ from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.user import User
 from backend.models.schemas.user_schema import (
     UserBase,
+    UserCreate,
     UserLogin,
     UserUpdate,
-    UserCreate,
 )
 from backend.services.base import BaseService
 
@@ -97,7 +97,7 @@ class UserService(BaseService[AbstractUnitOfWork]):
     @classmethod
     async def transform_and_validate(
         cls, raw_data: list[dict[str, Any]]
-    ) -> list[UserBase]:
+    ) -> list[dict[str, Any]]:
         """
         核心中间层：执行字段映射、清洗和 Pydantic 校验
         """

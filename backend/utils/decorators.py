@@ -3,6 +3,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from typing import Any, Protocol
 
 from tenacity import (
     retry,
@@ -13,6 +14,14 @@ from tenacity import (
 
 # 假设你的日志工具已经配置好可以自动抓取 contextvars 中的 request_id
 logger = logging.getLogger("app.decorators")
+
+
+class NamedCallable(Protocol):
+    """Protocol for callables that have a __name__ attribute."""
+
+    __name__: str
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any: ...
 
 
 def monitor_action(
@@ -50,7 +59,7 @@ def monitor_action(
     return decorator
 
 
-def log_performance(func: Callable):
+def log_performance(func: NamedCallable):
     """
     耗时统计装饰器
     用于指标监控：记录函数执行时间，并关联 Request ID
@@ -103,7 +112,7 @@ def cache_result(redis_client, prefix: str, expire: int = 3600):
     DBA 视角：$O(1)$ 查询，减少数据库 IO 压力
     """
 
-    def decorator(func: Callable):
+    def decorator(func: NamedCallable):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             # 简单的 Key 生成逻辑：prefix + 函数名 + 参数哈希

@@ -38,7 +38,7 @@ class CRUDBase[ModelType, CreateSchemaType: BaseModel, UpdateSchemaType: BaseMod
         灵活查询，适用于 unique 约束字段
         """
         statement = select(self.model).filter_by(**kwargs)
-        result = await self.session.exec(statement)
+        result = await self.session.execute(statement)
         return result.scalars().first()
 
     # -----------------------------------------------------------
@@ -56,7 +56,7 @@ class CRUDBase[ModelType, CreateSchemaType: BaseModel, UpdateSchemaType: BaseMod
         stmt = select(self.model).offset(skip).limit(limit)
 
         # 执行查询
-        result = await self.session.exec(stmt)
+        result = await self.session.execute(stmt)
 
         # scalars().all() 会把结果解包成模型对象列表
         return result.scalars().all()

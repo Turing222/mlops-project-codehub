@@ -1,0 +1,30 @@
+sources:
+  docker_socket:
+    type: docker_logs
+    # 自动识别所有容器
+
+transforms:
+  # 关键：将原始日志解析为 JSON 并提取 level 和 service 标签
+  parse_and_label:
+    type: remap
+    inputs: ["docker_socket"]
+    source: |
+      .service = .container_name
+      parsed, err = parse_json(.message)
+      if err == null {
+          . = merge(., parsed)
+          del(.message) 
+      }
+      # 默认级别处理
+      if .level == null { .level = "info" }
+
+sinks:
+  loki_sink:
+    type: loki
+    inputs: ["parse_and_label"]
+    endpoint: "http://loki:3100"
+    encoding: { codec: "json" }
+    labels:
+      service: "{{ service }}"
+      level: "{{ level }}"
+      env: "production"

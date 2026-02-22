@@ -28,7 +28,7 @@ async def verify_password(plain_password: str, hashed_password: str) -> bool:
 async def get_password_hash(password: str) -> str:
     """异步生成哈希密码"""
 
-    return await run_in_threadpool(password_hasher.verify.hash, password)
+    return await run_in_threadpool(password_hasher.hash, password)
 
 
 def create_access_token(

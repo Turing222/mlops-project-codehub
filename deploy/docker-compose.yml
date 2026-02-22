@@ -14,8 +14,9 @@ services:
     # 1. 在服务内挂载卷
     volumes:
       - pg_data_v17:/var/lib/postgresql/data
-      - ../logs/postgres_logs:/var/log/postgresql
+      - ./scripts/pg_backup.sh:/usr/local/bin/pg_backup.sh:ro
     logging: *default-logging
+    #entrypoint: [ "/bin/sh", "/usr/local/bin/pg_backup.sh" ]
     deploy:
       resources:
         limits:
@@ -44,10 +45,6 @@ services:
   api:
     image: ai-tutor-backend:v1
 
-    #开发阶段日志不挂载
-    volumes:
-      # 将容器内的 /app/logs 映射到当前目录下的 logs 文件夹
-      - ../logs/backend:/app/logs/backend
     # 限制 Docker 自身收集的控制台日志大小，防止撑爆磁盘
     #只管控制台日志
     logging: *default-logging
@@ -57,20 +54,23 @@ services:
       - ../.env
     environment:
       - PYTHONMALLOC=debug # 生产环境建议设为 default
-      - WEB_CONCURRENCY=1 # 充分利用 1.5GB 内存，启动 4 个 Worker  Worker Process（工作进程）
+      - WEB_CONCURRENCY=1 # 充分利用 1.5GB 内存，启动 2 个 Worker  Worker Process（工作进程） 测试时只开启一个
+    restart: unless-stopped
     deploy:
-      replicas: 1
       resources:
         limits:
-          memory: 512M
+          cpus: '1.0'
+          memory: 800M
         reservations:
           # 预留内存，确保容器不会因为内存碎片化启动失败
-          memory: 128M
+          memory: 256M
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
+      db_migrator:
+        condition: service_completed_successfully
     healthcheck:
       # 1. 确保路径与你的路由完全一致
       # 2. 使用 python3 确保兼容性
@@ -80,7 +80,7 @@ services:
       retries: 3
       start_period: 10s # 考虑到 FastAPI 启动和数据库连接，给 10 秒缓冲
   nginx:
-    image: nginx:stable-alpine
+    image: nginx:1.27.5-bookworm
     logging: *default-logging
     volumes:
       # 挂载前端打包后的代码
@@ -88,7 +88,6 @@ services:
       # 引用你之前创建的那个配置文件
       - ./nginx/project.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      - ../logs/nginx:/var/log/nginx # 使用具名卷挂载日志
     depends_on:
       api:
         condition: service_healthy
@@ -97,7 +96,7 @@ services:
       - "443:443" # 映射 HTTPS
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.8.1
     container_name: prometheus
     profiles: [ "monitoring" ] # 打上标签
     logging: *default-logging
@@ -113,7 +112,7 @@ services:
           memory: 256M # 强制限制内存，防止它在数据多时疯狂扩容
 
   grafana:
-    image: grafana/grafana-oss:latest
+    image: grafana/grafana-oss:11.5.8-ubuntu
     container_name: grafana
     profiles: [ "monitoring" ] # 打上标签
     logging: *default-logging
@@ -124,7 +123,36 @@ services:
       resources:
         limits:
           memory: 256M
+  # 2. 日志中转 (Vector)
+  vector:
+    image: timberio/vector:0.50.X-debian
+    profiles: [ "monitoring" ]
+    volumes:
+      - ./vector.yaml:/etc/vector/vector.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+
+  # 3. 日志存储 (Loki)
+  loki:
+    image: grafana/loki:3.4.0
+    profiles: [ "monitoring" ]
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+  # 1. 专门负责“更新数据库”的工具人
+
+  db_migrator:
+    image: ai-tutor-backend:v1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # 覆盖默认启动命令，只跑迁移
+    command: alembic upgrade head
+    env_file:
+      - ../.env
 
 volumes:
   pg_data_v17:
     name: prod_db_volume
+  loki_data:
+    name: loki_data_volume

@@ -22,7 +22,7 @@ class UserRepository(CRUDBase[User, UserCreate, UserUpdate]):
         result = await self.session.execute(statement)
         return result.scalars().first()
 
-    async def get_existing_usernames(self, usernames: list[str]) -> list[str]:
+    async def get_existing_usernames(self, usernames: list[str]) -> set[str]:
         """
         输入一个用户名列表，返回数据库中已经存在的用户名集合。
         使用 Core 风格，性能高。

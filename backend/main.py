@@ -9,7 +9,7 @@ from backend.core.config import settings
 from backend.core.database import init_db
 from backend.core.exceptions import setup_exception_handlers
 from backend.core.logger import setup_logging
-from backend.middleware.tracing import TracingMiddleware
+from backend.middleware.tracing import setup_tracing
 
 # 1. 初始化
 setup_logging()
@@ -45,9 +45,9 @@ app = FastAPI(
 setup_exception_handlers(app)
 
 # 中间件
-app.add_middleware(TracingMiddleware)
+setup_tracing(app)
 
-# 前缀名
+# 前缀名「方案选单」
 app.include_router(api_router, prefix="/v1")
 
 
@@ -63,8 +63,8 @@ async def debug_request(request: Request):
     headers = dict(request.headers)
 
     # 2. 提取客户端信息（此时应该是 Nginx 的内网 IP，除非配了 proxy_headers）
-    client_host = request.client.host
-    client_port = request.client.port
+    client_host = request.client.host if request.client else "unknown"
+    client_port = request.client.port if request.client else 0
 
     # 3. 提取请求的基础信息
     debug_info = {
