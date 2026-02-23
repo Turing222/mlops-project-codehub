@@ -9,10 +9,10 @@ from backend.models.orm.user import User
 
 # from app.api.params import LimitParam, SkipParam, UsernameQuery
 from backend.models.schemas.user_schema import (
+    UserCreate,
     UserResponse,
     UserSearch,
     UserUpdate,
-    UserCreate,
 )
 from backend.services.unit_of_work import AbstractUnitOfWork
 from backend.services.user_service import UserService

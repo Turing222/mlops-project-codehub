@@ -51,8 +51,8 @@ redis_data/
 *.log
 .logs/
 
-#密钥
-deploy/nginx
+#密钥 & SSL 证书（私钥绝不能入库）
+deploy/nginx/ssl/
 #本地测试
 tests/test_demo.py
 #历史数据库更新版本

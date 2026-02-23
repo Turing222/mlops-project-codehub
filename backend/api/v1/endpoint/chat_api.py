@@ -11,6 +11,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 
 from backend.api.dependencies import (
     get_chat_workflow,
@@ -41,13 +42,44 @@ async def query_sent(
     workflow: ChatWorkflow = Depends(get_chat_workflow),
 ):
     """
-    用户发送查询。
+    用户发送查询（非流式）。
     """
     return await workflow.handle_query(
         user_id=current_user.id,
         query_text=request.query,
         session_id=request.session_id,
         kb_id=request.kb_id,
+    )
+
+
+@router.post("/query_stream")
+async def query_stream(
+    request: QuerySentRequest,
+    current_user: User = Depends(get_current_active_user),
+    workflow: ChatWorkflow = Depends(get_chat_workflow),
+):
+    """
+    用户发送查询（SSE 流式响应）。
+
+    事件格式:
+    - data: {"type":"meta","session_id":"...","session_title":"...","message_id":"..."}
+    - data: {"type":"chunk","content":"..."}
+    - data: {"type":"error","message":"..."}
+    - data: [DONE]
+    """
+    return StreamingResponse(
+        workflow.handle_query_stream(
+            user_id=current_user.id,
+            query_text=request.query,
+            session_id=request.session_id,
+            kb_id=request.kb_id,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

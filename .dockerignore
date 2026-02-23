@@ -1,33 +1,51 @@
-# 基础排除
-.venv
-.venv_test_313
+# Git 版本控制
 .git
 .gitignore
+
+# Python 虚拟环境
+.venv
+.venv_test_313
+venv
+
+# IDE/编辑器配置
 .vscode
+.idea
+.DS_Store
+.ipynb_checkpoints/
+
+# 编译缓存
 __pycache__
 *.pyc
 *.pyo
 *.pyd
 
-# 测试与监控
+# 测试与覆盖率
 .pytest_cache
 .coverage
 test/
 tests/
 htmlcov/
 
-# 数据与日志 (非常重要，防止镜像过大)
+# 数据、日志与临时文件 (防止镜像过大并确保安全)
 logs/
 postgres_logs/
 postgres_data/
 redis_data/
 *.log
+tmp/
+temp/
+data/
 
-# 前端 (因为后端镜像不需要前端源码)
+# 部署配置与环境变量 (防止敏感信息泄露)
+deploy/
+.env
+.env.*
+Dockerfile
+.dockerignore
+
+# 前端相关 (后端镜像不需要前端源码)
 frontend/
 node_modules/
 
 # 其它系统冗余
-.DS_Store
 .files
-.ipynb_checkpoints/

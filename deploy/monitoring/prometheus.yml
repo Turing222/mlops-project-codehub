@@ -7,7 +7,8 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # 这里以后可以添加你的 FastAPI 后端
+  # FastAPI 后端指标抓取
+  # 注意：需要在 FastAPI 中集成 prometheus-fastapi-instrumentator 暴露 /metrics
   - job_name: "fastapi-backend"
     static_configs:
-      - targets: ["host.docker.internal:8000"] # 指向你本地启动的后端
+      - targets: ["api:8000"] # 使用 Docker Compose 服务名

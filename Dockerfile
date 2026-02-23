@@ -74,10 +74,9 @@ RUN /app/.venv/bin/python -c "import backend; print('✅ Final Stage: backend mo
 #验证安装 (构建时报错能提早发现问题)
 RUN /app/.venv/bin/python -c "import openai; print('Stage 2 OpenAI package found')"
 
-# Healthcheck — assumes a /health endpoint exists in your app
-# Adjust the path and timings to match your app's startup time
+# Healthcheck — 路径需与 FastAPI root_path="/api" 和实际路由一致
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health_check/live', timeout=5)" \
     || exit 1
 # Expose the port
 EXPOSE 8000
