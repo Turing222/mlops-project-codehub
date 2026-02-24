@@ -72,7 +72,8 @@ USER appuser
 RUN /app/.venv/bin/python -c "import backend; print('✅ Final Stage: backend module imported successfully')"
 
 #验证安装 (构建时报错能提早发现问题)
-RUN /app/.venv/bin/python -c "import openai; print('Stage 2 OpenAI package found')"
+RUN /app/.venv/bin/python -c "import jinja2; print('Stage 2 Jinja2 package found')"
+RUN /app/.venv/bin/python -c "import tiktoken; print('Stage 2 tiktoken package found')"
 
 # Healthcheck — 路径需与 FastAPI root_path="/api" 和实际路由一致
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

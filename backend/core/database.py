@@ -18,8 +18,8 @@ def create_db_assets() -> tuple[AsyncEngine, async_sessionmaker]:
     engine = create_async_engine(
         settings.database_url,
         echo=settings.POSTGRES_DB_ECHO,  # 建议从配置中读取，不要硬编码 True
-        pool_size=10,
-        max_overflow=20,
+        pool_size=settings.POSTGRES_POOL_SIZE,
+        max_overflow=settings.POSTGRES_MAX_OVERFLOW,
         pool_pre_ping=True,
     )
 

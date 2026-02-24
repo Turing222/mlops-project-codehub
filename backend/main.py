@@ -10,6 +10,7 @@ from backend.core.database import init_db
 from backend.core.exceptions import setup_exception_handlers
 from backend.core.logger import setup_logging
 from backend.middleware.tracing import setup_tracing
+from backend.core.redis import redis_client
 
 # 1. 初始化
 setup_logging()
@@ -28,9 +29,11 @@ async def lifespan(app: FastAPI):
     # 启动时：可以在这里打印连接池状态
     print("🚀 System starting...")
     async with init_db(app):
-        # 如果以后有 Redis:
-        # async with init_redis(app):
+        # 初始化 Redis
+        await redis_client.init()
         yield
+        # 关闭 Redis
+        await redis_client.close()
     print("🛑 System shutting down...")
 
 

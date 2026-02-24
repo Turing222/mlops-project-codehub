@@ -1,12 +1,22 @@
 """
 Chat Workflow — 处理对话业务流程
+
+编排者角色：
+1. 从 DB 查询会话与历史消息
+2. 调用 PromptManager 组装完整的消息列表
+3. 发给 LLMService 获取回复
+4. 将结果存入 DB
 """
 
 from collections.abc import AsyncGenerator
 
+import asyncio
 import logging
 import uuid
+import json
+import time
 
+from backend.core.config import settings
 from backend.core.exceptions import ServiceError
 from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import (
@@ -15,19 +25,34 @@ from backend.models.schemas.chat_schema import (
     MessageResponse,
 )
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
+from backend.services.llm_core import PromptManager
 from backend.services.unit_of_work import AbstractUnitOfWork
 
 logger = logging.getLogger(__name__)
 
 
 class ChatWorkflow:
+    # 类级别信号量，确保所有 Workflow 实例共享限制
+    _llm_semaphore = asyncio.Semaphore(settings.LLM_MAX_CONCURRENCY)
+    _db_semaphore = asyncio.Semaphore(settings.DB_MAX_CONCURRENCY)
+
     def __init__(
         self,
         uow: AbstractUnitOfWork,
         llm_service: AbstractLLMService,
+        prompt_manager: PromptManager | None = None,
     ):
         self.uow = uow
         self.llm_service = llm_service
+        self.prompt_manager = prompt_manager or PromptManager()
+
+    def _history_to_dicts(self, messages) -> list[dict]:
+        """将 ORM 消息对象转换为 PromptManager 所需的字典列表"""
+        return [
+            {"role": msg.role, "content": msg.content}
+            for msg in messages
+            if msg.role in ("user", "assistant") and msg.content
+        ]
 
     async def handle_query(
         self,
@@ -43,8 +68,9 @@ class ChatWorkflow:
         1. 确认/创建会话
         2. 保存用户消息
         3. 创建助手消息占位（thinking 状态）
-        4. 调用 LLM 获取回复
-        5. 更新助手消息为成功/失败状态
+        4. 从 DB 查询历史消息，通过 PromptManager 组装 Prompt
+        5. 调用 LLM 获取回复
+        6. 更新助手消息为成功/失败状态
         """
         logger.info(
             "Workflow 收到查询: user_id=%s, session_id=%s, query_len=%d",
@@ -54,58 +80,83 @@ class ChatWorkflow:
         )
 
         # 1. 确认或创建会话
-        async with self.uow:
-            session_manager = SessionManager(self.uow)
-            session = await session_manager.ensure_session(
-                user_id=user_id,
-                query_text=query_text,
-                session_id=session_id,
-                kb_id=kb_id,
-            )
-            # 2. 保存用户消息
-            await session_manager.create_user_message(
-                session_id=session.id,
-                content=query_text,
-            )
-            # 3. 创建助手消息占位
-            assistant_msg = await session_manager.create_assistant_message(
-                session_id=session.id,
-            )
+        async with self._db_semaphore:
+            async with self.uow:
+                session_manager = SessionManager(self.uow)
+                session = await session_manager.ensure_session(
+                    user_id=user_id,
+                    query_text=query_text,
+                    session_id=session_id,
+                    kb_id=kb_id,
+                )
+                # 2. 保存用户消息
+                await session_manager.create_user_message(
+                    session_id=session.id,
+                    content=query_text,
+                )
+                # 3. 创建助手消息占位
+                assistant_msg = await session_manager.create_assistant_message(
+                    session_id=session.id,
+                )
 
-        # 4. 调用 LLM
+        # 4. 查询历史消息并组装 Prompt
+        async with self._db_semaphore:
+            async with self.uow:
+                session_manager = SessionManager(self.uow)
+                history_messages = await session_manager.get_session_messages(
+                    session_id=session.id,
+                )
+
+        history_dicts = self._history_to_dicts(history_messages)
+        assembled = self.prompt_manager.assemble(history_dicts, query_text)
+
+        logger.info(
+            "Prompt 组装: session_id=%s, total_tokens=%d, history_rounds=%d, truncated=%s",
+            session.id,
+            assembled.total_tokens,
+            assembled.history_rounds_used,
+            assembled.truncated,
+        )
+
+        # 5. 调用 LLM
         llm_query = LLMQueryDTO(
             session_id=session.id,
             query_text=query_text,
+            conversation_history=assembled.messages,
         )
 
         try:
-            result = await self.llm_service.generate_response(llm_query)
+            async with self._llm_semaphore:
+                result = await self.llm_service.generate_response(llm_query)
         except ServiceError:
             # LLM 失败时更新消息状态
-            async with self.uow:
-                updater = ChatMessageUpdater(self.uow)
-                await updater.update_as_failed(assistant_msg.id)
+            async with self._db_semaphore:
+                async with self.uow:
+                    updater = ChatMessageUpdater(self.uow)
+                    await updater.update_as_failed(assistant_msg.id)
             raise
 
         if not result.success:
-            async with self.uow:
-                updater = ChatMessageUpdater(self.uow)
-                await updater.update_as_failed(
-                    assistant_msg.id,
-                    error_content=result.error_message or "LLM 服务调用失败",
-                )
+            async with self._db_semaphore:
+                async with self.uow:
+                    updater = ChatMessageUpdater(self.uow)
+                    await updater.update_as_failed(
+                        assistant_msg.id,
+                        error_content=result.error_message or "LLM 服务调用失败",
+                    )
             raise ServiceError(
                 "LLM 服务返回失败",
                 details={"session_id": str(session.id), "error": result.error_message},
             )
 
-        # 5. 更新助手消息为成功状态
-        async with self.uow:
-            updater = ChatMessageUpdater(self.uow)
-            updated_msg = await updater.update_as_success(
-                message_id=assistant_msg.id,
-                content=result.content,
-            )
+        # 6. 更新助手消息为成功状态
+        async with self._db_semaphore:
+            async with self.uow:
+                updater = ChatMessageUpdater(self.uow)
+                updated_msg = await updater.update_as_success(
+                    message_id=assistant_msg.id,
+                    content=result.content,
+                )
 
         logger.info(
             "Workflow 处理完成: session_id=%s, message_id=%s, latency_ms=%s",
@@ -146,23 +197,42 @@ class ChatWorkflow:
         )
 
         # 1. 确认或创建会话 + 保存用户消息 + 创建助手消息占位
-        async with self.uow:
-            session_manager = SessionManager(self.uow)
-            session = await session_manager.ensure_session(
-                user_id=user_id,
-                query_text=query_text,
-                session_id=session_id,
-                kb_id=kb_id,
-            )
-            await session_manager.create_user_message(
-                session_id=session.id,
-                content=query_text,
-            )
-            assistant_msg = await session_manager.create_assistant_message(
-                session_id=session.id,
-            )
+        async with self._db_semaphore:
+            async with self.uow:
+                session_manager = SessionManager(self.uow)
+                session = await session_manager.ensure_session(
+                    user_id=user_id,
+                    query_text=query_text,
+                    session_id=session_id,
+                    kb_id=kb_id,
+                )
+                await session_manager.create_user_message(
+                    session_id=session.id,
+                    content=query_text,
+                )
+                assistant_msg = await session_manager.create_assistant_message(
+                    session_id=session.id,
+                )
 
-        # 2. 发送 meta 事件
+        # 2. 查询历史消息并组装 Prompt
+        async with self._db_semaphore:
+            async with self.uow:
+                session_manager = SessionManager(self.uow)
+                history_messages = await session_manager.get_session_messages(
+                    session_id=session.id,
+                )
+
+        history_dicts = self._history_to_dicts(history_messages)
+        assembled = self.prompt_manager.assemble(history_dicts, query_text)
+
+        logger.info(
+            "Prompt 组装(流式): session_id=%s, total_tokens=%d, history_rounds=%d",
+            session.id,
+            assembled.total_tokens,
+            assembled.history_rounds_used,
+        )
+
+        # 3. 发送 meta 事件
         meta_event = json.dumps({
             "type": "meta",
             "session_id": str(session.id),
@@ -171,39 +241,43 @@ class ChatWorkflow:
         })
         yield f"data: {meta_event}\n\n"
 
-        # 3. 流式调用 LLM
+        # 4. 流式调用 LLM
         llm_query = LLMQueryDTO(
             session_id=session.id,
             query_text=query_text,
+            conversation_history=assembled.messages,
         )
 
         accumulated_content = []
         start_time = time.time()
         try:
-            async for chunk in self.llm_service.stream_response(llm_query):
-                accumulated_content.append(chunk)
-                chunk_event = json.dumps({"type": "chunk", "content": chunk})
-                yield f"data: {chunk_event}\n\n"
+            async with self._llm_semaphore:
+                async for chunk in self.llm_service.stream_response(llm_query):
+                    accumulated_content.append(chunk)
+                    chunk_event = json.dumps({"type": "chunk", "content": chunk})
+                    yield f"data: {chunk_event}\n\n"
         except Exception as e:
             logger.error("流式 LLM 调用失败: %s", str(e), exc_info=True)
             error_event = json.dumps({"type": "error", "message": str(e)})
             yield f"data: {error_event}\n\n"
             # 更新消息为失败状态
-            async with self.uow:
-                updater = ChatMessageUpdater(self.uow)
-                await updater.update_as_failed(assistant_msg.id)
+            async with self._db_semaphore:
+                async with self.uow:
+                    updater = ChatMessageUpdater(self.uow)
+                    await updater.update_as_failed(assistant_msg.id)
             yield "data: [DONE]\n\n"
             return
 
-        # 4. 更新助手消息为成功
+        # 5. 更新助手消息为成功
         full_content = "".join(accumulated_content)
         latency_ms = int((time.time() - start_time) * 1000)
-        async with self.uow:
-            updater = ChatMessageUpdater(self.uow)
-            await updater.update_as_success(
-                message_id=assistant_msg.id,
-                content=full_content,
-            )
+        async with self._db_semaphore:
+            async with self.uow:
+                updater = ChatMessageUpdater(self.uow)
+                await updater.update_as_success(
+                    message_id=assistant_msg.id,
+                    content=full_content,
+                )
 
         logger.info(
             "Workflow 流式处理完成: session_id=%s, latency_ms=%d",

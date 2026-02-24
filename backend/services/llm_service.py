@@ -5,6 +5,7 @@ LLM Service — 大语言模型调用封装
 - 统一的错误处理与日志
 - 流式 / 非流式两种调用模式
 - 通过 LLMQueryDTO / LLMResultDTO 与上层解耦
+- 模型配置由 config 驱动，不再硬编码
 """
 
 import asyncio
@@ -14,6 +15,7 @@ from collections.abc import AsyncGenerator
 
 import openai
 
+from backend.core.config import settings
 from backend.core.exceptions import ServiceError
 from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
@@ -29,56 +31,43 @@ class LLMService(AbstractLLMService):
         query: LLMQueryDTO,
     ) -> AsyncGenerator[str, None]:
         """
-        流式返回 LLM 响应
-
-        Args:
-            query: LLM 查询 DTO
-
-        Yields:
-            流式响应的文本片段
-
-        Raises:
-            ServiceError: LLM 调用失败
+        流式返回 LLM 响应 (使用异步客户端)
         """
-        logger.info(
-            "LLM 流式请求开始: session_id=%s, query_len=%d",
-            query.session_id,
-            len(query.query_text),
-        )
+        logger.info("LLM 开始流式请求: session_id=%s", query.session_id)
         try:
-            # TODO: 实际项目中替换为真实的 LLM API 调用
-            # 例如：OpenAI, Claude, Azure OpenAI, 本地模型等
-            # mock_response = self._generate_mock_response(query.query_text)
-            client = openai.OpenAI(
-                base_url="http://win.host:11434/v1", api_key="ollama"
+            if query.conversation_history:
+                messages = query.conversation_history
+            else:
+                messages = [{"role": "user", "content": query.query_text}]
+
+            client = openai.AsyncOpenAI(
+                base_url=settings.LLM_BASE_URL,
+                api_key=settings.LLM_API_KEY,
             )
-            response = response = client.chat.completions.create(
-                model="qwen2.5:latest",
-                messages=[{"role": "user", "content": query.query_text}],
+            
+            response = await client.chat.completions.create(
+                model=settings.LLM_MODEL_NAME,
+                messages=messages,
                 stream=True,
             )
-            full_response_content = []
 
-            for chunk in response:
-                # 注意：有的 chunk 可能是空的（比如开始或结束的信号），需要判断
+            async for chunk in response:
                 content = chunk.choices[0].delta.content
                 if content:
-                    print(content, end="", flush=True)  # 实时打印到终端
-                    full_response_content.append(content)
-                    yield content  # 流式返回给调用方
+                    yield content
 
             logger.info("LLM 流式请求完成: session_id=%s", query.session_id)
-        except Exception as e:
-            logger.error(
-                "LLM 流式请求失败: session_id=%s, error=%s",
-                query.session_id,
-                str(e),
-                exc_info=True,
-            )
-            raise ServiceError(
-                "LLM 服务调用失败",
-                details={"session_id": str(query.session_id), "error": str(e)},
-            ) from e
+            except Exception as e:
+                logger.error(
+                    "LLM 流式请求失败: session_id=%s, error=%s",
+                    query.session_id,
+                    str(e),
+                    exc_info=True,
+                )
+                raise ServiceError(
+                    "LLM 服务调用失败",
+                    details={"session_id": str(query.session_id), "error": str(e)},
+                ) from e
 
     async def generate_response(
         self,
@@ -120,7 +109,6 @@ class LLMService(AbstractLLMService):
                 success=True,
             )
         except ServiceError:
-            # ServiceError 已在 stream_response 中记录日志，直接抛出
             raise
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)

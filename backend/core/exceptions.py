@@ -89,3 +89,15 @@ class DatabaseConnectionError(AppError):
     """DBA 专属：数据库挂了"""
 
     status_code = 503
+
+
+class LLMError(ServiceError):
+    """LLM 相关错误的基类"""
+
+    status_code = 502
+
+
+class TokenLimitExceeded(LLMError):
+    """Token 超出模型上下文窗口限制"""
+
+    status_code = 413

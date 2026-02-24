@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "mentor_ai"
     POSTGRES_DB_ECHO: bool = False  # 生产环境建议关闭，开发环境可开启
+    POSTGRES_POOL_SIZE: int = 10
+    POSTGRES_MAX_OVERFLOW: int = 20
 
     BATCH_SIZE: int = 500
 
@@ -31,6 +33,23 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str | None = None
 
     OBSIDIAN_VAULT_PATH: str = "/data/obsidian"
+
+    # --- Redis 配置 ---
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str | None = None
+
+    # --- 并发控制配置 ---
+    LLM_MAX_CONCURRENCY: int = 5
+    DB_MAX_CONCURRENCY: int = 10
+
+    # --- LLM 对话配置 ---
+    LLM_MODEL_NAME: str = "qwen2.5:latest"
+    LLM_BASE_URL: str = "http://win.host:11434/v1"
+    LLM_API_KEY: str = "ollama"
+    LLM_MAX_CONTEXT_TOKENS: int = 4096
+    LLM_MAX_HISTORY_ROUNDS: int = 10
+    LLM_RESERVED_RESPONSE_TOKENS: int = 1024
 
     # --- 安全配置 (SECRET_KEY 必须从 env 读取) ---
     SECRET_KEY: str = ""

@@ -30,6 +30,10 @@ from backend.models.schemas.chat_schema import (
 from backend.services.chat_service import SessionManager
 from backend.services.unit_of_work import AbstractUnitOfWork
 from backend.workflow.chat_workflow import ChatWorkflow
+from backend.middleware.rate_limit import RateLimiter
+
+# 定义限流策略：每 60 秒允许 10 次请求
+chat_limiter = RateLimiter(times=10, seconds=60)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -40,6 +44,7 @@ async def query_sent(
     request: QuerySentRequest,
     current_user: User = Depends(get_current_active_user),
     workflow: ChatWorkflow = Depends(get_chat_workflow),
+    _ = Depends(chat_limiter),
 ):
     """
     用户发送查询（非流式）。
@@ -57,6 +62,7 @@ async def query_stream(
     request: QuerySentRequest,
     current_user: User = Depends(get_current_active_user),
     workflow: ChatWorkflow = Depends(get_chat_workflow),
+    _ = Depends(chat_limiter),
 ):
     """
     用户发送查询（SSE 流式响应）。

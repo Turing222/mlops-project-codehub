@@ -182,6 +182,8 @@ class LLMResultDTO(BaseModel):
     latency_ms: int | None = None
     success: bool = True
     error_message: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
 
 
 class MessageCreateDTO(BaseModel):
