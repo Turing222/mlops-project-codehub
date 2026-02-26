@@ -1,7 +1,7 @@
 import uuid
 from enum import StrEnum
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,7 +52,23 @@ class ChatMessage(Base, BaseIdModel, AuditMixin):
         JSONB, comment="存储 RAG 检索到的原始分块信息"
     )
 
-    # 性能审计
+    # 幂等与审计
+    client_request_id: Mapped[str | None] = mapped_column(
+        String(64), index=True, comment="客户端生成的唯一请求 ID"
+    )
+
+    # 性能与 Token 审计
+    tokens_input: Mapped[int] = mapped_column(
+        default=0, server_default=text("0"), comment="输入 Token 数"
+    )
+    tokens_output: Mapped[int] = mapped_column(
+        default=0, server_default=text("0"), comment="输出 Token 数"
+    )
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=True)  # 记录模型响应耗时
+
     # 核心索引：确保按会话查询消息时，顺序是直接从索引读取的，无需内存排序
-    __table_args__ = (Index("idx_msgs_session_created", "session_id", "created_at"),)
+    __table_args__ = (
+        Index("idx_msgs_session_created", "session_id", "created_at"),
+        # 增加 client_request_id 的唯一索引
+        Index("idx_msgs_client_req_id", "client_request_id", unique=True),
+    )

@@ -55,6 +55,15 @@ class ChatRepository:
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
+    async def get_session_total_tokens(self, session_id: uuid.UUID) -> int:
+        """计算会话消耗的总 Token 数"""
+        from sqlalchemy import func
+        stmt = select(func.sum(ChatMessage.tokens_input + ChatMessage.tokens_output)).where(
+            ChatMessage.session_id == session_id
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
+
     # ========== ChatMessage 操作 ==========
 
     async def get_message(self, message_id: uuid.UUID) -> ChatMessage | None:
@@ -68,6 +77,9 @@ class ChatRepository:
         content: str,
         status: MessageStatus = MessageStatus.SUCCESS,
         latency_ms: int | None = None,
+        tokens_input: int = 0,
+        tokens_output: int = 0,
+        client_request_id: str | None = None,
     ) -> ChatMessage:
         """创建新消息"""
         data = {
@@ -76,6 +88,9 @@ class ChatRepository:
             "content": content,
             "status": status,
             "latency_ms": latency_ms,
+            "tokens_input": tokens_input,
+            "tokens_output": tokens_output,
+            "client_request_id": client_request_id,
         }
         return await self.message_crud.create(obj_in=data)
 
@@ -102,6 +117,8 @@ class ChatRepository:
         status: MessageStatus,
         content: str | None = None,
         latency_ms: int | None = None,
+        tokens_input: int | None = None,
+        tokens_output: int | None = None,
     ) -> ChatMessage | None:
         """更新消息状态和内容"""
         message = await self.get_message(message_id)
@@ -113,6 +130,10 @@ class ChatRepository:
             update_data["content"] = content
         if latency_ms is not None:
             update_data["latency_ms"] = latency_ms
+        if tokens_input is not None:
+            update_data["tokens_input"] = tokens_input
+        if tokens_output is not None:
+            update_data["tokens_output"] = tokens_output
 
         return await self.message_crud.update(db_obj=message, obj_in=update_data)
 
@@ -129,3 +150,9 @@ class ChatRepository:
             content=content,
             status=MessageStatus.THINKING,
         )
+
+    async def get_message_by_client_request_id(self, client_request_id: str) -> ChatMessage | None:
+        """根据客户端请求 ID 获取消息"""
+        stmt = select(ChatMessage).where(ChatMessage.client_request_id == client_request_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()

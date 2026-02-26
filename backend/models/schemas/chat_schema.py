@@ -59,6 +59,7 @@ class QuerySentRequest(BaseModel):
     query: QueryStr
     session_id: uuid.UUID | None = Field(None, description="会话 ID，为空则创建新会话")
     kb_id: uuid.UUID | None = Field(None, description="关联的知识库 ID")
+    client_request_id: str | None = Field(None, description="客户端生成的唯一请求 ID，用于幂等控制")
 
     @field_validator("query")
     @classmethod
@@ -126,6 +127,7 @@ class SessionResponse(BaseModel):
     user_id: uuid.UUID
     kb_id: uuid.UUID | None = None
     model_config_data: dict = Field(default_factory=dict, alias="model_config")
+    total_tokens: int = 0
     created_at: datetime
     updated_at: datetime
 

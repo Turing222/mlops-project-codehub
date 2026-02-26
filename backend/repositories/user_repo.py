@@ -1,3 +1,4 @@
+import uuid
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,3 +49,12 @@ class UserRepository(CRUDBase[User, UserCreate, UserUpdate]):
             index_elements=["email"], set_={"username": stmt.excluded.username}
         )
         await self.session.execute(stmt)
+
+    async def increment_used_tokens(self, user_id: uuid.UUID, amount: int):
+        """
+        原子增加用户的已用 Token 数
+        """
+        user = await self.get(user_id)
+        if user:
+            user.used_tokens += amount
+            await self.session.flush()

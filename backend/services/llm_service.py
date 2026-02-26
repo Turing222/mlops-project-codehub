@@ -19,6 +19,7 @@ from backend.core.config import settings
 from backend.core.exceptions import ServiceError
 from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
+from backend.utils.tokenizer import count_messages_tokens, count_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class LLMService(AbstractLLMService):
                 base_url=settings.LLM_BASE_URL,
                 api_key=settings.LLM_API_KEY,
             )
-            
+
             response = await client.chat.completions.create(
                 model=settings.LLM_MODEL_NAME,
                 messages=messages,
@@ -57,17 +58,17 @@ class LLMService(AbstractLLMService):
                     yield content
 
             logger.info("LLM 流式请求完成: session_id=%s", query.session_id)
-            except Exception as e:
-                logger.error(
-                    "LLM 流式请求失败: session_id=%s, error=%s",
-                    query.session_id,
-                    str(e),
-                    exc_info=True,
-                )
-                raise ServiceError(
-                    "LLM 服务调用失败",
-                    details={"session_id": str(query.session_id), "error": str(e)},
-                ) from e
+        except Exception as e:
+            logger.error(
+                "LLM 流式请求失败: session_id=%s, error=%s",
+                query.session_id,
+                str(e),
+                exc_info=True,
+            )
+            raise ServiceError(
+                "LLM 服务调用失败",
+                details={"session_id": str(query.session_id), "error": str(e)},
+            ) from e
 
     async def generate_response(
         self,
@@ -97,16 +98,24 @@ class LLMService(AbstractLLMService):
             content = "".join(map(str, chunks))
             latency_ms = int((time.time() - start_time) * 1000)
 
+            # 计算 Token 数
+            prompt_tokens = count_messages_tokens(messages)
+            completion_tokens = count_tokens(content)
+
             logger.info(
-                "LLM 非流式请求完成: session_id=%s, content_len=%d, latency_ms=%d",
+                "LLM 非流式请求完成: session_id=%s, content_len=%d, latency_ms=%d, tokens=%d/%d",
                 query.session_id,
                 len(content),
                 latency_ms,
+                prompt_tokens,
+                completion_tokens,
             )
             return LLMResultDTO(
                 content=content,
                 latency_ms=latency_ms,
                 success=True,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
             )
         except ServiceError:
             raise

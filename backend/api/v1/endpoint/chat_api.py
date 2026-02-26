@@ -54,6 +54,7 @@ async def query_sent(
         query_text=request.query,
         session_id=request.session_id,
         kb_id=request.kb_id,
+        client_request_id=request.client_request_id,
     )
 
 
@@ -79,6 +80,7 @@ async def query_stream(
             query_text=request.query,
             session_id=request.session_id,
             kb_id=request.kb_id,
+            client_request_id=request.client_request_id,
         ),
         media_type="text/event-stream",
         headers={
@@ -108,9 +110,15 @@ async def get_sessions(
             skip=skip,
             limit=limit,
         )
+        
+        # 填充 total_tokens
+        items = []
+        for s in sessions:
+            total = await uow.chat_repo.get_session_total_tokens(s.id)
+            items.append(SessionResponse.model_validate(s, update={"total_tokens": total}))
 
     return SessionListResponse(
-        items=[SessionResponse.model_validate(s) for s in sessions],
+        items=items,
         total=len(sessions),
         skip=skip,
         limit=limit,
@@ -141,9 +149,10 @@ async def get_session_detail(
             skip=skip,
             limit=limit,
         )
+        total_tokens = await uow.chat_repo.get_session_total_tokens(session.id)
 
     return SessionDetailResponse(
-        session=SessionResponse.model_validate(session),
+        session=SessionResponse.model_validate(session, update={"total_tokens": total_tokens}),
         messages=[MessageResponse.model_validate(m) for m in messages],
         total_messages=len(messages),
     )

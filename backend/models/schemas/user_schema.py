@@ -120,6 +120,8 @@ class UserResponse(UserBase):
     id: uuid.UUID
     is_active: bool
     is_superuser: bool
+    max_tokens: int
+    used_tokens: int
     created_at: datetime
     updated_at: datetime
 
