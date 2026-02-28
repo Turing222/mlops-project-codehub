@@ -1,19 +1,35 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
 services:
-  # --- PostgreSQL 核心数据库 ---
-  db:
-    image: ankane/pgvector:v0.5.1 # 使用 Postgres + Vector 插件
-    container_name: mentor_db_test_v1
-    restart: no # 相当于 Systemd 的 Restart=always
+
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17-bookworm
+    container_name: pgvector-17-stable_test
     env_file:
       - .env
-    ports:
-      - "5432:5432" # 将容器内的 5432 映射到 Windows/WSL 的 5432
+    # 1. 在服务内挂载卷
     volumes:
-      # 重要：将数据持久化到当前目录下的 postgres_data 文件夹
-      # 这样即使你删掉容器，数据也不会丢
-      - ./postgres_data:/var/lib/postgresql/data
+      - pg_data_v17_test:/var/lib/postgresql/data
+    #  - ./scripts/pgsql_backup.sh:/usr/local/bin/pg_backup.sh:ro
+    logging: *default-logging
+    #entrypoint: [ "/bin/sh", "/usr/local/bin/pg_backup.sh" ]
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          #共享缓冲区 工作内存 维护工作内存 有效缓存预测 最大连接数
+    command: >
+      postgres -c shared_buffers=256MB   -c work_mem=32MB   -c maintenance_work_mem=128MB  -c effective_cache_size=768MB -c max_connections=200 -c logging_collector=on
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 5
+    ports:
+      - "5432:5432"
+volumes:
+  pg_data_v17_test:
+    name: prod_db_volume_test

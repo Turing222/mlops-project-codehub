@@ -4,7 +4,7 @@
 FROM python:3.12-slim AS builder
 
 # 安装 uv (利用官方镜像中的二进制文件)
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.10.7 /uv /bin/
 
 WORKDIR /app
 
