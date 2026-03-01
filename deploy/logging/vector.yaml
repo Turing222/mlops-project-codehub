@@ -4,19 +4,34 @@ sources:
     # 自动识别所有容器
 
 transforms:
-  # 关键：将原始日志解析为 JSON 并提取 level 和 service 标签
+  # 关键：提取容器名并解析 JSON 日志
   parse_and_label:
     type: remap
     inputs: ["docker_socket"]
     source: |
-      .service = .container_name
+      # 提取更友好的容器名（去掉开头的斜杠）
+      .service = replace(string!(.container_name), "/", "")
+      
+      # 解析 JSON 消息
       parsed, err = parse_json(.message)
       if err == null {
-          . = merge(., parsed)
+          # 将解析出的字段合并到顶层
+          . = merge!(., parsed)
+          if .level == null { .level = "info" }
+          
+          # --- 瘦身：删除不需要的冗余元数据 ---
+          del(.label)
+          del(.container_id)
+          del(.container_created_at)
+          del(.host)
+          del(.source_type)
+          del(.stream)
+          del(.image)
+          
           del(.message) 
+      } else {
+          .level = "info"
       }
-      # 默认级别处理
-      if .level == null { .level = "info" }
 
 sinks:
   loki_sink:

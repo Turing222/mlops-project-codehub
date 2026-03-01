@@ -1,38 +1,48 @@
 import datetime
-import json
 import logging
-import logging.handlers
 import sys
+import orjson
+from pythonjsonlogger import jsonlogger
 
 from backend.core.config import settings
 
-
-# --- 1. 自定义 JSON 格式化器 ---
-class JSONFormatter(logging.Formatter):
+class OrjsonFormatter(jsonlogger.JsonFormatter):
     """
-    将日志输出为 JSON 格式，方便机器解析
+    使用 orjson 高性能序列化的 JSON 格式化器
     """
+    def __init__(self, *args, **kwargs):
+        # 预设常用的日志字段
+        if "reserved_attrs" not in kwargs:
+            kwargs["reserved_attrs"] = (
+                "args", "asctime", "created", "exc_info", "exc_text", "filename",
+                "funcName", "levelname", "levelno", "lineno", "module",
+                "msecs", "msg", "name", "pathname", "process", "processName",
+                "relativeCreated", "stack_info", "thread", "threadName"
+            )
+        super(OrjsonFormatter, self).__init__(*args, **kwargs)
 
-    def format(self, record):
-        # 提取日志记录中的基本信息
-        log_record = {
-            "timestamp": datetime.datetime.fromtimestamp(
+    def json_serializer(self, obj):
+        # 使用 orjson 序列化，并返回字符串
+        # option=orjson.OPT_PASSTHROUGH_DATETIME 用于处理时间，
+        # 但 JsonFormatter 默认会把时间转存为 asctime 字符串
+        return orjson.dumps(obj).decode("utf-8")
+
+    def add_fields(self, log_record, record, message_dict):
+        super(OrjsonFormatter, self).add_fields(log_record, record, message_dict)
+        # 统一时间字段名为 timestamp
+        if log_record.get("asctime"):
+            log_record["timestamp"] = log_record.pop("asctime")
+        else:
+            log_record["timestamp"] = datetime.datetime.fromtimestamp(
                 record.created
-            ).isoformat(),  # ISO8601 时间格式
-            "level": record.levelname,
-            "message": record.getMessage(),
-            "logger": record.name,
-            "module": record.module,
-            "func_name": record.funcName,
-            "line_no": record.lineno,
-        }
-
-        # 如果有异常堆栈信息，也加入到 JSON 中
-        if record.exc_info:
-            log_record["exception"] = self.formatException(record.exc_info)
-
-        # 转换为 JSON 字符串，ensure_ascii=False 保证中文正常显示
-        return json.dumps(log_record, ensure_ascii=False)
+            ).isoformat()
+        
+        # 丰富字段信息
+        log_record["level"] = record.levelname
+        log_record["logger"] = record.name
+        log_record["module"] = record.module
+        log_record["func_name"] = record.funcName
+        log_record["line_no"] = record.lineno
 
 
 def setup_logging():
@@ -40,14 +50,14 @@ def setup_logging():
     通用日志配置
     """
     # 确保日志文件夹存在（无论从哪启动，路径都由 settings 决定）
-    settings.LOG_DIR.mkdir(parents=True, exist_ok=True)
-    log_dir = settings.LOG_DIR
+    # settings.LOG_DIR.mkdir(parents=True, exist_ok=True)
+    # log_dir = settings.LOG_DIR
 
     logger = logging.getLogger()  # 获取根日志记录器
     # logger.setLevel(logging.INFO)
     logger.setLevel(logging.DEBUG)
     # 创建通用的 JSON Formatter 实例化
-    json_formatter = JSONFormatter()
+    json_formatter = OrjsonFormatter()
 
     # 清除已有的 Handler（防止多次调用导致重复打印）
     if logger.handlers:
@@ -61,7 +71,7 @@ def setup_logging():
     console_handler.setLevel(logging.DEBUG)
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
-
+    """
     # --- 2. 配置 INFO 级别日志 (记录所有日常流水) ---
     # 文件名：logs/application.log
     # 策略：每天午夜切割，保留30天
@@ -94,3 +104,4 @@ def setup_logging():
     # 降低一些第三方库冗余日志的级别
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+    """

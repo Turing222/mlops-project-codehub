@@ -115,7 +115,9 @@ async def get_sessions(
         items = []
         for s in sessions:
             total = await uow.chat_repo.get_session_total_tokens(s.id)
-            items.append(SessionResponse.model_validate(s, update={"total_tokens": total}))
+            res = SessionResponse.model_validate(s)
+            res.total_tokens = total
+            items.append(res)
 
     return SessionListResponse(
         items=items,
@@ -150,9 +152,11 @@ async def get_session_detail(
             limit=limit,
         )
         total_tokens = await uow.chat_repo.get_session_total_tokens(session.id)
+        session_res = SessionResponse.model_validate(session)
+        session_res.total_tokens = total_tokens
 
     return SessionDetailResponse(
-        session=SessionResponse.model_validate(session, update={"total_tokens": total_tokens}),
+        session=session_res,
         messages=[MessageResponse.model_validate(m) for m in messages],
         total_messages=len(messages),
     )

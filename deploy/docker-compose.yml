@@ -8,7 +8,7 @@ services:
 
   postgres:
     image: pgvector/pgvector:0.8.1-pg17-bookworm
-    container_name: pgvector-17-stable
+    container_name: postgres
     env_file:
       - ../.env
     # 1. 在服务内挂载卷
@@ -23,7 +23,7 @@ services:
           memory: 1024M
           #共享缓冲区 工作内存 维护工作内存 有效缓存预测 最大连接数
     command: >
-      postgres -c shared_buffers=256MB   -c work_mem=32MB   -c maintenance_work_mem=128MB  -c effective_cache_size=768MB -c max_connections=200 -c logging_collector=on
+      postgres -c shared_buffers=256MB   -c work_mem=32MB   -c maintenance_work_mem=128MB  -c effective_cache_size=768MB -c max_connections=200 -c logging_collector=off
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 10s
@@ -34,6 +34,7 @@ services:
 
   redis:
     image: redis:7.4-alpine
+    container_name: redis
     env_file:
       - ../.env # 确保路径正确，读取刚才定义的变量
     deploy:
@@ -48,6 +49,7 @@ services:
       - app_net
   api:
     image: ai-tutor-backend:v1
+    container_name: api
 
     # 限制 Docker 自身收集的控制台日志大小，防止撑爆磁盘
     #只管控制台日志
@@ -75,6 +77,8 @@ services:
         condition: service_started
       db_migrator:
         condition: service_completed_successfully
+      vector:
+        condition: service_started
     healthcheck:
       # 1. 确保路径与你的路由完全一致
       # 2. 使用 python3 确保兼容性
@@ -88,6 +92,7 @@ services:
       - monitor_net
   nginx:
     image: nginx:1.27.5-bookworm
+    container_name: nginx
     logging: *default-logging
     volumes:
       # 挂载前端打包后的代码
@@ -133,7 +138,7 @@ services:
   grafana:
     image: grafana/grafana-oss:11.5.8-ubuntu
     container_name: grafana
-    profiles: [ "monitoring" ] # 打上标签
+    #profiles: [ "monitoring" ] # 打上标签
     logging: *default-logging
     environment:
       - GF_ANALYTICS_REPORTING_ENABLED=false # 禁用统计上报
@@ -144,12 +149,15 @@ services:
           memory: 256M
         reservations:
           memory: 64M
+    volumes:
+      - ./monitoring/grafana_datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
     networks:
       - monitor_net
   # 2. 日志中转 (Vector)
   vector:
     image: timberio/vector:0.50.0-debian
-    profiles: [ "monitoring" ]
+    # 移除 profile 使其默认启动
+    container_name: vector
     volumes:
       - ./logging/vector.yaml:/etc/vector/vector.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -166,7 +174,8 @@ services:
   # 3. 日志存储 (Loki)
   loki:
     image: grafana/loki:3.4.0
-    profiles: [ "monitoring" ]
+    container_name: loki
+    # 移除 profile 使其默认启动
     volumes:
       - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
