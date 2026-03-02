@@ -1,0 +1,192 @@
+{
+    "annotations": {
+        "list": [
+            {
+                "builtIn": 1,
+                "datasource": {
+                    "type": "grafana",
+                    "uid": "-- Grafana --"
+                },
+                "enable": true,
+                "hide": true,
+                "iconColor": "rgba(0, 211, 255, 1)",
+                "name": "Annotations & Alerts",
+                "type": "dashboard"
+            }
+        ]
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "links": [],
+    "liveNow": false,
+    "panels": [
+        {
+            "title": "API 请求量 (QPS)",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 0,
+                "y": 0
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "targets": [
+                {
+                    "expr": "sum(rate(http_requests_total[1m])) by (method, handler)",
+                    "legendFormat": "{{method}} {{handler}}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "reqps"
+                }
+            }
+        },
+        {
+            "title": "API 状态码 distribution",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 8,
+                "y": 0
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "targets": [
+                {
+                    "expr": "sum(rate(http_requests_total[1m])) by (status)",
+                    "legendFormat": "Status {{status}}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "reqps"
+                }
+            }
+        },
+        {
+            "title": "P99 响应延迟 (秒)",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 16,
+                "y": 0
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))",
+                    "legendFormat": "{{handler}}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "s"
+                }
+            }
+        },
+        {
+            "title": "数据库连接数量",
+            "type": "gauge",
+            "gridPos": {
+                "h": 6,
+                "w": 12,
+                "x": 0,
+                "y": 8
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "targets": [
+                {
+                    "expr": "pg_stat_activity_count",
+                    "legendFormat": "Active Connections"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "min": 0,
+                    "max": 200
+                }
+            }
+        },
+        {
+            "title": "Redis 内存消耗",
+            "type": "gauge",
+            "gridPos": {
+                "h": 6,
+                "w": 12,
+                "x": 12,
+                "y": 8
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "targets": [
+                {
+                    "expr": "redis_memory_used_bytes",
+                    "legendFormat": "Used Memory"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "bytes"
+                }
+            }
+        },
+        {
+            "title": "后端实时业务日志 (API)",
+            "type": "logs",
+            "gridPos": {
+                "h": 12,
+                "w": 24,
+                "x": 0,
+                "y": 14
+            },
+            "datasource": {
+                "type": "loki",
+                "uid": "loki"
+            },
+            "targets": [
+                {
+                    "expr": "{service=\"api\"}",
+                    "refId": "A"
+                }
+            ],
+            "options": {
+                "showTime": true,
+                "showLabels": false,
+                "enableLogDetails": true,
+                "sortOrder": "Descending"
+            }
+        }
+    ],
+    "refresh": "10s",
+    "schemaVersion": 39,
+    "style": "dark",
+    "tags": [
+        "mlops"
+    ],
+    "templating": {
+        "list": []
+    },
+    "time": {
+        "from": "now-1h",
+        "to": "now"
+    },
+    "title": "MLOps Core Monitoring",
+    "uid": "mlops-core-001"
+}

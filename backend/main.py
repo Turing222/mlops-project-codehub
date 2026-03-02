@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 
+from prometheus_fastapi_instrumentator import Instrumentator
+
 from backend.api.v1.api import api_router
 from backend.core.config import settings
 from backend.core.database import init_db
@@ -47,10 +49,13 @@ app = FastAPI(
 # 全局异常处理
 setup_exception_handlers(app)
 
-# 中间件
+# 中间件策略
 setup_tracing(app)
 
-# 前缀名「方案选单」
+# 监控埋点 (默认在 /metrics 暴露指标)
+Instrumentator().instrument(app).expose(app)
+
+# 路由挂载
 app.include_router(api_router, prefix="/v1")
 
 

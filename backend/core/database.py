@@ -42,7 +42,7 @@ async def init_db(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.db_engine = engine
     app.state.session_factory = session_factory
 
-    logger.info("Database connection pool initialized.")
+    logger.info(f"Database connection pool initialized. URL: {settings.database_url}")
 
     try:
         # 在这里可以添加启动时的连接检查（防止配置错误导致启动后报错）

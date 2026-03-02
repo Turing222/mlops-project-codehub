@@ -61,6 +61,8 @@ services:
     environment:
       - PYTHONMALLOC=default # 生产环境使用 default，debug 模式严重拖慢性能
       - WEB_CONCURRENCY=1 # 充分利用 1.5GB 内存，启动 2 个 Worker  Worker Process（工作进程） 测试时只开启一个
+    cap_add:
+      - SYS_PTRACE # 允许 py-spy 性能分析工具附加到进程
     restart: unless-stopped
     deploy:
       resources:
@@ -116,9 +118,9 @@ services:
           memory: 64M
 
   prometheus:
-    image: prom/prometheus:v3.8.1
+    image: prom/prometheus:v3.1.0
     container_name: prometheus
-    profiles: [ "monitoring" ] # 打上标签
+    # 移除 profile 使其默认启动，它是监控系统的核心
     logging: *default-logging
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
@@ -135,10 +137,44 @@ services:
     networks:
       - monitor_net
 
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    container_name: postgres_exporter
+    environment:
+      # 连接字符串，指向同网络下的 postgres 服务
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app_net
+      - monitor_net
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  redis_exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: redis_exporter
+    environment:
+      # 指向同网络下的 redis 服务，并传入密码
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    depends_on:
+      redis:
+        condition: service_started
+    networks:
+      - app_net
+      - monitor_net
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
   grafana:
     image: grafana/grafana-oss:11.5.8-ubuntu
     container_name: grafana
-    #profiles: [ "monitoring" ] # 打上标签
     logging: *default-logging
     environment:
       - GF_ANALYTICS_REPORTING_ENABLED=false # 禁用统计上报
@@ -151,8 +187,11 @@ services:
           memory: 64M
     volumes:
       - ./monitoring/grafana_datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./monitoring/grafana_dashboards_provisioning.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards/mlops:ro
     networks:
       - monitor_net
+
   # 2. 日志中转 (Vector)
   vector:
     image: timberio/vector:0.50.0-debian
@@ -200,6 +239,26 @@ services:
       - ../.env
     networks:
       - app_net
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # 4. 压力测试 (Locust)
+  locust:
+    image: locustio/locust:2.33.0
+    container_name: locust
+    volumes:
+      - ../tests:/mnt/locust # 挂载测试脚本目录
+    command: -f /mnt/locust/locustfile.py --host http://api:8000
+    profiles: [ "debug" ] # 设置为 debug 模式启动，默认不开启
+    ports:
+      - "8089:8089"
+    networks:
+      - app_net
+      - monitor_net
     deploy:
       resources:
         limits:

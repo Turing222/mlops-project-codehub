@@ -8,7 +8,14 @@ scrape_configs:
       - targets: ["localhost:9090"]
 
   # FastAPI 后端指标抓取
-  # 注意：需要在 FastAPI 中集成 prometheus-fastapi-instrumentator 暴露 /metrics
   - job_name: "fastapi-backend"
     static_configs:
-      - targets: ["api:8000"] # 使用 Docker Compose 服务名
+      - targets: ["api:8000"]
+
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres_exporter:9187"]
+
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis_exporter:9121"]
