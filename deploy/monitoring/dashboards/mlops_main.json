@@ -97,13 +97,59 @@
             }
         },
         {
+            "title": "平均响应延迟 (秒)",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 8
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "targets": [
+                {
+                    "expr": "sum(rate(http_request_duration_seconds_sum[5m])) by (handler) / sum(rate(http_request_duration_seconds_count[5m])) by (handler)",
+                    "legendFormat": "{{handler}} - Avg"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "s",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "orange",
+                                "value": 5
+                            },
+                            {
+                                "color": "red",
+                                "value": 15
+                            }
+                        ]
+                    },
+                    "custom": {
+                        "fillOpacity": 20,
+                        "lineWidth": 2
+                    }
+                }
+            }
+        },
+        {
             "title": "数据库连接数量",
             "type": "gauge",
             "gridPos": {
-                "h": 6,
+                "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 8
+                "y": 16
             },
             "datasource": {
                 "type": "prometheus",
@@ -126,10 +172,10 @@
             "title": "Redis 内存消耗",
             "type": "gauge",
             "gridPos": {
-                "h": 6,
+                "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 8
+                "y": 16
             },
             "datasource": {
                 "type": "prometheus",
@@ -148,13 +194,13 @@
             }
         },
         {
-            "title": "后端实时业务日志 (API)",
+            "title": "实时系统服务日志 ($service)",
             "type": "logs",
             "gridPos": {
-                "h": 12,
-                "w": 24,
+                "h": 14,
+                "w": 12,
                 "x": 0,
-                "y": 14
+                "y": 24
             },
             "datasource": {
                 "type": "loki",
@@ -162,13 +208,41 @@
             },
             "targets": [
                 {
-                    "expr": "{service=\"api\"}",
+                    "expr": "{service=~\"$service\"} | json | line_format \"[{{.service}}] {{.message}}\"",
                     "refId": "A"
                 }
             ],
             "options": {
-                "showTime": true,
+                "showTime": false,
                 "showLabels": false,
+                "showLevel": true,
+                "enableLogDetails": true,
+                "sortOrder": "Descending"
+            }
+        },
+        {
+            "title": "🚨 告警与异常日志 (Error/Warn)",
+            "type": "logs",
+            "gridPos": {
+                "h": 14,
+                "w": 12,
+                "x": 12,
+                "y": 24
+            },
+            "datasource": {
+                "type": "loki",
+                "uid": "loki"
+            },
+            "targets": [
+                {
+                    "expr": "{level=~\"error|warn\"} | json | line_format \"[{{.service}}] {{.message}}\"",
+                    "refId": "B"
+                }
+            ],
+            "options": {
+                "showTime": false,
+                "showLabels": false,
+                "showLevel": true,
                 "enableLogDetails": true,
                 "sortOrder": "Descending"
             }
@@ -181,7 +255,23 @@
         "mlops"
     ],
     "templating": {
-        "list": []
+        "list": [
+            {
+                "name": "service",
+                "type": "query",
+                "datasource": {
+                    "type": "loki",
+                    "uid": "loki"
+                },
+                "query": "label_values(service)",
+                "refresh": 1,
+                "hide": 0,
+                "includeAll": true,
+                "allValue": ".*",
+                "multi": false,
+                "label": "过滤服务"
+            }
+        ]
     },
     "time": {
         "from": "now-1h",

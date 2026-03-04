@@ -124,6 +124,7 @@ services:
     logging: *default-logging
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
       # 限制数据只保留 7 天，防止硬盘撑爆
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -138,7 +139,7 @@ services:
       - monitor_net
 
   postgres_exporter:
-    image: prometheuscommunity/postgres-exporter:v0.16.0
+    image: prometheuscommunity/postgres-exporter:v0.17.1
     container_name: postgres_exporter
     environment:
       # 连接字符串，指向同网络下的 postgres 服务

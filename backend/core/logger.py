@@ -6,18 +6,38 @@ from pythonjsonlogger import jsonlogger
 
 from backend.core.config import settings
 
+
 class OrjsonFormatter(jsonlogger.JsonFormatter):
     """
     使用 orjson 高性能序列化的 JSON 格式化器
     """
+
     def __init__(self, *args, **kwargs):
         # 预设常用的日志字段
         if "reserved_attrs" not in kwargs:
             kwargs["reserved_attrs"] = (
-                "args", "asctime", "created", "exc_info", "exc_text", "filename",
-                "funcName", "levelname", "levelno", "lineno", "module",
-                "msecs", "msg", "name", "pathname", "process", "processName",
-                "relativeCreated", "stack_info", "thread", "threadName"
+                "args",
+                "asctime",
+                "created",
+                "exc_info",
+                "exc_text",
+                "filename",
+                "funcName",
+                "levelname",
+                "levelno",
+                "lineno",
+                "module",
+                "msecs",
+                "msg",
+                "name",
+                "pathname",
+                "process",
+                "processName",
+                "relativeCreated",
+                "stack_info",
+                "thread",
+                "threadName",
+                "taskName",
             )
         super(OrjsonFormatter, self).__init__(*args, **kwargs)
 
@@ -36,7 +56,7 @@ class OrjsonFormatter(jsonlogger.JsonFormatter):
             log_record["timestamp"] = datetime.datetime.fromtimestamp(
                 record.created
             ).isoformat()
-        
+
         # 丰富字段信息
         log_record["level"] = record.levelname
         log_record["logger"] = record.name
@@ -65,43 +85,11 @@ def setup_logging():
 
     # 1. 输出到控制台的 Handler
     console_handler = logging.StreamHandler(sys.stdout)
-    console_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
     console_handler.setLevel(logging.DEBUG)
-    console_handler.setFormatter(console_formatter)
+    # 使用预先配置好的 JSON Formatter
+    console_handler.setFormatter(json_formatter)
     logger.addHandler(console_handler)
-    """
-    # --- 2. 配置 INFO 级别日志 (记录所有日常流水) ---
-    # 文件名：logs/application.log
-    # 策略：每天午夜切割，保留30天
-    info_handler = logging.handlers.TimedRotatingFileHandler(
-        filename=log_dir / "application.log",
-        when="midnight",
-        interval=1,
-        backupCount=30,
-        encoding="utf-8",
-    )
-    info_handler.setLevel(logging.INFO)  # 包含 INFO, WARNING, ERROR
-    info_handler.setFormatter(json_formatter)
-    logger.addHandler(info_handler)
 
-    # --- 3. 配置 ERROR 级别日志 (只记录报错) ---
-    # 文件名：logs/error.log
-    # 策略：每天午夜切割，保留30天
-    # 作用：运维告警只监控这个文件，干扰少
-    error_handler = logging.handlers.TimedRotatingFileHandler(
-        filename=log_dir / "error.log",
-        when="midnight",
-        interval=1,
-        backupCount=30,
-        encoding="utf-8",
-    )
-    error_handler.setLevel(logging.ERROR)  # 只包含 ERROR, CRITICAL
-    error_handler.setFormatter(json_formatter)
-    logger.addHandler(error_handler)
-
-    # 降低一些第三方库冗余日志的级别
+    # 降低一些第三方库冗余日志的级别，防止刷屏
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-    logging.getLogger("uvicorn.access").setLevel(logging.INFO)
-    """
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)

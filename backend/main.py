@@ -29,14 +29,14 @@ logger.info("系统初始化完成")
 async def lifespan(app: FastAPI):
     # 顺序组合不同的初始化逻辑
     # 启动时：可以在这里打印连接池状态
-    print("🚀 System starting...")
+
     async with init_db(app):
         # 初始化 Redis
         await redis_client.init()
         yield
         # 关闭 Redis
         await redis_client.close()
-    print("🛑 System shutting down...")
+    logger.info("系统已关闭")
 
 
 app = FastAPI(

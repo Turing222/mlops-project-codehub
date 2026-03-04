@@ -9,29 +9,62 @@ transforms:
     type: remap
     inputs: ["docker_socket"]
     source: |
-      # 提取更友好的容器名（去掉开头的斜杠）
+      # 1. 提取服务名并清理 "/" 前缀
       .service = replace(string!(.container_name), "/", "")
       
-      # 解析 JSON 消息
+      # 2. 解析 JSON 日志（API 和 Nginx 此时都应该是 JSON）
       parsed, err = parse_json(.message)
       if err == null {
-          # 将解析出的字段合并到顶层
+          # 将业务字段合并到顶层
           . = merge!(., parsed)
-          if .level == null { .level = "info" }
           
-          # --- 瘦身：删除不需要的冗余元数据 ---
-          del(.label)
-          del(.container_id)
-          del(.container_created_at)
-          del(.host)
-          del(.source_type)
-          del(.stream)
-          del(.image)
-          
-          del(.message) 
+          # 3. 状态码染色逻辑 (针对 Nginx 和 API JSON)
+          if .status != null {
+              # 使用 to_string() 避免抛出异常，如果 status 是 200 (数字型)
+              status_str = to_string(.status) ?? "0"
+              if starts_with(status_str, "5") {
+                  .level = "error"
+              } else if starts_with(status_str, "4") {
+                  .level = "warn"
+              } else if .level == null {
+                  .level = "info"
+              }
+          }
+      } else {
+          # 4. 文本解析染色逻辑 (针对非 JSON 或不规范 JSON 日志)
+          # 使用正则匹配标准的日志级别格式，避免正文中包含 error 单词导致的误判
+          msg_str = string!(.message)
+          if match(msg_str, r'\b(?:ERROR|CRITICAL|FATAL)\b(?: - |:\s*|\]|\s+)') {
+              .level = "error"
+          } else if match(msg_str, r'\b(?:WARN|WARNING)\b(?: - |:\s*|\]|\s+)') {
+              .level = "warn"
+          } else if match(msg_str, r'\b(?:DEBUG)\b(?: - |:\s*|\]|\s+)') {
+              .level = "debug"
+          } else {
+              .level = "info"
+          }
+      }
+
+      # 5. 兜底策略：统一规整 level 字段小写及 null 兜底
+      if .level != null {
+          # 使用 to_string 安全转换，如果 .level 解析出来是 int 等异类类型导致抛异常
+          .level = downcase(to_string(.level) ?? "info")
       } else {
           .level = "info"
       }
+      
+      # 3. --- 核心瘦身：删除顽固的 Docker 冗余数据 ---
+      del(.label)
+      del(.container_id)
+      del(.container_created_at)
+      del(.container_name)
+      del(.host)
+      del(.image)
+      del(.source_type)
+      del(.stream)
+      
+      # 如果上面没有解析出业务 message，则保留原始 .message
+      # 否则 Vector 默认就会保留提取出来的正文
 
 sinks:
   loki_sink:

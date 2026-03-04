@@ -1,0 +1,54 @@
+groups:
+  - name: mlops_core_alerts
+    rules:
+      # 1. 服务存活告警 (最基础的：某个容器挂了)
+      - alert: InstanceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: '服务节点离线: {{ $labels.job }}'
+          description: 'Job {{ $labels.job }} 对应的实例 {{ $labels.instance }} 已失联超过 1 分钟。'
+
+      # 2. LLM 后端高延迟告警 (P99 > 45秒)
+      # 理由：LLM 推理慢，如果 P99 还是超过 45s，说明系统可能出现了严重的排队或显存瓶颈
+      - alert: ApiHighLatency
+        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler)) > 45
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'API 响应过慢: {{ $labels.handler }}'
+          description: 'API 接口 {{ $labels.handler }} 的 P99 响应延迟已达到 {{ $value | printf "%.2f" }}s。'
+
+      # 3. 后端 5xx 错误率预警 (> 5%)
+      - alert: ApiErrorRateHigh
+        expr: (sum(rate(http_requests_total{status=~"5.."}[5m])) by (handler) / sum(rate(http_requests_total[5m])) by (handler)) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'API 错误率飙升: {{ $labels.handler }}'
+          description: '接口 {{ $labels.handler }} 的 5xx 错误率已超过 5% (当前: {{ $value | printf "%.2f" }}%)。'
+
+      # 4. Redis 内存预警 (> 85%)
+      # 理由：Redis 爆满会导致聊天会话无法存取，导致系统瘫痪
+      - alert: RedisMemoryUsageHigh
+        expr: redis_memory_used_bytes / 402653184 > 0.85 # 基于你 command 里的 384MB 限制
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Redis 内存不足'
+          description: 'Redis 已使用内存超过 85% (当前: {{ $value | printf "%.2f" }})。'
+
+      # 5. Postgres 连接数枯竭 (> 80%)
+      - alert: PostgresConnectionsExhausted
+        expr: pg_stat_activity_count / 200 > 0.8 # 基于你 command 里的 max_connections=200
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Postgres 连接数告急'
+          description: '数据库连接数即将耗尽 (当前占比: {{ $value | printf "%.2f" }})。'

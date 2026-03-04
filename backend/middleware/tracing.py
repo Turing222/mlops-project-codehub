@@ -10,7 +10,7 @@ from ulid import ULID
 REQUEST_ID_CTX: ContextVar[str] = ContextVar("request_id", default="")
 
 # 设置日志
-logger = logging.getLogger("uvicorn.error")
+logger = logging.getLogger(__name__)
 
 
 def setup_tracing(app: FastAPI):
@@ -34,12 +34,24 @@ def setup_tracing(app: FastAPI):
             response.headers["X-Process-Time"] = f"{process_time:.2f}ms"
 
             logger.info(
-                f"Finished | RID: {rid} | Path: {request.url.path} | Status: {response.status_code}"
+                "Request Finished",
+                extra={
+                    "rid": rid,
+                    "path": request.url.path,
+                    "status": response.status_code,
+                    "process_time_ms": round(process_time, 2)
+                }
             )
             return response
 
         except Exception as e:
-            logger.error(f"Failed | RID: {rid} | Error: {str(e)}")
+            logger.error(
+                "Request Failed",
+                extra={
+                    "rid": rid,
+                    "error": str(e)
+                }
+            )
             raise e
         finally:
             # 4. 必须执行：清理上下文，防止内存泄露或协程间干扰

@@ -81,8 +81,11 @@ def get_current_superuser(
     return current_user
 
 
+from backend.services.mock_llm_service import MockLLMService
+
 def get_llm_service() -> AbstractLLMService:
-    return LLMService()
+    # 压测阶段：临时替换为 Mock 服务
+    return MockLLMService()
 
 
 def get_chat_workflow(

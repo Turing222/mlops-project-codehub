@@ -1,6 +1,9 @@
 global:
   scrape_interval: 15s # 每 15 秒抓取一次数据，默认是 1 分钟
 
+rule_files:
+  - "alert_rules.yml" # 引入刚才定义的规则
+
 scrape_configs:
   # Prometheus 监控它自己
   - job_name: "prometheus"

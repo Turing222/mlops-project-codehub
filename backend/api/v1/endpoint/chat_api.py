@@ -32,8 +32,8 @@ from backend.services.unit_of_work import AbstractUnitOfWork
 from backend.workflow.chat_workflow import ChatWorkflow
 from backend.middleware.rate_limit import RateLimiter
 
-# 定义限流策略：每 60 秒允许 10 次请求
-chat_limiter = RateLimiter(times=10, seconds=60)
+# 定义限流策略：为压测临时调高上限（原：每 60 秒 10 次）
+chat_limiter = RateLimiter(times=100000, seconds=60)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
