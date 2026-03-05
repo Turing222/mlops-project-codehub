@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,9 +52,13 @@ class UserRepository(CRUDBase[User, UserCreate, UserUpdate]):
 
     async def increment_used_tokens(self, user_id: uuid.UUID, amount: int):
         """
-        原子增加用户的已用 Token 数
+        原子增加用户的已用 Token 数。
+        使用 SQL 级别的原子操作 (SET used_tokens = used_tokens + amount)，
+        避免并发下的「读-改-写」丢失更新问题。
         """
-        user = await self.get(user_id)
-        if user:
-            user.used_tokens += amount
-            await self.session.flush()
+        stmt = (
+            update(User)
+            .where(User.id == user_id)
+            .values(used_tokens=User.used_tokens + amount)
+        )
+        await self.session.execute(stmt)

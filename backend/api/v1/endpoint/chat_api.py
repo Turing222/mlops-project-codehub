@@ -37,8 +37,6 @@ chat_limiter = RateLimiter(times=100000, seconds=60)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
 @router.post("/query_sent", response_model=ChatQueryResponse)
 async def query_sent(
     request: QuerySentRequest,
@@ -112,7 +110,7 @@ async def get_sessions(
         )
         
         # 填充 total_tokens
-        items = []
+        items = [] #存在N+1的问题
         for s in sessions:
             total = await uow.chat_repo.get_session_total_tokens(s.id)
             res = SessionResponse.model_validate(s)

@@ -3,7 +3,7 @@ name = "mlops-project"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.12.*"
 dependencies = [
     "alembic~=1.17.0",
     "asyncpg~=0.31.0",
@@ -29,6 +29,13 @@ dependencies = [
     "tenacity~=9.0.0",
     "tiktoken~=0.9.0",
     "uvicorn~=0.40.0",
+    "taskiq~=0.12.0",
+    "taskiq-redis~=1.2.0",
+    "taskiq-fastapi~=0.4.0",
+    "docling~=2.76.0",
+    "torch @ https://download.pytorch.org/whl/cpu/torch-2.5.1%2Bcpu-cp312-cp312-linux_x86_64.whl",
+    "torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.20.1%2Bcpu-cp312-cp312-linux_x86_64.whl",
+    "langfuse~=3.14.0",
 ]
 
 [tool.ruff]
@@ -66,11 +73,6 @@ extend-immutable-calls = [
 ]
 
 [dependency-groups]
-compute = [
-    "docling>=2.72.0",
-    "numpy>=2.3.5",
-    "sentence-transformers>=5.2.2",
-]
 dev = [
     "httpx>=0.28.1",
     "jupyterlab>=4.5.4",
@@ -121,3 +123,4 @@ exclude = [
 [tool.ty.terminal]
 # 5. 可选：让输出结果更美观（2026年大家都在用这种彩色富文本输出）
 output-format = "full"
+

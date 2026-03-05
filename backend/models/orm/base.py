@@ -1,17 +1,10 @@
 import uuid
 from datetime import datetime
-from typing import Annotated
 
 from sqlalchemy import DateTime, MetaData, func, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from ulid import ULID
-
-# 1. 定义一个通用的类型注解，方便全系统统一修改规格
-# 例如：将来想把所有时间戳改为带时区的，只需改这里
-timestamp = Annotated[
-    datetime, mapped_column(DateTime(timezone=True), server_default=func.now())
-]
 
 naming_convention = {
     "ix": "ix_%(column_0_label)s",
@@ -53,8 +46,11 @@ class BaseIdModel:
         # 显式指定 SQL 类型，确保跨库一致性
         nullable=False,
         comment="基于ULID生成的唯一标识",
-        server_default=text("gen_random_uuid()"),  # 数据库侧的兜底逻辑
+        server_default=text("uuid_generate_v7()"),  # 数据库侧的兜底逻辑(PG17原生支持时间序UUID)
     )
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} id={self.id}>"
 
 
 class AuditMixin:

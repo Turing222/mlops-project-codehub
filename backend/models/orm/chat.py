@@ -3,7 +3,7 @@ from enum import StrEnum
 
 from sqlalchemy import ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
 
@@ -17,10 +17,19 @@ class ChatSession(Base, BaseIdModel, AuditMixin):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    kb_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("knowledge_bases.id"))
+    kb_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("knowledge_bases.id", ondelete="SET NULL"), index=True
+    )
 
     # 扩展配置：如温度、模型选择
-    model_config: Mapped[dict] = mapped_column(JSONB, server_default="{}")
+    llm_config: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'"))
+
+    # 双向关联
+    user: Mapped["User"] = relationship(back_populates="sessions")
+    messages: Mapped[list["ChatMessage"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
 
 
 class MessageStatus(StrEnum):
@@ -40,6 +49,8 @@ class ChatMessage(Base, BaseIdModel, AuditMixin):
     )
     role: Mapped[str] = mapped_column(String(20))  # user, assistant, system
     content: Mapped[str] = mapped_column(Text)
+
+    session: Mapped["ChatSession"] = relationship(back_populates="messages")
 
     # 状态控制
     status: Mapped[MessageStatus] = mapped_column(
@@ -64,11 +75,16 @@ class ChatMessage(Base, BaseIdModel, AuditMixin):
     tokens_output: Mapped[int] = mapped_column(
         default=0, server_default=text("0"), comment="输出 Token 数"
     )
-    latency_ms: Mapped[int] = mapped_column(Integer, nullable=True)  # 记录模型响应耗时
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 记录模型响应耗时
 
     # 核心索引：确保按会话查询消息时，顺序是直接从索引读取的，无需内存排序
     __table_args__ = (
         Index("idx_msgs_session_created", "session_id", "created_at"),
         # 增加 client_request_id 的唯一索引
         Index("idx_msgs_client_req_id", "client_request_id", unique=True),
+    )
+
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="message",
+        cascade="all, delete-orphan",
     )

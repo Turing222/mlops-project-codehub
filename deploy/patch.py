@@ -1,6 +1,7 @@
 import json
+from pathlib import Path
 
-file_path = "/home/tongying/workspace/mlops-project/deploy/monitoring/dashboards/mlops_main.json"
+file_path = Path(__file__).parent / "monitoring" / "dashboards" / "mlops_main.json"
 with open(file_path, "r") as f:
     data = json.load(f)
 

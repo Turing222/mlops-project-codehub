@@ -1,6 +1,7 @@
 from .base import AuditMixin, Base, BaseIdModel
 from .chat import ChatMessage, ChatSession
-from .file import File, FileChunk
+from .knowledge import File, KnowledgeBase, FileStatus
+from .chunk import DocumentChunk, ChunkSourceType
 from .task import TaskJob
 from .user import User
 
@@ -10,7 +11,10 @@ __all__ = [
     "ChatMessage",
     "ChatSession",
     "File",
-    "FileChunk",
+    "FileStatus",
+    "DocumentChunk",
+    "ChunkSourceType",
+    "KnowledgeBase",
     "TaskJob",
     "AuditMixin",
     "BaseIdModel",

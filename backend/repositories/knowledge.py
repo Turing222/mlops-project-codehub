@@ -1,6 +1,6 @@
 from sqlalchemy import insert
 
-from backend.models.orm.file import FileChunk
+from backend.models.orm.chunk import DocumentChunk
 
 
 class KnowledgeRepository:
@@ -11,7 +11,7 @@ class KnowledgeRepository:
         # chunks_data 包含 content 和 embedding(list)
         if not chunks_data:
             return
-        stmt = insert(FileChunk).values(chunks_data)
+        stmt = insert(DocumentChunk).values(chunks_data)
         await self.session.execute(stmt)
 
     async def vector_search(self, query_vector: list[float], limit=5):
@@ -19,8 +19,8 @@ class KnowledgeRepository:
         from sqlalchemy import select
 
         stmt = (
-            select(FileChunk)
-            .order_by(FileChunk.embedding.cosine_distance(query_vector))
+            select(DocumentChunk)
+            .order_by(DocumentChunk.embedding.cosine_distance(query_vector))
             .limit(limit)
         )
         result = await self.session.execute(stmt)

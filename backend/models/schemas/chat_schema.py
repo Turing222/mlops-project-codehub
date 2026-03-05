@@ -126,12 +126,12 @@ class SessionResponse(BaseModel):
     title: str
     user_id: uuid.UUID
     kb_id: uuid.UUID | None = None
-    model_config_data: dict = Field(default_factory=dict, alias="model_config")
+    llm_config: dict = Field(default_factory=dict)
     total_tokens: int = 0
     created_at: datetime
     updated_at: datetime
 
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SessionListResponse(BaseModel):

@@ -27,14 +27,14 @@ class ChatRepository:
         user_id: uuid.UUID,
         title: str = "新对话",
         kb_id: uuid.UUID | None = None,
-        model_config: dict | None = None,
+        llm_config: dict | None = None,
     ) -> ChatSession:
         """创建新会话"""
         data = {
             "user_id": user_id,
             "title": title[:50] if title else "新对话",  # 限制长度
             "kb_id": kb_id,
-            "model_config": model_config or {},
+            "llm_config": llm_config or {},
         }
         return await self.session_crud.create(obj_in=data)
 

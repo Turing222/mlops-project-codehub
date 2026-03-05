@@ -16,6 +16,8 @@ import uuid
 import json
 import time
 
+from langfuse import observe, get_client
+
 from backend.core.config import settings
 from backend.core.exceptions import ServiceError, ValidationError
 from backend.core.redis import redis_client
@@ -30,6 +32,7 @@ from backend.services.chat_service import ChatMessageUpdater, SessionManager
 from backend.services.llm_core import PromptManager
 from backend.services.unit_of_work import AbstractUnitOfWork
 from backend.utils.tokenizer import count_messages_tokens, count_tokens
+from backend.tasks.llm_tasks import generate_llm_stream_task
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +72,7 @@ class ChatWorkflow:
             if msg.role in ("user", "assistant") and msg.content
         ]
 
+    @observe()
     async def handle_query(
         self,
         user_id: uuid.UUID,
@@ -80,6 +84,12 @@ class ChatWorkflow:
         """
         处理用户查询请求 (非流式)。
         """
+        # 绑定当前追踪的上下文信息
+        get_client().update_current_trace(
+            user_id=str(user_id),
+            session_id=str(session_id) if session_id else None,
+            tags=["chat_api", "non-stream"],
+        )
         logger.info(
             "Workflow 收到查询: user_id=%s, session_id=%s, query_len=%d",
             user_id,
@@ -95,12 +105,19 @@ class ChatWorkflow:
             if not is_new:
                 val = await redis.get(lock_key)
                 if val == "PROCESSING":
-                    raise ServiceError("正在加速计算中...", details={"client_request_id": client_request_id})
+                    raise ServiceError(
+                        "正在加速计算中...",
+                        details={"client_request_id": client_request_id},
+                    )
                 else:
                     async with self.uow:
-                        msg = await self.uow.chat_repo.get_message_by_client_request_id(client_request_id)
+                        msg = await self.uow.chat_repo.get_message_by_client_request_id(
+                            client_request_id
+                        )
                         if msg and msg.status == MessageStatus.SUCCESS:
-                            session = await self.uow.chat_repo.get_session(msg.session_id)
+                            session = await self.uow.chat_repo.get_session(
+                                msg.session_id
+                            )
                             return ChatQueryResponse(
                                 session_id=session.id,
                                 session_title=session.title,
@@ -113,8 +130,12 @@ class ChatWorkflow:
                 # 校验 Token 余额
                 user = await self.uow.users.get(user_id)
                 if user and user.used_tokens >= user.max_tokens:
-                    if client_request_id: await redis.delete(lock_key)
-                    raise ValidationError("Token 余额不足", details={"used": user.used_tokens, "max": user.max_tokens})
+                    if client_request_id:
+                        await redis.delete(lock_key)
+                    raise ValidationError(
+                        "Token 余额不足",
+                        details={"used": user.used_tokens, "max": user.max_tokens},
+                    )
 
                 session_manager = SessionManager(self.uow)
                 session = await session_manager.ensure_session(
@@ -157,7 +178,8 @@ class ChatWorkflow:
             async with self._get_llm_semaphore():
                 result = await self.llm_service.generate_response(llm_query)
         except Exception as e:
-            if client_request_id: await redis.delete(lock_key)
+            if client_request_id:
+                await redis.delete(lock_key)
             async with self._get_db_semaphore():
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
@@ -165,7 +187,8 @@ class ChatWorkflow:
             raise
 
         if not result.success:
-            if client_request_id: await redis.delete(lock_key)
+            if client_request_id:
+                await redis.delete(lock_key)
             async with self._get_db_semaphore():
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
@@ -173,7 +196,9 @@ class ChatWorkflow:
                         assistant_msg.id,
                         error_content=result.error_message or "LLM 服务调用失败",
                     )
-            raise ServiceError("LLM 服务返回失败", details={"error": result.error_message})
+            raise ServiceError(
+                "LLM 服务返回失败", details={"error": result.error_message}
+            )
 
         # 6. 更新助手消息并累加 Token
         async with self._get_db_semaphore():
@@ -188,7 +213,7 @@ class ChatWorkflow:
                 await self.uow.users.increment_used_tokens(
                     user_id, tokens_input + (result.completion_tokens or 0)
                 )
-        
+
         if client_request_id:
             await redis.set(lock_key, str(updated_msg.id), ex=3600)
 
@@ -198,6 +223,7 @@ class ChatWorkflow:
             answer=MessageResponse.model_validate(updated_msg),
         )
 
+    @observe()
     async def handle_query_stream(
         self,
         user_id: uuid.UUID,
@@ -209,6 +235,12 @@ class ChatWorkflow:
         """
         处理流式查询请求 (含幂等、Token 管理)
         """
+        # 绑定当前追踪的上下文信息
+        get_client().update_current_trace(
+            user_id=str(user_id),
+            session_id=str(session_id) if session_id else None,
+            tags=["chat_api", "stream"],
+        )
         logger.info(
             "Workflow 流式查询开始: user_id=%s, session_id=%s, query_len=%d",
             user_id,
@@ -236,7 +268,8 @@ class ChatWorkflow:
                 # 校验 Token 余额
                 user = await self.uow.users.get(user_id)
                 if user and user.used_tokens >= user.max_tokens:
-                    if client_request_id: await redis.delete(lock_key)
+                    if client_request_id:
+                        await redis.delete(lock_key)
                     yield f"data: {json.dumps({'type': 'error', 'message': 'Token 余额不足'})}\n\n"
                     return
 
@@ -269,32 +302,55 @@ class ChatWorkflow:
         tokens_input = assembled.total_tokens
 
         # 3. 发送 meta 事件
-        meta_event = json.dumps({
-            "type": "meta",
-            "session_id": str(session.id),
-            "session_title": session.title,
-            "message_id": str(assistant_msg.id),
-        })
+        meta_event = json.dumps(
+            {
+                "type": "meta",
+                "session_id": str(session.id),
+                "session_title": session.title,
+                "message_id": str(assistant_msg.id),
+            }
+        )
         yield f"data: {meta_event}\n\n"
 
-        # 4. 流式调用 LLM
+        # 4. 改为 Taskiq 异步队列排队与 Redis Pub/Sub 接收流
+
         llm_query = LLMQueryDTO(
             session_id=session.id,
             query_text=query_text,
             conversation_history=assembled.messages,
         )
 
+        task_id = str(uuid.uuid4())
+        channel = f"stream:{task_id}"
+
+        # 触发队列任务
+        await generate_llm_stream_task.kiq(llm_query.model_dump(mode="json"), channel)
+
+        # 监听 Redis 频道
+        redis = await redis_client.init()
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(channel)
+
         accumulated_content = []
-        start_time = time.time()
         try:
-            async with self._get_llm_semaphore():
-                async for chunk in self.llm_service.stream_response(llm_query):
-                    accumulated_content.append(chunk)
-                    chunk_event = json.dumps({"type": "chunk", "content": chunk})
-                    yield f"data: {chunk_event}\n\n"
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    data = message["data"]
+                    if isinstance(data, bytes):
+                        data = data.decode("utf-8")
+
+                    if data == "[DONE]":
+                        break
+                    elif data.startswith("[ERROR]"):
+                        raise ServiceError(f"Taskiq 队列执行 LLM 错误: {data[7:]}")
+                    else:
+                        accumulated_content.append(data)
+                        chunk_event = json.dumps({"type": "chunk", "content": data})
+                        yield f"data: {chunk_event}\n\n"
         except Exception as e:
-            if client_request_id: await redis.delete(lock_key)
-            logger.error("流式 LLM 调用失败: %s", str(e), exc_info=True)
+            if client_request_id:
+                await redis.delete(lock_key)
+            logger.error("流式 LLM 调用异常: %s", str(e), exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
             async with self._get_db_semaphore():
                 async with self.uow:
@@ -302,11 +358,13 @@ class ChatWorkflow:
                     await updater.update_as_failed(assistant_msg.id)
             yield "data: [DONE]\n\n"
             return
+        finally:
+            await pubsub.unsubscribe()
 
         # 5. 更新助手消息并累加 Token
         full_content = "".join(accumulated_content)
         tokens_output = count_tokens(full_content)
-        
+
         async with self._get_db_semaphore():
             async with self.uow:
                 updater = ChatMessageUpdater(self.uow)
@@ -319,7 +377,7 @@ class ChatWorkflow:
                 await self.uow.users.increment_used_tokens(
                     user_id, tokens_input + tokens_output
                 )
-        
+
         if client_request_id:
             await redis.set(lock_key, str(assistant_msg.id), ex=3600)
 

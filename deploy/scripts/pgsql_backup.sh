@@ -7,24 +7,37 @@ set -euo pipefail
 # 设置保留天数，防止磁盘爆满
 KEEP_DAYS=7
 BACKUP_DIR="/backup"
+LOCKFILE="${BACKUP_DIR}/.backup.lock"
 
 echo "🚀 [$(date +'%Y-%m-%d %H:%M:%S')] 备份任务启动..."
 
 # 确保备份目录存在
 mkdir -p "${BACKUP_DIR}"
 
+# 信号处理：Docker stop 发送 SIGTERM 时清理锁文件
+cleanup() {
+    rm -f "${LOCKFILE}"
+    echo "🛑 [$(date +'%Y-%m-%d %H:%M:%S')] 收到终止信号，已清理锁文件。"
+    exit 0
+}
+trap cleanup EXIT TERM INT
+
 while true; do
     FILENAME="backup_$(date +%Y%m%d_%H%M%S).sql.gz"
-    LOCKFILE="${BACKUP_DIR}/.backup.lock"
-    
-    # 简易锁机制：防止并行执行
+
+    # Stale lock 检测：验证锁文件中的 PID 是否仍存活
     if [ -f "${LOCKFILE}" ]; then
-        echo "⚠️ [$(date +'%Y-%m-%d %H:%M:%S')] 检测到锁文件，跳过本次备份"
-        sleep 86400
-        continue
+        OLD_PID=$(cat "${LOCKFILE}" 2>/dev/null || echo "")
+        if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null; then
+            echo "⚠️ [$(date +'%Y-%m-%d %H:%M:%S')] 检测到活跃的备份进程 (PID: ${OLD_PID})，跳过本次备份"
+            sleep 86400
+            continue
+        else
+            echo "🔓 [$(date +'%Y-%m-%d %H:%M:%S')] 检测到 stale 锁文件 (PID: ${OLD_PID})，自动清理"
+            rm -f "${LOCKFILE}"
+        fi
     fi
-    trap 'rm -f "${LOCKFILE}"' EXIT
-    touch "${LOCKFILE}"
+    echo $$ > "${LOCKFILE}"
 
     # 磁盘空间检查（至少保留 500MB）
     AVAIL_KB=$(df "${BACKUP_DIR}" | awk 'NR==2 {print $4}')
@@ -52,7 +65,6 @@ while true; do
 
     # 释放锁
     rm -f "${LOCKFILE}"
-    trap - EXIT
 
     # 3. 等待下一次备份 (86400秒 = 24小时)
     echo "💤 进入休眠，24小时后执行下一次任务。"

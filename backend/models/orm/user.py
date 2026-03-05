@@ -1,5 +1,5 @@
 from sqlalchemy import Boolean, String, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
 
@@ -31,5 +31,7 @@ class User(Base, BaseIdModel, AuditMixin):
 
     # 核心安全字段：绝不出现在 Schema 中
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    # 将来可以在这里加 relationship
-    # roles: List["Role"] = Relationship(...)
+
+    # 反向关联
+    sessions: Mapped[list["ChatSession"]] = relationship(back_populates="user")
+    knowledge_bases: Mapped[list["KnowledgeBase"]] = relationship(back_populates="user")

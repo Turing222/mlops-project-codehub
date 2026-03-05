@@ -26,3 +26,9 @@ schema_config:
 
 limits_config:
   allow_structured_metadata: true # 3.x 特性：支持更丰富的元数据
+  retention_period: 168h          # 7天保留，与 Prometheus 保持一致
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true         # 启用自动清理过期数据
+  compaction_interval: 10m

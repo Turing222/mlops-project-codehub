@@ -39,7 +39,7 @@ services:
     user: "${CURRENT_UID}:${CURRENT_GID}"
     # 模拟 2026 生产环境 Python 3.11 优化环境
     volumes:
-      - /backend:/app/backend
+      - ./backend:/app/backend
     env_file:
       - .env
     environment:
@@ -65,7 +65,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s # 考虑到 FastAPI 启动和数据库连接，给 10 秒缓冲
-    command: uvicorn app.backend.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers
     ports:
       - "8000:8000"
 volumes:

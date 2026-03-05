@@ -1,7 +1,13 @@
 sources:
   docker_socket:
     type: docker_logs
-    # 自动识别所有容器
+    # 只采集业务相关容器，减少噪音并缩小 Docker Socket 权限影响面
+    include_containers:
+      - "api"
+      - "nginx"
+      - "task_worker"
+      - "postgres"
+      - "redis"
 
 transforms:
   # 关键：提取容器名并解析 JSON 日志
