@@ -46,7 +46,9 @@ class BaseIdModel:
         # 显式指定 SQL 类型，确保跨库一致性
         nullable=False,
         comment="基于ULID生成的唯一标识",
-        server_default=text("uuid_generate_v7()"),  # 数据库侧的兜底逻辑(PG17原生支持时间序UUID)
+        server_default=text(
+            "gen_random_uuid()"
+        ),  # 数据库侧兜底逻辑（PG17原生时间序UUID）
     )
 
     def __repr__(self) -> str:

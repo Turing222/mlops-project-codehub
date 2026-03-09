@@ -39,7 +39,7 @@ class File(Base, BaseIdModel, AuditMixin):
     文件表（依附于知识库）
     """
 
-    __tablename__ = "files"
+    __tablename__ = "knowledge_files"
 
     kb_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("knowledge_bases.id", ondelete="CASCADE"), index=True

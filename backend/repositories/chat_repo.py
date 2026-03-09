@@ -80,6 +80,7 @@ class ChatRepository:
         tokens_input: int = 0,
         tokens_output: int = 0,
         client_request_id: str | None = None,
+        search_context: dict | None = None,
     ) -> ChatMessage:
         """创建新消息"""
         data = {
@@ -91,6 +92,7 @@ class ChatRepository:
             "tokens_input": tokens_input,
             "tokens_output": tokens_output,
             "client_request_id": client_request_id,
+            "search_context": search_context,
         }
         return await self.message_crud.create(obj_in=data)
 
@@ -119,6 +121,7 @@ class ChatRepository:
         latency_ms: int | None = None,
         tokens_input: int | None = None,
         tokens_output: int | None = None,
+        search_context: dict | None = None,
     ) -> ChatMessage | None:
         """更新消息状态和内容"""
         message = await self.get_message(message_id)
@@ -134,6 +137,8 @@ class ChatRepository:
             update_data["tokens_input"] = tokens_input
         if tokens_output is not None:
             update_data["tokens_output"] = tokens_output
+        if search_context is not None:
+            update_data["search_context"] = search_context
 
         return await self.message_crud.update(db_obj=message, obj_in=update_data)
 

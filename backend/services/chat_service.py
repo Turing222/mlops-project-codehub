@@ -117,6 +117,7 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         session_id: uuid.UUID,
         status: MessageStatus = MessageStatus.THINKING,
         client_request_id: str | None = None,
+        search_context: dict | None = None,
     ) -> ChatMessage:
         """
         创建助手消息（初始状态为思考中）
@@ -134,6 +135,7 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
             content="",
             status=status,
             client_request_id=client_request_id,
+            search_context=search_context,
         )
         logger.debug(
             "创建助手消息: message_id=%s, session_id=%s", message.id, session_id
@@ -192,6 +194,7 @@ class ChatMessageUpdater(BaseService[AbstractUnitOfWork]):
         start_time: float | None = None,
         tokens_input: int | None = None,
         tokens_output: int | None = None,
+        search_context: dict | None = None,
     ) -> ChatMessage:
         """
         更新消息为成功状态
@@ -218,6 +221,7 @@ class ChatMessageUpdater(BaseService[AbstractUnitOfWork]):
             latency_ms=latency_ms,
             tokens_input=tokens_input,
             tokens_output=tokens_output,
+            search_context=search_context,
         )
         if not message:
             logger.error("更新消息失败，消息不存在: message_id=%s", message_id)

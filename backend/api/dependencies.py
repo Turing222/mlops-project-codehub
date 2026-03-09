@@ -7,9 +7,16 @@ from jwt.exceptions import InvalidTokenError
 from pydantic import ValidationError
 
 from backend.core.config import settings
-from backend.domain.interfaces import AbstractLLMService, AbstractUnitOfWork
+from backend.domain.interfaces import (
+    AbstractLLMService,
+    AbstractRAGEmbedder,
+    AbstractRAGService,
+    AbstractUnitOfWork,
+)
 from backend.models.orm.user import User
-from backend.services.llm_service import LLMService
+from backend.services.mock_llm_service import MockLLMService
+from backend.services.rag_embedding import RAGEmbedderFactory
+from backend.services.rag_service import RAGService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.user_service import UserService
 from backend.workflow.chat_workflow import ChatWorkflow
@@ -81,15 +88,29 @@ def get_current_superuser(
     return current_user
 
 
-from backend.services.mock_llm_service import MockLLMService
-
 def get_llm_service() -> AbstractLLMService:
     # 压测阶段：临时替换为 Mock 服务
     return MockLLMService()
 
 
+def get_rag_embedder() -> AbstractRAGEmbedder:
+    return RAGEmbedderFactory.create(
+        provider=settings.RAG_EMBED_PROVIDER,
+        model_name=settings.RAG_EMBED_MODEL_NAME,
+        device=settings.RAG_EMBED_DEVICE,
+    )
+
+
+def get_rag_service(
+    uow: AbstractUnitOfWork = Depends(get_uow),
+    embedder: AbstractRAGEmbedder = Depends(get_rag_embedder),
+) -> AbstractRAGService:
+    return RAGService(uow=uow, embedder=embedder, top_k=settings.RAG_TOP_K)
+
+
 def get_chat_workflow(
     uow: AbstractUnitOfWork = Depends(get_uow),
     llm_service: AbstractLLMService = Depends(get_llm_service),
+    rag_service: AbstractRAGService = Depends(get_rag_service),
 ) -> ChatWorkflow:
-    return ChatWorkflow(uow, llm_service)
+    return ChatWorkflow(uow, llm_service, rag_service=rag_service)

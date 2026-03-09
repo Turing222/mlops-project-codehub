@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     LLM_MAX_CONTEXT_TOKENS: int = 4096
     LLM_MAX_HISTORY_ROUNDS: int = 10
     LLM_RESERVED_RESPONSE_TOKENS: int = 1024
+    RAG_TOP_K: int = 4
+    RAG_EMBED_PROVIDER: str = "sentence-transformers"
+    RAG_EMBED_MODEL_NAME: str = "BAAI/bge-base-zh-v1.5"
+    RAG_EMBED_DEVICE: str = "cpu"
 
     # --- 安全配置 (SECRET_KEY 必须从 env 读取) ---
     SECRET_KEY: str = ""

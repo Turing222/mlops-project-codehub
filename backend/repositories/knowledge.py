@@ -1,6 +1,9 @@
+import uuid
+
 from sqlalchemy import insert
 
 from backend.models.orm.chunk import DocumentChunk
+from backend.models.orm.knowledge import File
 
 
 class KnowledgeRepository:
@@ -25,3 +28,25 @@ class KnowledgeRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+    async def search_chunks_for_kb(
+        self,
+        query_vector: list[float],
+        kb_id: uuid.UUID,
+        limit: int = 5,
+    ) -> list[tuple[DocumentChunk, float]]:
+        """在指定知识库内做向量检索，返回 (chunk, distance)。"""
+        from sqlalchemy import select
+
+        distance = DocumentChunk.embedding.cosine_distance(query_vector).label(
+            "distance"
+        )
+        stmt = (
+            select(DocumentChunk, distance)
+            .join(File, DocumentChunk.file_id == File.id)
+            .where(File.kb_id == kb_id)
+            .order_by(distance)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return [(row[0], float(row[1])) for row in result.all()]

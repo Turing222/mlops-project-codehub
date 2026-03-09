@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.repositories.chat_repo import ChatRepository
+from backend.repositories.knowledge import KnowledgeRepository
 from backend.repositories.task_repo import TaskRepository
 from backend.repositories.user_repo import UserRepository
 
@@ -33,6 +34,7 @@ class SQLAlchemyUnitOfWork(AbstractUnitOfWork):
         # 注意：这里直接传私有变量或 property 均可，此时已确保不为 None
         self.users = UserRepository(self._session)
         self.chat_repo = ChatRepository(self._session)
+        self.knowledge = KnowledgeRepository(self._session)
         self.task = TaskRepository(self._session)
 
         return await super().__aenter__()

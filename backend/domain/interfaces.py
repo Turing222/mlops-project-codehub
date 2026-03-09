@@ -1,14 +1,17 @@
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 from backend.repositories.chat_repo import ChatRepository
+from backend.repositories.knowledge import KnowledgeRepository
 from backend.repositories.user_repo import UserRepository
 
 
 class AbstractUnitOfWork(ABC):
     users: UserRepository
     chat_repo: ChatRepository
+    knowledge: KnowledgeRepository
 
     async def __aenter__(self):
         return self
@@ -46,4 +49,27 @@ class AbstractLLMService(ABC):
         query: LLMQueryDTO,
     ) -> LLMResultDTO:
         """完整返回响应"""
+        ...
+
+
+class AbstractRAGService(ABC):
+    """RAG 检索服务抽象接口"""
+
+    @abstractmethod
+    async def retrieve(
+        self,
+        query_text: str,
+        kb_id: uuid.UUID | None,
+        top_k: int | None = None,
+    ) -> list[dict]:
+        """返回检索命中的上下文片段"""
+        ...
+
+
+class AbstractRAGEmbedder(ABC):
+    """RAG 向量化器抽象接口"""
+
+    @abstractmethod
+    def encode_query(self, text: str) -> list[float]:
+        """将查询文本编码为向量"""
         ...

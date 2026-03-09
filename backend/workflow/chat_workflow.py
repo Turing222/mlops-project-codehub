@@ -8,20 +8,18 @@ Chat Workflow — 处理对话业务流程
 4. 将结果存入 DB
 """
 
-from collections.abc import AsyncGenerator
-
 import asyncio
+import json
 import logging
 import uuid
-import json
-import time
+from collections.abc import AsyncGenerator
 
-from langfuse import observe, get_client
+from langfuse import get_client, observe
 
 from backend.core.config import settings
 from backend.core.exceptions import ServiceError, ValidationError
 from backend.core.redis import redis_client
-from backend.domain.interfaces import AbstractLLMService
+from backend.domain.interfaces import AbstractLLMService, AbstractRAGService
 from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat_schema import (
     ChatQueryResponse,
@@ -30,9 +28,10 @@ from backend.models.schemas.chat_schema import (
 )
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
 from backend.services.llm_core import PromptManager
+from backend.services.llm_core.templates import RAG_SYSTEM_TEMPLATE
 from backend.services.unit_of_work import AbstractUnitOfWork
-from backend.utils.tokenizer import count_messages_tokens, count_tokens
 from backend.tasks.llm_tasks import generate_llm_stream_task
+from backend.utils.tokenizer import count_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +58,13 @@ class ChatWorkflow:
         uow: AbstractUnitOfWork,
         llm_service: AbstractLLMService,
         prompt_manager: PromptManager | None = None,
+        rag_service: AbstractRAGService | None = None,
     ):
         self.uow = uow
         self.llm_service = llm_service
         self.prompt_manager = prompt_manager or PromptManager()
+        self.rag_prompt_manager = PromptManager(system_template=RAG_SYSTEM_TEMPLATE)
+        self.rag_service = rag_service
 
     def _history_to_dicts(self, messages) -> list[dict]:
         """将 ORM 消息对象转换为 PromptManager 所需的字典列表"""
@@ -71,6 +73,41 @@ class ChatWorkflow:
             for msg in messages
             if msg.role in ("user", "assistant") and msg.content
         ]
+
+    async def _retrieve_rag_chunks(
+        self,
+        query_text: str,
+        kb_id: uuid.UUID | None,
+    ) -> list[dict]:
+        if not self.rag_service or kb_id is None:
+            return []
+        try:
+            return await self.rag_service.retrieve(query_text=query_text, kb_id=kb_id)
+        except Exception as exc:
+            logger.warning("RAG 检索失败，降级为普通对话: %s", exc)
+            return []
+
+    @staticmethod
+    def _build_search_context(
+        kb_id: uuid.UUID | None,
+        rag_chunks: list[dict],
+    ) -> dict | None:
+        if not rag_chunks:
+            return None
+        return {
+            "kb_id": str(kb_id) if kb_id else None,
+            "chunks": [
+                {
+                    "id": chunk["id"],
+                    "score": chunk["score"],
+                    "distance": chunk["distance"],
+                    "source_type": chunk["source_type"],
+                    "file_id": chunk["file_id"],
+                    "message_id": chunk["message_id"],
+                }
+                for chunk in rag_chunks
+            ],
+        }
 
     @observe()
     async def handle_query(
@@ -164,7 +201,18 @@ class ChatWorkflow:
                 )
 
         history_dicts = self._history_to_dicts(history_messages)
-        assembled = self.prompt_manager.assemble(history_dicts, query_text)
+        rag_chunks = await self._retrieve_rag_chunks(query_text=query_text, kb_id=kb_id)
+        search_context = self._build_search_context(kb_id=kb_id, rag_chunks=rag_chunks)
+        if rag_chunks:
+            assembled = self.rag_prompt_manager.assemble(
+                history_dicts,
+                query_text,
+                extra_vars={
+                    "context_chunks": [chunk["content"] for chunk in rag_chunks],
+                },
+            )
+        else:
+            assembled = self.prompt_manager.assemble(history_dicts, query_text)
         tokens_input = assembled.total_tokens
 
         # 5. 调用 LLM
@@ -177,7 +225,7 @@ class ChatWorkflow:
         try:
             async with self._get_llm_semaphore():
                 result = await self.llm_service.generate_response(llm_query)
-        except Exception as e:
+        except Exception:
             if client_request_id:
                 await redis.delete(lock_key)
             async with self._get_db_semaphore():
@@ -209,6 +257,7 @@ class ChatWorkflow:
                     content=result.content,
                     tokens_input=tokens_input,
                     tokens_output=result.completion_tokens,
+                    search_context=search_context,
                 )
                 await self.uow.users.increment_used_tokens(
                     user_id, tokens_input + (result.completion_tokens or 0)
@@ -298,7 +347,18 @@ class ChatWorkflow:
                 )
 
         history_dicts = self._history_to_dicts(history_messages)
-        assembled = self.prompt_manager.assemble(history_dicts, query_text)
+        rag_chunks = await self._retrieve_rag_chunks(query_text=query_text, kb_id=kb_id)
+        search_context = self._build_search_context(kb_id=kb_id, rag_chunks=rag_chunks)
+        if rag_chunks:
+            assembled = self.rag_prompt_manager.assemble(
+                history_dicts,
+                query_text,
+                extra_vars={
+                    "context_chunks": [chunk["content"] for chunk in rag_chunks],
+                },
+            )
+        else:
+            assembled = self.prompt_manager.assemble(history_dicts, query_text)
         tokens_input = assembled.total_tokens
 
         # 3. 发送 meta 事件
@@ -373,6 +433,7 @@ class ChatWorkflow:
                     content=full_content,
                     tokens_input=tokens_input,
                     tokens_output=tokens_output,
+                    search_context=search_context,
                 )
                 await self.uow.users.increment_used_tokens(
                     user_id, tokens_input + tokens_output
