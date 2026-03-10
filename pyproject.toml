@@ -94,6 +94,11 @@ pythonpath = ["."]
 norecursedirs = ["data", "logs", "config", "venv","postgres_data"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = "-m 'not performance'"
+markers = [
+    "smoke: fast smoke tests for critical paths",
+    "performance: concurrency/load-oriented tests, excluded from default runs",
+]
 
 
 [tool.ty.environment]
@@ -123,4 +128,3 @@ exclude = [
 [tool.ty.terminal]
 # 5. 可选：让输出结果更美观（2026年大家都在用这种彩色富文本输出）
 output-format = "full"
-

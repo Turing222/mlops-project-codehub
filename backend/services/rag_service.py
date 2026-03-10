@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import uuid
 
@@ -7,6 +6,7 @@ from backend.domain.interfaces import (
     AbstractRAGService,
     AbstractUnitOfWork,
 )
+from backend.services.vector_index_service import VectorIndexService
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ class RAGService(AbstractRAGService):
     ):
         self.uow = uow
         self.embedder = embedder
+        self.vector_index_service = VectorIndexService(uow=uow, embedder=embedder)
         self.top_k = top_k
 
     async def retrieve(
@@ -43,17 +44,14 @@ class RAGService(AbstractRAGService):
             return []
 
         try:
-            query_vector = await asyncio.to_thread(self.embedder.encode_query, query_text)
-        except Exception as exc:
-            logger.warning("RAG embedding 失败，降级为无检索上下文: %s", exc)
-            return []
-
-        async with self.uow:
-            hits = await self.uow.knowledge.search_chunks_for_kb(
-                query_vector=query_vector,
+            hits = await self.vector_index_service.search_chunks_for_kb(
+                query_text=query_text,
                 kb_id=kb_id,
                 limit=limit,
             )
+        except Exception as exc:
+            logger.warning("RAG 检索失败，降级为无检索上下文: %s", exc)
+            return []
 
         chunks: list[dict] = []
         for chunk, distance in hits:

@@ -1,8 +1,9 @@
-import os
 from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
-# 使用环境变量，默认指向 Redis DB 1 作为队列专用（避免和主缓存数据冲突）
-REDIS_URL = os.getenv("TASKIQ_REDIS_URL", "redis://redis:6379/1")
+from backend.core.config import settings
+
+# TaskIQ 优先使用 TASKIQ_REDIS_URL，未配置时回落到 REDIS_URL 的 DB1 变体
+REDIS_URL = settings.taskiq_redis_url
 
 # 使用 Redis 的 List 结构作为高效的任务排队队列
 broker = ListQueueBroker(

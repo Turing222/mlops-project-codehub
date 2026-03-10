@@ -1,8 +1,4 @@
 import asyncio
-import os
-import sys
-
-sys.path.append(os.getcwd())
 
 print("Testing imports...")
 from backend.core.config import settings
@@ -16,7 +12,7 @@ async def main():
     from unittest.mock import MagicMock
     uow = MagicMock()
     llm = MagicMock()
-    wf = ChatWorkflow(uow, llm)
+    ChatWorkflow(uow, llm)
     print("ChatWorkflow initialized.")
 
 if __name__ == "__main__":

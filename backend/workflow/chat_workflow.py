@@ -16,6 +16,9 @@ from collections.abc import AsyncGenerator
 
 from langfuse import get_client, observe
 
+from backend.ai.core import PromptManager
+from backend.ai.core.token_counter import count_tokens
+from backend.ai.core.prompt_templates import RAG_SYSTEM_TEMPLATE
 from backend.core.config import settings
 from backend.core.exceptions import ServiceError, ValidationError
 from backend.core.redis import redis_client
@@ -27,11 +30,8 @@ from backend.models.schemas.chat_schema import (
     MessageResponse,
 )
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
-from backend.services.llm_core import PromptManager
-from backend.services.llm_core.templates import RAG_SYSTEM_TEMPLATE
 from backend.services.unit_of_work import AbstractUnitOfWork
 from backend.tasks.llm_tasks import generate_llm_stream_task
-from backend.utils.tokenizer import count_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -423,7 +423,7 @@ class ChatWorkflow:
 
         # 5. 更新助手消息并累加 Token
         full_content = "".join(accumulated_content)
-        tokens_output = count_tokens(full_content)
+        tokens_output = count_tokens(full_content, settings.LLM_MODEL_NAME)
 
         async with self._get_db_semaphore():
             async with self.uow:

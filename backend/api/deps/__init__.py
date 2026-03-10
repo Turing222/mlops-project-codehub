@@ -1,10 +1,3 @@
-"""
-Compatibility aggregation module for FastAPI dependencies.
-
-Use this module when importing dependencies from API endpoints to avoid
-touching call sites while deps are split into focused modules.
-"""
-
 from backend.api.deps.ai import (
     get_chunking_service,
     get_llm_service,
@@ -36,9 +29,9 @@ __all__ = [
     "get_rag_service",
     "get_chunking_service",
     "get_vector_index_service",
-    "get_chat_workflow",
     "get_knowledge_service",
-    "get_knowledge_rag_workflow",
     "get_task_service",
+    "get_chat_workflow",
+    "get_knowledge_rag_workflow",
 ]
 

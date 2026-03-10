@@ -13,13 +13,13 @@ from dataclasses import dataclass, field
 
 from jinja2 import Template
 
-from backend.core.config import settings
-from backend.core.exceptions import TokenLimitExceeded
-from backend.services.llm_core.templates import (
+from backend.ai.core.prompt_templates import (
     DEFAULT_SYSTEM_TEMPLATE,
     render_system_prompt,
 )
-from backend.services.llm_core.tokens import count_messages_tokens
+from backend.ai.core.token_counter import count_messages_tokens
+from backend.core.config import settings
+from backend.core.exceptions import TokenLimitExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class PromptManager:
         result = manager.assemble(history, current_query)
 
         # RAG 场景：使用 RAG 模板 + 注入检索到的文档片段
-        from backend.services.llm_core.templates import RAG_SYSTEM_TEMPLATE
+        from backend.ai.core.prompt_templates import RAG_SYSTEM_TEMPLATE
         manager = PromptManager(
             system_template=RAG_SYSTEM_TEMPLATE,
             template_vars={"context_chunks": ["片段1", "片段2"]},

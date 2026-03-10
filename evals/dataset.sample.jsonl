@@ -1,0 +1,2 @@
+{"id":"sample-1","query":"请总结这个知识库的核心内容","kb_id":"00000000-0000-0000-0000-000000000001","expected_chunk_ids":[],"expected_keywords":["核心","总结"],"reference_answer":"这是一个关于知识库内容总结的问题。"}
+{"id":"sample-2","query":"知识库里有没有提到模型部署","kb_id":"00000000-0000-0000-0000-000000000001","expected_chunk_ids":[],"expected_keywords":["模型","部署"],"reference_answer":"如果知识库包含相关内容，回答中应提到模型部署。"}

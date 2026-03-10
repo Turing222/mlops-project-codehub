@@ -1,14 +1,70 @@
 import uuid
 
-from sqlalchemy import insert
+from sqlalchemy import delete, insert, select
 
 from backend.models.orm.chunk import DocumentChunk
-from backend.models.orm.knowledge import File
+from backend.models.orm.knowledge import File, FileStatus, KnowledgeBase
 
 
 class KnowledgeRepository:
     def __init__(self, session):
         self.session = session
+
+    async def get_kb(self, kb_id: uuid.UUID) -> KnowledgeBase | None:
+        return await self.session.get(KnowledgeBase, kb_id)
+
+    async def get_kb_for_user(
+        self,
+        kb_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> KnowledgeBase | None:
+        stmt = select(KnowledgeBase).where(
+            KnowledgeBase.id == kb_id,
+            KnowledgeBase.user_id == user_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def create_file(
+        self,
+        kb_id: uuid.UUID,
+        filename: str,
+        file_path: str,
+        file_size: int,
+        status: FileStatus = FileStatus.UPLOADED,
+    ) -> File:
+        file_obj = File(
+            kb_id=kb_id,
+            filename=filename,
+            file_path=file_path,
+            file_size=file_size,
+            status=status,
+        )
+        self.session.add(file_obj)
+        await self.session.flush()
+        await self.session.refresh(file_obj)
+        return file_obj
+
+    async def get_file(self, file_id: uuid.UUID) -> File | None:
+        return await self.session.get(File, file_id)
+
+    async def update_file_status(
+        self,
+        file_id: uuid.UUID,
+        status: FileStatus,
+    ) -> File | None:
+        file_obj = await self.get_file(file_id)
+        if not file_obj:
+            return None
+        file_obj.status = status
+        self.session.add(file_obj)
+        await self.session.flush()
+        await self.session.refresh(file_obj)
+        return file_obj
+
+    async def delete_chunks_for_file(self, file_id: uuid.UUID) -> None:
+        stmt = delete(DocumentChunk).where(DocumentChunk.file_id == file_id)
+        await self.session.execute(stmt)
 
     async def add_chunks(self, chunks_data: list[dict]):
         # chunks_data 包含 content 和 embedding(list)

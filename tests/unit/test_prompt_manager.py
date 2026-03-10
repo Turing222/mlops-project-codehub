@@ -12,14 +12,13 @@ PromptManager 单元测试 (Jinja2 版)
 
 import pytest
 
-from backend.services.llm_core.manager import AssembledPrompt, PromptManager
-from backend.services.llm_core.templates import (
+from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
+from backend.ai.core.prompt_templates import (
     DEFAULT_SYSTEM_TEMPLATE,
     RAG_SYSTEM_TEMPLATE,
     render_system_prompt,
 )
-from backend.services.llm_core.tokens import count_messages_tokens, count_tokens
-
+from backend.ai.core.token_counter import count_messages_tokens, count_tokens
 
 # ============================================================
 # Fixtures

@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from backend.ai.providers.llm.llm_service import LLMService
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
-from backend.services.llm_service import LLMService
 
 # ============================================================
 # Fixtures

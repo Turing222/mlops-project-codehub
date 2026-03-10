@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
@@ -55,9 +55,42 @@ class ChatRepository:
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
+    async def get_user_sessions_with_total_tokens(
+        self,
+        user_id: uuid.UUID,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> list[tuple[ChatSession, int]]:
+        """获取用户会话列表并附带每个会话的总 token（避免 N+1 查询）。"""
+        total_tokens_expr = func.coalesce(
+            func.sum(ChatMessage.tokens_input + ChatMessage.tokens_output),
+            0,
+        ).label("total_tokens")
+
+        stmt = (
+            select(ChatSession, total_tokens_expr)
+            .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
+            .where(ChatSession.user_id == user_id)
+            .group_by(ChatSession.id)
+            .order_by(ChatSession.updated_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return [(row[0], int(row[1] or 0)) for row in result.all()]
+
+    async def count_user_sessions(self, user_id: uuid.UUID) -> int:
+        """统计用户会话总数（分页总量）。"""
+        stmt = (
+            select(func.count())
+            .select_from(ChatSession)
+            .where(ChatSession.user_id == user_id)
+        )
+        result = await self.session.execute(stmt)
+        return int(result.scalar() or 0)
+
     async def get_session_total_tokens(self, session_id: uuid.UUID) -> int:
         """计算会话消耗的总 Token 数"""
-        from sqlalchemy import func
         stmt = select(func.sum(ChatMessage.tokens_input + ChatMessage.tokens_output)).where(
             ChatMessage.session_id == session_id
         )

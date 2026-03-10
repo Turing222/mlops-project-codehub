@@ -1,9 +1,11 @@
 import logging
-from backend.core.task_broker import broker
-from backend.core.redis import redis_client
-from backend.models.schemas.chat_schema import LLMQueryDTO
 
 from langfuse import observe
+
+from backend.ai.providers.llm.factory import LLMProviderFactory
+from backend.core.redis import redis_client
+from backend.core.task_broker import broker
+from backend.models.schemas.chat_schema import LLMQueryDTO
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +17,7 @@ async def generate_llm_stream_task(llm_query_dict: dict, channel: str):
     # 获取 redis 客户端用于发布消息
     redis = await redis_client.init()
     
-    # 模拟获取 LLM Service，这会调用本地配置或Mock
-    from backend.api.dependencies import get_llm_service
-    llm_service = get_llm_service()
+    llm_service = LLMProviderFactory.create()
     llm_query = LLMQueryDTO(**llm_query_dict)
     
     try:

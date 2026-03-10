@@ -9,14 +9,14 @@ LLM Core — 对话能力核心模块
 - 模板对象
 """
 
-from backend.services.llm_core.manager import AssembledPrompt, PromptManager
-from backend.services.llm_core.templates import (
+from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
+from backend.ai.core.prompt_templates import (
     DEFAULT_SYSTEM_TEMPLATE,
     RAG_SYSTEM_TEMPLATE,
     SUMMARIZE_TEMPLATE,
     render_system_prompt,
 )
-from backend.services.llm_core.tokens import count_messages_tokens, count_tokens
+from backend.ai.core.token_counter import count_messages_tokens, count_tokens
 
 __all__ = [
     "PromptManager",

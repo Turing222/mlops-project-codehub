@@ -56,6 +56,8 @@ services:
   api:
     image: ai-tutor-backend:v1
     container_name: api
+    volumes:
+      - knowledge_files_volume:/data/knowledge_files
 
     # 限制 Docker 自身收集的控制台日志大小，防止撑爆磁盘
     #只管控制台日志
@@ -67,6 +69,7 @@ services:
     environment:
       - PYTHONMALLOC=default # 生产环境使用 default，debug 模式严重拖慢性能
       - WEB_CONCURRENCY=1 # 充分利用 1.5GB 内存，启动 2 个 Worker  Worker Process（工作进程） 测试时只开启一个
+      - KNOWLEDGE_STORAGE_ROOT=/data/knowledge_files
     cap_add:
       - SYS_PTRACE # 允许 py-spy 性能分析工具附加到进程
     restart: unless-stopped
@@ -259,7 +262,7 @@ services:
     container_name: locust
     volumes:
       - ../tests:/mnt/locust # 挂载测试脚本目录
-    command: -f /mnt/locust/locustfile.py --host http://api:8000
+    command: -f /mnt/locust/performance/locustfile.py --host http://api:8000
     profiles: [ "debug" ] # 设置为 debug 模式启动，默认不开启
     ports:
       - "8089:8089"
@@ -277,12 +280,15 @@ services:
   task_worker:
     image: ai-tutor-backend:v1
     container_name: task_worker
+    volumes:
+      - knowledge_files_volume:/data/knowledge_files
     env_file:
       - ../.env
     environment:
       - TASKIQ_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - KNOWLEDGE_STORAGE_ROOT=/data/knowledge_files
     # 启动 taskiq worker，指向您的 broker 对象！ --workers 2 表示最多并发 2 个LLM请求
-    command: taskiq worker backend.core.task_broker:broker --workers 2
+    command: taskiq worker backend.core.task_broker:broker backend.tasks.llm_tasks backend.tasks.knowledge_tasks --workers 2
     restart: unless-stopped
     logging: *default-logging
     depends_on:
@@ -310,3 +316,5 @@ volumes:
     name: loki_data_volume
   pg_backups:
     name: pg_backups_volume
+  knowledge_files_volume:
+    name: knowledge_files_volume

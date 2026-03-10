@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    root_path="/api",
+    root_path=settings.API_ROOT_PATH,
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     lifespan=lifespan,
@@ -56,7 +56,7 @@ setup_tracing(app)
 Instrumentator().instrument(app).expose(app)
 
 # 路由挂载
-app.include_router(api_router, prefix="/v1")
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
 # index信息

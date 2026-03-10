@@ -69,3 +69,17 @@ Docker Compose: 一键编排。
 
 
 修改目录结构 把后端接口整合进app.api.endpoint
+
+## Runtime Config Notes
+
+- API 路由前缀由配置驱动：
+  - `API_ROOT_PATH`：反向代理根路径，默认 `/api`
+  - `API_V1_STR`：版本前缀，默认 `/v1`
+  - 合并后外部路径默认是 `/api/v1/...`
+
+- Redis 连接建议统一使用 URL：
+  - `REDIS_URL`：应用主 Redis 地址（推荐）
+  - `TASKIQ_REDIS_URL`：TaskIQ 专用地址（可选，不配时自动回落到 `REDIS_URL` 的 DB1）
+
+- 迁移期兼容：
+  - 若未设置 `REDIS_URL`，系统会回退读取 `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD`。

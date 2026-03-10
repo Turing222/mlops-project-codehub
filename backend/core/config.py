@@ -1,6 +1,7 @@
 import os
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,7 +15,8 @@ class Settings(BaseSettings):
     # --- 项目信息 ---
     PROJECT_NAME: str = "Obsidian Mentor AI"
     VERSION: str = "0.1.0"
-    API_V1_STR: str = "/api/v1"
+    API_ROOT_PATH: str = "/api"
+    API_V1_STR: str = "/v1"
 
     # --- 数据库配置 (敏感信息不设置默认值，强制从 env 读取) ---
     POSTGRES_USER: str = "postgres"
@@ -33,8 +35,13 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str | None = None
 
     OBSIDIAN_VAULT_PATH: str = "/data/obsidian"
+    KNOWLEDGE_STORAGE_ROOT: Path = Path(".files/knowledge_files")
+    KNOWLEDGE_CHUNK_SIZE: int = 800
+    KNOWLEDGE_CHUNK_OVERLAP: int = 120
 
     # --- Redis 配置 ---
+    REDIS_URL: str | None = None
+    TASKIQ_REDIS_URL: str | None = None
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: str | None = None
@@ -44,6 +51,7 @@ class Settings(BaseSettings):
     DB_MAX_CONCURRENCY: int = 10
 
     # --- LLM 对话配置 ---
+    LLM_PROVIDER: str = "mock"
     LLM_MODEL_NAME: str = "qwen2.5:latest"
     LLM_BASE_URL: str = "http://win.host:11434/v1"
     LLM_API_KEY: str = "ollama"
@@ -74,6 +82,48 @@ class Settings(BaseSettings):
             f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
+
+    @property
+    def redis_url(self) -> str:
+        """应用主 Redis 连接地址（优先使用 REDIS_URL）。"""
+        if self.REDIS_URL:
+            return self.REDIS_URL
+        return self._build_redis_url(
+            host=self.REDIS_HOST,
+            port=self.REDIS_PORT,
+            password=self.REDIS_PASSWORD,
+            db=0,
+        )
+
+    @property
+    def taskiq_redis_url(self) -> str:
+        """TaskIQ Redis 连接地址（可单独覆盖，默认使用 DB1）。"""
+        if self.TASKIQ_REDIS_URL:
+            return self.TASKIQ_REDIS_URL
+        if self.REDIS_URL:
+            return self._replace_redis_db(self.REDIS_URL, db=1)
+        return self._build_redis_url(
+            host=self.REDIS_HOST,
+            port=self.REDIS_PORT,
+            password=self.REDIS_PASSWORD,
+            db=1,
+        )
+
+    @staticmethod
+    def _build_redis_url(
+        *,
+        host: str,
+        port: int,
+        password: str | None,
+        db: int,
+    ) -> str:
+        auth = f":{quote(password, safe='')}@" if password else ""
+        return f"redis://{auth}{host}:{port}/{db}"
+
+    @staticmethod
+    def _replace_redis_db(url: str, db: int) -> str:
+        parsed = urlsplit(url)
+        return urlunsplit((parsed.scheme, parsed.netloc, f"/{db}", parsed.query, parsed.fragment))
 
 
 @lru_cache

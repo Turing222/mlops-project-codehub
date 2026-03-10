@@ -44,12 +44,7 @@ class SQLAlchemyUnitOfWork(AbstractUnitOfWork):
         健壮性保证：无论是否发生异常，都确保资源正确释放。
         """
         try:
-            if exc_type:
-                # 如果代码块内发生异常，自动回滚
-                await self.rollback()
-            else:
-                # 如果一切正常，自动提交（可选，也可以由 Service 层显式调用）
-                await self.commit()
+            # 事务决策统一交给父类（成功 commit，异常 rollback）
             await super().__aexit__(exc_type, exc_val, exc_tb)
         finally:
             # 无论提交/回滚是否成功，必须关闭 Session 释放连接回池（DBA 核心关注点）

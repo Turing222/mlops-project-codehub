@@ -18,6 +18,7 @@ from backend.api.dependencies import (
     get_current_active_user,
     get_uow,
 )
+from backend.middleware.rate_limit import RateLimiter
 from backend.models.orm.user import User
 from backend.models.schemas.chat_schema import (
     ChatQueryResponse,
@@ -30,7 +31,6 @@ from backend.models.schemas.chat_schema import (
 from backend.services.chat_service import SessionManager
 from backend.services.unit_of_work import AbstractUnitOfWork
 from backend.workflow.chat_workflow import ChatWorkflow
-from backend.middleware.rate_limit import RateLimiter
 
 # 定义限流策略：为压测临时调高上限（原：每 60 秒 10 次）
 chat_limiter = RateLimiter(times=100000, seconds=60)
@@ -102,24 +102,22 @@ async def get_sessions(
     )
 
     async with uow:
-        session_manager = SessionManager(uow)
-        sessions = await session_manager.get_user_sessions(
+        rows = await uow.chat_repo.get_user_sessions_with_total_tokens(
             user_id=current_user.id,
             skip=skip,
             limit=limit,
         )
-        
-        # 填充 total_tokens
-        items = [] #存在N+1的问题
-        for s in sessions:
-            total = await uow.chat_repo.get_session_total_tokens(s.id)
-            res = SessionResponse.model_validate(s)
-            res.total_tokens = total
-            items.append(res)
+        total = await uow.chat_repo.count_user_sessions(current_user.id)
+
+    items: list[SessionResponse] = []
+    for session, total_tokens in rows:
+        res = SessionResponse.model_validate(session)
+        res.total_tokens = total_tokens
+        items.append(res)
 
     return SessionListResponse(
         items=items,
-        total=len(sessions),
+        total=total,
         skip=skip,
         limit=limit,
     )
