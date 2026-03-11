@@ -97,6 +97,16 @@ class ChatRepository:
         result = await self.session.execute(stmt)
         return result.scalar() or 0
 
+    async def count_session_messages(self, session_id: uuid.UUID) -> int:
+        """统计会话消息总数（分页总量）。"""
+        stmt = (
+            select(func.count())
+            .select_from(ChatMessage)
+            .where(ChatMessage.session_id == session_id)
+        )
+        result = await self.session.execute(stmt)
+        return int(result.scalar() or 0)
+
     # ========== ChatMessage 操作 ==========
 
     async def get_message(self, message_id: uuid.UUID) -> ChatMessage | None:

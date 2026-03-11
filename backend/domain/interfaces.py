@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 from backend.repositories.chat_repo import ChatRepository
-from backend.repositories.knowledge import KnowledgeRepository
+from backend.repositories.knowledge_repo import KnowledgeRepository
 from backend.repositories.user_repo import UserRepository
 
 
@@ -63,6 +63,26 @@ class AbstractRAGService(ABC):
         top_k: int | None = None,
     ) -> list[dict]:
         """返回检索命中的上下文片段"""
+        ...
+
+    @abstractmethod
+    async def retrieve_fulltext(
+        self,
+        query_text: str,
+        kb_id: uuid.UUID | None,
+        top_k: int | None = None,
+    ) -> list[dict]:
+        """返回全文检索命中的上下文片段"""
+        ...
+
+    @abstractmethod
+    async def retrieve_hybrid(
+        self,
+        query_text: str,
+        kb_id: uuid.UUID | None,
+        top_k: int | None = None,
+    ) -> list[dict]:
+        """返回混合检索命中的上下文片段"""
         ...
 
 

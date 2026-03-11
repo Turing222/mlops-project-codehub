@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.repositories.chat_repo import ChatRepository
-from backend.repositories.knowledge import KnowledgeRepository
+from backend.repositories.knowledge_repo import KnowledgeRepository
 from backend.repositories.task_repo import TaskRepository
 from backend.repositories.user_repo import UserRepository
 

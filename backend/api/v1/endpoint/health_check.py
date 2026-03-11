@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 
@@ -18,30 +19,40 @@ async def readiness_check(request: Request):
     就绪检查：DBA 级的精细化监控
     """
     # 假设你在 app 初始化时将 engine 存入了 request.app.state
-    engine: AsyncEngine = request.app.state.db_engine
+    engine: AsyncEngine | None = getattr(request.app.state, "db_engine", None)
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Database engine not initialized")
 
     start_time = time.perf_counter()
     try:
-        # 优化：使用 context manager 直接获取连接，绕过 Session 的各种状态管理
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
+        # 超时保护，避免在 DB 半故障时健康检查悬挂
+        async def _ping_db() -> None:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
 
-        latency = time.perf_counter() - start_time
+        await asyncio.wait_for(_ping_db(), timeout=2.0)
 
-        # 针对 DBA 经验：建议此处监控连接池状态
-        # SQLAlchemy 允许查看 Pool 统计
-        pool_status = engine.pool.status()  # 仅限部分 Pool 实现，如 QueuePool
+        latency_ms = (time.perf_counter() - start_time) * 1000
 
-        if latency > 0.5:
-            logger.warning(f"DB Slow: {latency:.3f}s | Pool: {pool_status}")
+        # 连接池状态只保留在日志中，不对外暴露
+        pool_status = "unknown"
+        try:
+            pool_status = engine.pool.status()  # 仅限部分 Pool 实现，如 QueuePool
+        except Exception:
+            logger.debug("无法获取连接池状态", exc_info=True)
+
+        if latency_ms > 500:
+            logger.warning("DB Slow: %.2fms | Pool: %s", latency_ms, pool_status)
 
         return {
             "status": "ready",
-            "latency": f"{latency:.4f}s",
-            "pool": pool_status,  # 生产环境建议脱敏
+            "latency_ms": round(latency_ms, 2),
         }
+    except TimeoutError as e:
+        logger.critical("Database readiness timeout", exc_info=True)
+        raise HTTPException(status_code=503, detail="Database readiness timeout") from e
     except Exception as e:
-        logger.critical(f"Database readiness failed: {e}", exc_info=True)
+        logger.critical("Database readiness failed: %s", e, exc_info=True)
         # RFC 7807 标准：返回 503 Service Unavailable
         raise HTTPException(status_code=503, detail="Database connection failed") from e
 

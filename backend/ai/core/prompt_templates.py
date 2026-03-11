@@ -30,6 +30,12 @@ _DEFAULT_SYSTEM_TEMPLATE = """\
 请用专业但易懂的中文回答用户的问题。
 如果你不确定答案，请诚实地说明，不要编造信息。
 {% if user_name %}当前用户: {{ user_name }}。{% endif %}\
+{% if conversation_summary %}
+
+--- 历史对话摘要 ---
+{{ conversation_summary }}
+--- 摘要结束 ---
+{% endif %}\
 """
 
 # RAG 检索增强模板
@@ -37,6 +43,12 @@ _RAG_SYSTEM_TEMPLATE = """\
 你是 {{ app_name }}，一个基于知识库的智能助手。
 请根据以下参考资料回答用户的问题。
 如果参考资料中没有相关信息，请基于你的通用知识回答，并注明这不是来自知识库的内容。
+
+{% if conversation_summary %}
+--- 历史对话摘要 ---
+{{ conversation_summary }}
+--- 摘要结束 ---
+{% endif %}
 
 --- 参考资料 ---
 {% for chunk in context_chunks %}
@@ -71,6 +83,7 @@ SUMMARIZE_TEMPLATE = _env.from_string(_SUMMARIZE_TEMPLATE)
 DEFAULT_TEMPLATE_VARS = {
     "app_name": "Obsidian Mentor AI",
     "user_name": "",
+    "conversation_summary": "",
 }
 
 

@@ -35,6 +35,9 @@ def _get_embedder():
             provider=settings.RAG_EMBED_PROVIDER,
             model_name=settings.RAG_EMBED_MODEL_NAME,
             device=settings.RAG_EMBED_DEVICE,
+            base_url=settings.RAG_EMBED_BASE_URL,
+            api_key=settings.RAG_EMBED_API_KEY,
+            dimensions=settings.RAG_EMBED_DIM,
         )
     return _embedder
 
@@ -56,6 +59,7 @@ async def ingest_knowledge_file_task(file_id: str, task_id: str | None = None):
     knowledge_service = KnowledgeService(
         uow=uow,
         storage_root=settings.KNOWLEDGE_STORAGE_ROOT,
+        max_upload_size_mb=settings.KNOWLEDGE_MAX_UPLOAD_SIZE_MB,
     )
     workflow = KnowledgeRAGWorkflow(
         knowledge_service=knowledge_service,

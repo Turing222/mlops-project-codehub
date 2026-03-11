@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.workflow.chat_workflow import ChatWorkflow
 from backend.models.schemas.chat_schema import LLMResultDTO
+from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
 
@@ -18,11 +18,11 @@ async def test_idempotency():
     mock_redis.set.side_effect = [True, False]
     mock_redis.get.return_value = "PROCESSING"
 
-    with patch("backend.workflow.chat_workflow.redis_client.init", return_value=mock_redis), \
-         patch("backend.workflow.chat_workflow.MessageResponse.model_validate", return_value=MagicMock()), \
-         patch("backend.workflow.chat_workflow.ChatQueryResponse", return_value=MagicMock()), \
+    with patch("backend.workflow.chat_nonstream_workflow.redis_client.init", return_value=mock_redis), \
+         patch("backend.workflow.chat_nonstream_workflow.MessageResponse.model_validate", return_value=MagicMock()), \
+         patch("backend.workflow.chat_nonstream_workflow.ChatQueryResponse", return_value=MagicMock()), \
          patch("backend.ai.core.token_counter.tiktoken.get_encoding", return_value=MagicMock()):
-        workflow = ChatWorkflow(uow, llm_service, prompt_manager)
+        workflow = ChatNonStreamWorkflow(uow, llm_service, prompt_manager)
 
         user_id = uuid.uuid4()
         client_req_id = "test-req-123"
@@ -44,7 +44,7 @@ async def test_token_quota():
     uow = MagicMock()
     llm_service = AsyncMock()
 
-    workflow = ChatWorkflow(uow, llm_service)
+    workflow = ChatNonStreamWorkflow(uow, llm_service)
     user_id = uuid.uuid4()
 
     mock_user = MagicMock(used_tokens=1000, max_tokens=1000)
@@ -67,7 +67,7 @@ async def test_token_recording():
         latency_ms=100,
     )
 
-    workflow = ChatWorkflow(uow, llm_service)
+    workflow = ChatNonStreamWorkflow(uow, llm_service)
     user_id = uuid.uuid4()
 
     mock_user = MagicMock(used_tokens=0, max_tokens=1000)
@@ -81,9 +81,9 @@ async def test_token_recording():
          patch("backend.services.chat_service.SessionManager.create_user_message", AsyncMock()), \
          patch("backend.services.chat_service.SessionManager.create_assistant_message", AsyncMock(return_value=assistant_msg)), \
          patch("backend.services.chat_service.SessionManager.get_session_messages", AsyncMock(return_value=[])), \
-         patch("backend.workflow.chat_workflow.MessageResponse.model_validate", return_value=MagicMock()), \
-         patch("backend.workflow.chat_workflow.ChatQueryResponse", return_value=MagicMock()), \
-         patch("backend.workflow.chat_workflow.ChatMessageUpdater", MagicMock()) as mock_updater_cls, \
+         patch("backend.workflow.chat_nonstream_workflow.MessageResponse.model_validate", return_value=MagicMock()), \
+         patch("backend.workflow.chat_nonstream_workflow.ChatQueryResponse", return_value=MagicMock()), \
+         patch("backend.workflow.chat_nonstream_workflow.ChatMessageUpdater", MagicMock()) as mock_updater_cls, \
          patch("backend.ai.core.token_counter.tiktoken.get_encoding", return_value=MagicMock()):
         mock_updater = mock_updater_cls.return_value
         mock_updater.update_as_success = AsyncMock(return_value=assistant_msg)

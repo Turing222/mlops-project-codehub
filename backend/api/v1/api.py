@@ -9,8 +9,6 @@ from backend.api.v1.endpoint import (
     user_api,
 )
 
-# , items, login
-
 api_router = APIRouter()
 
 # include_router 会将子文件中的路由“挂载”到总路由下
@@ -21,4 +19,3 @@ api_router.include_router(knowledge_api.router, prefix="/knowledge", tags=["know
 api_router.include_router(
     health_check.router, prefix="/health_check", tags=["health_check"]
 )
-# api_router.include_router(items.router, prefix="/items", tags=["items"])

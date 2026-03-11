@@ -2,18 +2,34 @@ import logging
 
 import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt.exceptions import InvalidTokenError
-from pydantic import ValidationError
+from pydantic import ValidationError as PydanticValidationError
 
 from backend.api.deps.uow import get_uow
 from backend.core.config import settings
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.user import User
+from backend.models.schemas.user_schema import UserLogin
 from backend.services.user_service import UserService
 
 reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 logger = logging.getLogger(__name__)
+
+
+def get_login_data(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+) -> UserLogin:
+    try:
+        return UserLogin(
+            username=form_data.username,
+            password=form_data.password,
+        )
+    except PydanticValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=exc.errors(),
+        ) from exc
 
 
 async def get_current_user(
@@ -32,7 +48,7 @@ async def get_current_user(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Token 缺少身份标识",
             )
-    except (InvalidTokenError, ValidationError) as e:
+    except (InvalidTokenError, PydanticValidationError) as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Token 无效或已过期",
@@ -65,4 +81,3 @@ def get_current_superuser(
     if not current_user.is_superuser:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
     return current_user
-

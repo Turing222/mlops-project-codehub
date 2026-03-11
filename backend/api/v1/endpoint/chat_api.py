@@ -7,43 +7,58 @@ Chat API — 对话相关的 HTTP 端点
 - 结构化日志记录请求生命周期
 """
 
-import logging
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from backend.api.dependencies import (
+    get_chat_nonstream_workflow,
     get_chat_workflow,
     get_current_active_user,
-    get_uow,
+    get_session_query_service,
 )
 from backend.middleware.rate_limit import RateLimiter
 from backend.models.orm.user import User
 from backend.models.schemas.chat_schema import (
     ChatQueryResponse,
-    MessageResponse,
     QuerySentRequest,
     SessionDetailResponse,
     SessionListResponse,
-    SessionResponse,
 )
-from backend.services.chat_service import SessionManager
-from backend.services.unit_of_work import AbstractUnitOfWork
+from backend.services.session_query_service import SessionQueryService
+from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
 from backend.workflow.chat_workflow import ChatWorkflow
 
 # 定义限流策略：为压测临时调高上限（原：每 60 秒 10 次）
 chat_limiter = RateLimiter(times=100000, seconds=60)
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
+
+CurrentUser = Annotated[User, Depends(get_current_active_user)]
+SessionQueryServiceDep = Annotated[
+    SessionQueryService, Depends(get_session_query_service)
+]
+NonStreamWorkflowDep = Annotated[
+    ChatNonStreamWorkflow, Depends(get_chat_nonstream_workflow)
+]
+StreamWorkflowDep = Annotated[ChatWorkflow, Depends(get_chat_workflow)]
+ChatRateLimitDep = Annotated[None, Depends(chat_limiter)]
+SessionSkipParam = Annotated[int, Query(default=0, ge=0, description="跳过的记录数")]
+SessionListLimitParam = Annotated[
+    int, Query(default=20, ge=1, le=100, description="每页记录数")
+]
+SessionDetailLimitParam = Annotated[int, Query(default=100, ge=1, le=500)]
+
+
 @router.post("/query_sent", response_model=ChatQueryResponse)
 async def query_sent(
     request: QuerySentRequest,
-    current_user: User = Depends(get_current_active_user),
-    workflow: ChatWorkflow = Depends(get_chat_workflow),
-    _ = Depends(chat_limiter),
-):
+    current_user: CurrentUser,
+    workflow: NonStreamWorkflowDep,
+    _: ChatRateLimitDep,
+) -> ChatQueryResponse:
     """
     用户发送查询（非流式）。
     """
@@ -59,10 +74,10 @@ async def query_sent(
 @router.post("/query_stream")
 async def query_stream(
     request: QuerySentRequest,
-    current_user: User = Depends(get_current_active_user),
-    workflow: ChatWorkflow = Depends(get_chat_workflow),
-    _ = Depends(chat_limiter),
-):
+    current_user: CurrentUser,
+    workflow: StreamWorkflowDep,
+    _: ChatRateLimitDep,
+) -> StreamingResponse:
     """
     用户发送查询（SSE 流式响应）。
 
@@ -91,33 +106,14 @@ async def query_stream(
 
 @router.get("/sessions", response_model=SessionListResponse)
 async def get_sessions(
-    skip: int = Query(default=0, ge=0, description="跳过的记录数"),
-    limit: int = Query(default=20, ge=1, le=100, description="每页记录数"),
-    current_user: User = Depends(get_current_active_user),
-    uow: AbstractUnitOfWork = Depends(get_uow),
-):
+    skip: SessionSkipParam,
+    limit: SessionListLimitParam,
+    current_user: CurrentUser,
+    session_query_service: SessionQueryServiceDep,
+) -> SessionListResponse:
     """获取当前用户的会话列表（侧边栏）"""
-    logger.debug(
-        "获取会话列表: user_id=%s, skip=%d, limit=%d", current_user.id, skip, limit
-    )
-
-    async with uow:
-        rows = await uow.chat_repo.get_user_sessions_with_total_tokens(
-            user_id=current_user.id,
-            skip=skip,
-            limit=limit,
-        )
-        total = await uow.chat_repo.count_user_sessions(current_user.id)
-
-    items: list[SessionResponse] = []
-    for session, total_tokens in rows:
-        res = SessionResponse.model_validate(session)
-        res.total_tokens = total_tokens
-        items.append(res)
-
-    return SessionListResponse(
-        items=items,
-        total=total,
+    return await session_query_service.list_user_sessions(
+        user_id=current_user.id,
         skip=skip,
         limit=limit,
     )
@@ -126,33 +122,15 @@ async def get_sessions(
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
 async def get_session_detail(
     session_id: uuid.UUID,
-    skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, ge=1, le=500),
-    current_user: User = Depends(get_current_active_user),
-    uow: AbstractUnitOfWork = Depends(get_uow),
-):
+    skip: SessionSkipParam,
+    limit: SessionDetailLimitParam,
+    current_user: CurrentUser,
+    session_query_service: SessionQueryServiceDep,
+) -> SessionDetailResponse:
     """获取会话详情及历史消息"""
-    logger.debug("获取会话详情: session_id=%s, user_id=%s", session_id, current_user.id)
-
-    async with uow:
-        session_manager = SessionManager(uow)
-        # ensure_session 会验证权限
-        session = await session_manager.ensure_session(
-            user_id=current_user.id,
-            query_text="",
-            session_id=session_id,
-        )
-        messages = await session_manager.get_session_messages(
-            session_id=session.id,
-            skip=skip,
-            limit=limit,
-        )
-        total_tokens = await uow.chat_repo.get_session_total_tokens(session.id)
-        session_res = SessionResponse.model_validate(session)
-        session_res.total_tokens = total_tokens
-
-    return SessionDetailResponse(
-        session=session_res,
-        messages=[MessageResponse.model_validate(m) for m in messages],
-        total_messages=len(messages),
+    return await session_query_service.get_user_session_detail(
+        user_id=current_user.id,
+        session_id=session_id,
+        skip=skip,
+        limit=limit,
     )

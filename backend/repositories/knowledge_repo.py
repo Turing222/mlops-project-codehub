@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, func, insert, select
 
 from backend.models.orm.chunk import DocumentChunk
 from backend.models.orm.knowledge import File, FileStatus, KnowledgeBase
@@ -106,3 +106,42 @@ class KnowledgeRepository:
         )
         result = await self.session.execute(stmt)
         return [(row[0], float(row[1])) for row in result.all()]
+
+    async def search_chunks_for_kb_fulltext(
+        self,
+        *,
+        query_text: str,
+        kb_id: uuid.UUID,
+        limit: int = 5,
+    ) -> list[tuple[DocumentChunk, float]]:
+        """在指定知识库内做全文检索，返回 (chunk, distance)。"""
+        if not query_text.strip() or limit <= 0:
+            return []
+
+        normalized_query = query_text.strip()
+        ts_vector = func.to_tsvector("simple", DocumentChunk.content)
+        ts_query = func.plainto_tsquery("simple", normalized_query)
+        rank = func.ts_rank_cd(ts_vector, ts_query).label("rank")
+        stmt = (
+            select(DocumentChunk, rank)
+            .join(File, DocumentChunk.file_id == File.id)
+            .where(File.kb_id == kb_id)
+            .where(ts_vector.op("@@")(ts_query))
+            .order_by(rank.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        rows = result.all()
+        return [
+            (
+                row[0],
+                self._rank_to_distance(float(row[1]) if row[1] is not None else 0.0),
+            )
+            for row in rows
+        ]
+
+    @staticmethod
+    def _rank_to_distance(rank: float) -> float:
+        # 与向量检索保持同方向：值越小越相关
+        safe_rank = max(0.0, rank)
+        return 1.0 / (1.0 + safe_rank)

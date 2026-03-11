@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     OBSIDIAN_VAULT_PATH: str = "/data/obsidian"
     KNOWLEDGE_STORAGE_ROOT: Path = Path(".files/knowledge_files")
+    KNOWLEDGE_MAX_UPLOAD_SIZE_MB: int = 20
     KNOWLEDGE_CHUNK_SIZE: int = 800
     KNOWLEDGE_CHUNK_OVERLAP: int = 120
 
@@ -58,9 +59,16 @@ class Settings(BaseSettings):
     LLM_MAX_CONTEXT_TOKENS: int = 4096
     LLM_MAX_HISTORY_ROUNDS: int = 10
     LLM_RESERVED_RESPONSE_TOKENS: int = 1024
+    CHAT_MEMORY_RECENT_ROUNDS: int = 6
+    CHAT_MEMORY_SUMMARY_MAX_CHARS: int = 1500
+    CHAT_MEMORY_SNIPPET_CHARS: int = 120
+    CHAT_MEMORY_FETCH_LIMIT: int = 2000
     RAG_TOP_K: int = 4
-    RAG_EMBED_PROVIDER: str = "sentence-transformers"
-    RAG_EMBED_MODEL_NAME: str = "BAAI/bge-base-zh-v1.5"
+    RAG_EMBED_PROVIDER: str = "openai-compatible"
+    RAG_EMBED_MODEL_NAME: str = "text-embedding-3-small"
+    RAG_EMBED_BASE_URL: str | None = None
+    RAG_EMBED_API_KEY: str | None = None
+    RAG_EMBED_DIM: int = 768
     RAG_EMBED_DEVICE: str = "cpu"
 
     # --- 安全配置 (SECRET_KEY 必须从 env 读取) ---

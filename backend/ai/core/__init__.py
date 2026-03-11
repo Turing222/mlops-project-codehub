@@ -9,6 +9,7 @@ LLM Core — 对话能力核心模块
 - 模板对象
 """
 
+from backend.ai.core.chat_context_builder import ChatContextBuilder, PreparedChatContext
 from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
 from backend.ai.core.prompt_templates import (
     DEFAULT_SYSTEM_TEMPLATE,
@@ -21,6 +22,8 @@ from backend.ai.core.token_counter import count_messages_tokens, count_tokens
 __all__ = [
     "PromptManager",
     "AssembledPrompt",
+    "ChatContextBuilder",
+    "PreparedChatContext",
     "render_system_prompt",
     "count_tokens",
     "count_messages_tokens",

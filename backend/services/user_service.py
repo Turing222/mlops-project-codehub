@@ -17,7 +17,6 @@ from backend.core.security import get_password_hash, verify_password
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.user import User
 from backend.models.schemas.user_schema import (
-    UserBase,
     UserCreate,
     UserLogin,
     UserUpdate,
@@ -123,9 +122,9 @@ class UserService(BaseService[AbstractUnitOfWork]):
                 errors.append(f"Row {index}: {str(mapped_row)}")
 
         if not cleaned_schemas:
-            raise ValueError(f"No valid data found. Errors: {errors}")
+            raise ValidationError(f"No valid data found. Errors: {errors}")
         if errors:
-            raise ValueError(f"No valid data found. Errors: {errors}")
+            raise ValidationError(f"No valid data found. Errors: {errors}")
         return cleaned_schemas
 
     # --- 简单透传逻辑 (Proxy) ---
@@ -151,24 +150,33 @@ class UserService(BaseService[AbstractUnitOfWork]):
         """
         新增：用户注册功能
         """
-        logger.debug(f"当前变量值: {user_in}")
+        logger.debug(
+            "注册请求: username=%s, email=%s",
+            user_in.username,
+            user_in.email,
+        )
 
         # 1. 检查用户名是否存在
         if await self.uow.users.get_by_email(email=user_in.email):
             raise ValidationError("该邮箱已被注册")
+        if await self.uow.users.get_by_username(username=user_in.username):
+            raise ValidationError("该用户名已被注册")
 
         # 2. 密码加密 (这里是业务逻辑，不该放在 uow 里)
 
         obj_in_data = user_in.model_dump()  # Pydantic v2 用 model_dump
         obj_in_data.pop("password")  # 弹出明文密码
         obj_in_data.pop("confirm_password")  # 弹出明文密码
-        logger.debug(f"当前密码: {user_in.password}")
         obj_in_data["hashed_password"] = await get_password_hash(
             user_in.password
         )  # 添加哈希密码
 
         # 3. 创建用户
-        user = await self.uow.users.create(obj_in=obj_in_data)
+        try:
+            user = await self.uow.users.create(obj_in=obj_in_data)
+        except IntegrityError as exc:
+            # 并发注册时数据库唯一约束仍可能触发，这里统一转为业务错误
+            raise ValidationError("用户名或邮箱已被注册") from exc
 
         # 4. 可能还有后续动作，比如发送欢迎邮件...
         # await email_service.send_welcome_email(users.email)
@@ -192,7 +200,7 @@ class UserService(BaseService[AbstractUnitOfWork]):
         user = await self.uow.users.get_by_username(user_in.username)
         if not user:
             return None
-        if not verify_password(user_in.password, user.hashed_password):
+        if not await verify_password(user_in.password, user.hashed_password):
             return None
         return user
 

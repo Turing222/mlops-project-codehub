@@ -2,6 +2,7 @@ import asyncio
 import uuid
 from pathlib import Path
 
+from backend.core.docling_models import DoclingModelFactory
 from backend.core.exceptions import ResourceNotFound, ValidationError
 from backend.models.orm.knowledge import FileStatus
 from backend.services.chunking_service import ChunkingService
@@ -21,6 +22,8 @@ TEXT_FILE_SUFFIXES = {
     ".py",
     ".sql",
 }
+
+DOCLING_STRUCTURED_SUFFIXES = {".pdf", ".docx", ".pptx"}
 
 
 class KnowledgeRAGWorkflow:
@@ -55,8 +58,7 @@ class KnowledgeRAGWorkflow:
             raise ResourceNotFound("上传文件在存储路径中不存在")
 
         try:
-            text = await asyncio.to_thread(self._extract_text, file_path)
-            chunks = self.chunking_service.split_text(text)
+            chunks = await asyncio.to_thread(self._extract_chunks, file_path)
             if not chunks:
                 raise ValidationError("文件无可用文本内容，无法构建 RAG 索引")
 
@@ -82,23 +84,49 @@ class KnowledgeRAGWorkflow:
             )
             raise
 
-    def _extract_text(self, file_path: Path) -> str:
+    def _extract_chunks(self, file_path: Path) -> list[str]:
         suffix = file_path.suffix.lower()
         if suffix in TEXT_FILE_SUFFIXES:
-            return file_path.read_text(encoding="utf-8", errors="ignore")
-        if suffix in {".pdf", ".docx", ".pptx"}:
-            try:
-                from docling.document_converter import DocumentConverter
-
-                converter = DocumentConverter()
-                result = converter.convert(str(file_path))
-                if hasattr(result.document, "export_to_markdown"):
-                    return result.document.export_to_markdown()
-                if hasattr(result.document, "export_to_text"):
-                    return result.document.export_to_text()
-            except Exception as exc:
-                raise ValidationError(f"文件解析失败: {file_path.name}") from exc
+            text = file_path.read_text(encoding="utf-8", errors="ignore")
+            return self.chunking_service.split_text(text)
+        if suffix in DOCLING_STRUCTURED_SUFFIXES:
+            return self._extract_docling_chunks(file_path)
 
         raise ValidationError(
             f"暂不支持的文件类型: {suffix or '(无扩展名)'}，建议使用 txt/md/pdf/docx"
         )
+
+    def _extract_docling_chunks(self, file_path: Path) -> list[str]:
+        try:
+            converter = DoclingModelFactory.get_converter()
+            chunker = DoclingModelFactory.get_hierarchical_chunker()
+
+            result = converter.convert(str(file_path))
+            chunks: list[str] = []
+
+            for chunk in chunker.chunk(dl_doc=result.document):
+                text = chunker.contextualize(chunk).strip()
+                if not text:
+                    continue
+
+                # 对超长结构块做二次切分，避免向量块过大
+                if len(text) > self.chunking_service.chunk_size:
+                    chunks.extend(self.chunking_service.split_text(text))
+                else:
+                    chunks.append(text)
+
+            if chunks:
+                return chunks
+
+            fallback_text = self._export_docling_document(result.document)
+            return self.chunking_service.split_text(fallback_text)
+        except Exception as exc:
+            raise ValidationError(f"文件解析失败: {file_path.name}") from exc
+
+    @staticmethod
+    def _export_docling_document(document: object) -> str:
+        if hasattr(document, "export_to_markdown"):
+            return document.export_to_markdown()
+        if hasattr(document, "export_to_text"):
+            return document.export_to_text()
+        return ""

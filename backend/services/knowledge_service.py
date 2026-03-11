@@ -14,9 +14,12 @@ class KnowledgeService:
         self,
         uow: AbstractUnitOfWork,
         storage_root: Path,
+        max_upload_size_mb: int = 20,
     ):
         self.uow = uow
         self.storage_root = storage_root
+        self.max_upload_size_mb = max(1, max_upload_size_mb)
+        self.max_upload_size_bytes = self.max_upload_size_mb * 1024 * 1024
 
     async def save_upload_file(
         self,
@@ -29,7 +32,11 @@ class KnowledgeService:
             raise ValidationError("上传文件名不能为空")
 
         safe_filename = self._sanitize_filename(upload_file.filename)
-        content = await upload_file.read()
+        if upload_file.size and upload_file.size > self.max_upload_size_bytes:
+            raise ValidationError(
+                f"上传文件超过大小限制（最大 {self.max_upload_size_mb}MB）"
+            )
+        content = await self._read_upload_content(upload_file)
         if not content:
             raise ValidationError("上传文件为空")
 
@@ -94,3 +101,21 @@ class KnowledgeService:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("wb") as f:
             f.write(content)
+
+    async def _read_upload_content(self, upload_file: UploadFile) -> bytes:
+        chunks: list[bytes] = []
+        total_size = 0
+        chunk_size = 1024 * 1024
+
+        while True:
+            chunk = await upload_file.read(chunk_size)
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if total_size > self.max_upload_size_bytes:
+                raise ValidationError(
+                    f"上传文件超过大小限制（最大 {self.max_upload_size_mb}MB）"
+                )
+            chunks.append(chunk)
+
+        return b"".join(chunks)

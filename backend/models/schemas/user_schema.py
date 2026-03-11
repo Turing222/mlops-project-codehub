@@ -131,6 +131,15 @@ class UserResponse(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UserImportResponse(BaseModel):
+    """批量导入用户响应"""
+
+    filename: str
+    total_rows: int
+    imported_rows: int
+    message: str
+
+
 # --- Auth Schemas ---
 
 
