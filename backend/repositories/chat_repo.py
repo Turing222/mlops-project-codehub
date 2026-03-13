@@ -199,8 +199,19 @@ class ChatRepository:
             status=MessageStatus.THINKING,
         )
 
-    async def get_message_by_client_request_id(self, client_request_id: str) -> ChatMessage | None:
-        """根据客户端请求 ID 获取消息"""
-        stmt = select(ChatMessage).where(ChatMessage.client_request_id == client_request_id)
+    async def get_message_by_client_request_id(
+        self,
+        client_request_id: str,
+        user_id: uuid.UUID,
+    ) -> ChatMessage | None:
+        """根据客户端请求 ID 获取当前用户的消息"""
+        stmt = (
+            select(ChatMessage)
+            .join(ChatSession, ChatMessage.session_id == ChatSession.id)
+            .where(
+                ChatMessage.client_request_id == client_request_id,
+                ChatSession.user_id == user_id,
+            )
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

@@ -44,7 +44,9 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         progress: int = 0,
     ) -> TaskJob | None:
         async with self.uow:
-            return await self.uow.task.mark_processing(task_id=task_id, progress=progress)
+            return await self.uow.task.mark_processing(
+                task_id=task_id, progress=progress
+            )
 
     async def mark_completed(
         self,
@@ -53,7 +55,9 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         progress: int = 100,
     ) -> TaskJob | None:
         async with self.uow:
-            return await self.uow.task.mark_completed(task_id=task_id, progress=progress)
+            return await self.uow.task.mark_completed(
+                task_id=task_id, progress=progress
+            )
 
     async def mark_failed(
         self,

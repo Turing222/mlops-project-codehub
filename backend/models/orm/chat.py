@@ -1,11 +1,18 @@
+from __future__ import annotations
+
 import uuid
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
+
+if TYPE_CHECKING:
+    from backend.models.orm.chunk import DocumentChunk
+    from backend.models.orm.user import User
 
 
 class ChatSession(Base, BaseIdModel, AuditMixin):
@@ -25,8 +32,8 @@ class ChatSession(Base, BaseIdModel, AuditMixin):
     llm_config: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'"))
 
     # 双向关联
-    user: Mapped["User"] = relationship(back_populates="sessions")
-    messages: Mapped[list["ChatMessage"]] = relationship(
+    user: Mapped[User] = relationship(back_populates="sessions")
+    messages: Mapped[list[ChatMessage]] = relationship(
         back_populates="session",
         cascade="all, delete-orphan",
     )
@@ -50,7 +57,7 @@ class ChatMessage(Base, BaseIdModel, AuditMixin):
     role: Mapped[str] = mapped_column(String(20))  # user, assistant, system
     content: Mapped[str] = mapped_column(Text)
 
-    session: Mapped["ChatSession"] = relationship(back_populates="messages")
+    session: Mapped[ChatSession] = relationship(back_populates="messages")
 
     # 状态控制
     status: Mapped[MessageStatus] = mapped_column(
@@ -84,7 +91,7 @@ class ChatMessage(Base, BaseIdModel, AuditMixin):
         Index("idx_msgs_client_req_id", "client_request_id", unique=True),
     )
 
-    chunks: Mapped[list["DocumentChunk"]] = relationship(
+    chunks: Mapped[list[DocumentChunk]] = relationship(
         back_populates="message",
         cascade="all, delete-orphan",
     )

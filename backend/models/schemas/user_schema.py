@@ -97,7 +97,6 @@ class UserUpdate(BaseModel):
 
     username: UsernameStr | None = None
     email: EmailStr | None = None
-    password: PasswordStr | None = None
     is_active: bool | None = None
     max_tokens: int | None = None
 

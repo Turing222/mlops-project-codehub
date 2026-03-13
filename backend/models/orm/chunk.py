@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import uuid
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, Text, text
@@ -7,6 +10,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.orm.base import Base, BaseIdModel
+
+if TYPE_CHECKING:
+    from backend.models.orm.chat import ChatMessage
+    from backend.models.orm.knowledge import File
 
 
 class ChunkSourceType(StrEnum):
@@ -51,6 +58,6 @@ class DocumentChunk(Base, BaseIdModel):
         ),
     )
 
-    file: Mapped["File | None"] = relationship(back_populates="chunks")
+    file: Mapped[File | None] = relationship(back_populates="chunks")
     # message 的反向关联会定义在 ChatMessage 里
-    message: Mapped["ChatMessage | None"] = relationship(back_populates="chunks")
+    message: Mapped[ChatMessage | None] = relationship(back_populates="chunks")

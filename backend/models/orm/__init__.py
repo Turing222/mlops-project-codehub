@@ -1,7 +1,7 @@
 from .base import AuditMixin, Base, BaseIdModel
 from .chat import ChatMessage, ChatSession
-from .knowledge import File, KnowledgeBase, FileStatus
-from .chunk import DocumentChunk, ChunkSourceType
+from .chunk import ChunkSourceType, DocumentChunk
+from .knowledge import File, FileStatus, KnowledgeBase
 from .task import TaskJob
 from .user import User
 

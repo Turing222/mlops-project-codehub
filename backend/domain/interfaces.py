@@ -6,12 +6,14 @@ from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 from backend.repositories.chat_repo import ChatRepository
 from backend.repositories.knowledge_repo import KnowledgeRepository
 from backend.repositories.user_repo import UserRepository
+from backend.repositories.user_repo import TaskRepository
 
 
 class AbstractUnitOfWork(ABC):
     users: UserRepository
     chat_repo: ChatRepository
     knowledge: KnowledgeRepository
+    task: TaskRepository
 
     async def __aenter__(self):
         return self

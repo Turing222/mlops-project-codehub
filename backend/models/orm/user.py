@@ -1,7 +1,15 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Boolean, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
+
+if TYPE_CHECKING:
+    from backend.models.orm.chat import ChatSession
+    from backend.models.orm.knowledge import KnowledgeBase
 
 
 class User(Base, BaseIdModel, AuditMixin):
@@ -33,5 +41,5 @@ class User(Base, BaseIdModel, AuditMixin):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # 反向关联
-    sessions: Mapped[list["ChatSession"]] = relationship(back_populates="user")
-    knowledge_bases: Mapped[list["KnowledgeBase"]] = relationship(back_populates="user")
+    sessions: Mapped[list[ChatSession]] = relationship(back_populates="user")
+    knowledge_bases: Mapped[list[KnowledgeBase]] = relationship(back_populates="user")

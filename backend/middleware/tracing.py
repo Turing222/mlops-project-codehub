@@ -2,7 +2,7 @@ import logging
 import time
 from contextvars import ContextVar
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, HTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 from ulid import ULID
 
@@ -39,20 +39,14 @@ def setup_tracing(app: FastAPI):
                     "rid": rid,
                     "path": request.url.path,
                     "status": response.status_code,
-                    "process_time_ms": round(process_time, 2)
-                }
+                    "process_time_ms": round(process_time, 2),
+                },
             )
             return response
 
         except Exception as e:
-            logger.error(
-                "Request Failed",
-                extra={
-                    "rid": rid,
-                    "error": str(e)
-                }
-            )
-            raise e
+            logger.error("Request Failed", extra={"rid": rid, "error": str(e)})
+            raise HTTPException(status_code=500, detail="Internal Server Error") from e
         finally:
             # 4. 必须执行：清理上下文，防止内存泄露或协程间干扰
             REQUEST_ID_CTX.reset(token)

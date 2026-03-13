@@ -1,9 +1,12 @@
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote, urlsplit, urlunsplit
 
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 
 class Settings(BaseSettings):
@@ -50,6 +53,7 @@ class Settings(BaseSettings):
     # --- 并发控制配置 ---
     LLM_MAX_CONCURRENCY: int = 5
     DB_MAX_CONCURRENCY: int = 10
+    RATE_LIMIT_TRUSTED_PROXY_CIDRS: str = ""
 
     # --- LLM 对话配置 ---
     LLM_PROVIDER: str = "mock"
@@ -68,11 +72,11 @@ class Settings(BaseSettings):
     RAG_EMBED_MODEL_NAME: str = "text-embedding-3-small"
     RAG_EMBED_BASE_URL: str | None = None
     RAG_EMBED_API_KEY: str | None = None
-    RAG_EMBED_DIM: int = 768
+    RAG_EMBED_DIM: Literal[768] = 768
     RAG_EMBED_DEVICE: str = "cpu"
 
     # --- 安全配置 (SECRET_KEY 必须从 env 读取) ---
-    SECRET_KEY: str = ""
+    SECRET_KEY: str = Field(..., min_length=1)
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
@@ -86,9 +90,20 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        return (
-            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        return self._build_database_url().render_as_string(hide_password=False)
+
+    @property
+    def database_url_safe(self) -> str:
+        return self._build_database_url().render_as_string(hide_password=True)
+
+    def _build_database_url(self) -> URL:
+        return URL.create(
+            "postgresql+asyncpg",
+            username=self.POSTGRES_USER,
+            password=self.POSTGRES_PASSWORD,
+            host=self.POSTGRES_SERVER,
+            port=self.POSTGRES_PORT,
+            database=self.POSTGRES_DB,
         )
 
     @property
@@ -132,6 +147,13 @@ class Settings(BaseSettings):
     def _replace_redis_db(url: str, db: int) -> str:
         parsed = urlsplit(url)
         return urlunsplit((parsed.scheme, parsed.netloc, f"/{db}", parsed.query, parsed.fragment))
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def validate_secret_key(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("SECRET_KEY must not be empty")
+        return value
 
 
 @lru_cache

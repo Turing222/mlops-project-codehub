@@ -1,4 +1,5 @@
 import logging
+import secrets
 import uuid
 from collections.abc import Sequence
 from typing import Any
@@ -64,8 +65,10 @@ class UserService(BaseService[AbstractUnitOfWork]):
                 if not batch:
                     continue
 
+                import_rows = await self._build_import_rows(batch)
                 # 调用 uow
-                await self.uow.users.bulk_upsert(batch)
+                await self.uow.users.bulk_upsert(import_rows)
+                await self._after_import_batch_hook(import_rows)
                 logger.debug(
                     f"批次 [{i}/{total_batches}] 处理完成，本批 {len(batch)} 条"
                 )
@@ -83,6 +86,30 @@ class UserService(BaseService[AbstractUnitOfWork]):
             # Service 层捕获未知异常，转为统一的 ServiceError
             logger.exception("导入过程发生未知错误")  # 自动记录堆栈
             raise ServiceError("Internal server error during import") from e
+
+    async def _build_import_rows(self, user_maps: list[dict[str, Any]]) -> list[dict[str, str]]:
+        """构造可直接入库的数据行（补齐 hashed_password）。"""
+        rows: list[dict[str, str]] = []
+        for user_map in user_maps:
+            username = str(user_map["username"]).strip().lower()
+            email = str(user_map["email"]).strip().lower()
+            temp_password = secrets.token_urlsafe(12)
+            hashed_password = await get_password_hash(temp_password)
+            rows.append(
+                {
+                    "username": username,
+                    "email": email,
+                    "hashed_password": hashed_password,
+                }
+            )
+        return rows
+
+    async def _after_import_batch_hook(self, import_rows: list[dict[str, str]]) -> None:
+        """
+        导入后扩展钩子（预留给激活流程/通知流程）。
+        当前不执行任何动作。
+        """
+        _ = import_rows
 
     # --- 新增功能的扩展位置 ---
 

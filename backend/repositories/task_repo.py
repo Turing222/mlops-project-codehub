@@ -83,15 +83,10 @@ class TaskRepository:
         注意：TaskJob 没有直接的 user_id 字段，需要通过 payload 中的 session_id 关联查询
         或者由 Service 层在调用时传入 user_id 到 payload 中
         """
-        # 暂时返回所有任务，如果需要按用户过滤，需要在 payload 中存储 user_id
-        stmt = (
-            select(TaskJob)
-            .order_by(TaskJob.created_at.desc())
-            .offset(skip)
-            .limit(limit)
+        raise NotImplementedError(
+            "TaskRepository.get_user_tasks is not implemented: "
+            "task_jobs has no user_id column yet."
         )
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
 
     async def mark_completed(
         self,

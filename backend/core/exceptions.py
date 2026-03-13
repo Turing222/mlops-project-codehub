@@ -15,6 +15,7 @@ def setup_exception_handlers(app: FastAPI):
     # --- 1. 处理业务异常 (AppError 系列) ---
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError):
+        request_id = getattr(request.state, "request_id", None)
         # 直接从异常对象获取状态码，不再写 if-else
         return JSONResponse(
             status_code=exc.status_code,
@@ -22,13 +23,14 @@ def setup_exception_handlers(app: FastAPI):
                 "code": exc.status_code,
                 "message": exc.message,
                 "details": exc.details,
-                "request_id": request.state.request_id,  # 关联中间件生成的 ID
+                "request_id": request_id,  # tracing 中间件缺失时回落为 None
             },
         )
 
     # --- 2. 处理意料之外的系统异常 (真正的 Bug) ---
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
+        request_id = getattr(request.state, "request_id", None)
         # 如果走到这一步，说明是没捕获的 1/0, AttributeError 等
         # 这里才需要记录 exc_info=True (堆栈)
         logger.error(f"系统崩溃: {str(exc)}", exc_info=True)
@@ -36,7 +38,7 @@ def setup_exception_handlers(app: FastAPI):
             status_code=500,
             content={
                 "message": "服务器开小差了",
-                "request_id": request.state.request_id,
+                "request_id": request_id,
             },
         )
 
@@ -70,19 +72,19 @@ class ResourceNotFound(AppError):
 class FileParseException(AppError):
     """文件读取操作失败"""
 
-    status_code = 403
+    status_code = 400
 
 
 class ServiceError(AppError):
     """服务层发生的逻辑错误"""
 
-    status_code = 501
+    status_code = 500
 
 
 class DatabaseOperationError(AppError):
     """数据库操作失败"""
 
-    status_code = 502
+    status_code = 500
 
 
 class DatabaseConnectionError(AppError):
@@ -94,7 +96,7 @@ class DatabaseConnectionError(AppError):
 class LLMError(ServiceError):
     """LLM 相关错误的基类"""
 
-    status_code = 502
+    status_code = 503
 
 
 class TokenLimitExceeded(LLMError):

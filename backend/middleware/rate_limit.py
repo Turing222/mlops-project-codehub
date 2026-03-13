@@ -1,6 +1,10 @@
+import ipaddress
 import time
 import uuid
+
 from fastapi import HTTPException, Request, status
+
+from backend.core.config import settings
 from backend.core.redis import redis_client
 
 # Lua 脚本：实现滑动窗口算法
@@ -35,13 +39,24 @@ end
 """
 
 class RateLimiter:
-    def __init__(self, times: int = 10, seconds: int = 60):
+    def __init__(
+        self,
+        times: int = 10,
+        seconds: int = 60,
+        trusted_proxy_cidrs: str | None = None,
+    ):
         self.times = times
         self.window_ms = seconds * 1000
+        raw_cidrs = (
+            trusted_proxy_cidrs
+            if trusted_proxy_cidrs is not None
+            else settings.RATE_LIMIT_TRUSTED_PROXY_CIDRS
+        )
+        self.trusted_proxy_networks = self._parse_cidr_list(raw_cidrs)
 
     async def __call__(self, request: Request):
-        # 1. 识别客户端 IP
-        client_ip = request.headers.get("x-real-ip") or request.client.host
+        # 1. 识别客户端 IP（仅当来源是可信代理时才信任代理头）
+        client_ip = self._get_client_ip(request)
         key = f"rate_limit_sliding:{client_ip}:{request.url.path}"
         
         # 2. 获取 Redis 连接
@@ -74,3 +89,39 @@ class RateLimiter:
                     "current_count": current_count
                 }
             )
+
+    def _get_client_ip(self, request: Request) -> str:
+        peer_ip = request.client.host if request.client else ""
+        if peer_ip and self._is_trusted_proxy(peer_ip):
+            real_ip = request.headers.get("x-real-ip", "").strip()
+            if self._is_valid_ip(real_ip):
+                return real_ip
+        return peer_ip or "unknown"
+
+    def _is_trusted_proxy(self, peer_ip: str) -> bool:
+        if not self.trusted_proxy_networks:
+            return False
+        try:
+            ip_obj = ipaddress.ip_address(peer_ip)
+        except ValueError:
+            return False
+        return any(ip_obj in network for network in self.trusted_proxy_networks)
+
+    @staticmethod
+    def _is_valid_ip(value: str) -> bool:
+        if not value:
+            return False
+        try:
+            ipaddress.ip_address(value)
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _parse_cidr_list(raw_cidrs: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+        cidr_items = [item.strip() for item in raw_cidrs.split(",") if item.strip()]
+        networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+        for item in cidr_items:
+            network = ipaddress.ip_network(item, strict=False)
+            networks.append(network)
+        return networks

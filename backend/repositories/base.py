@@ -110,9 +110,15 @@ class CRUDBase[ModelType, CreateSchemaType: BaseModel, UpdateSchemaType: BaseMod
         else:
             update_data = obj_in.model_dump(exclude_unset=True)
 
+        unknown_fields = [field for field in update_data if not hasattr(db_obj, field)]
+        if unknown_fields:
+            field_text = ", ".join(sorted(unknown_fields))
+            raise ValueError(
+                f"Unknown fields for {type(db_obj).__name__} update: {field_text}"
+            )
+
         for field, value in update_data.items():
-            if hasattr(db_obj, field):
-                setattr(db_obj, field, value)
+            setattr(db_obj, field, value)
 
         self.session.add(db_obj)
         await self.session.flush()

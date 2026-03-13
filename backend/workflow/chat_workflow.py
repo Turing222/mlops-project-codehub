@@ -91,7 +91,7 @@ class ChatWorkflow:
         # 0. 幂等校验
         if client_request_id:
             redis = await redis_client.init()
-            lock_key = f"idempotency:chat:{client_request_id}"
+            lock_key = f"idempotency:chat:{user_id}:{client_request_id}"
             is_new = await redis.set(lock_key, "PROCESSING", nx=True, ex=300)
             if not is_new:
                 val = await redis.get(lock_key)

@@ -1,10 +1,17 @@
+from __future__ import annotations
+
 import uuid
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
+
+if TYPE_CHECKING:
+    from backend.models.orm.chunk import DocumentChunk
+    from backend.models.orm.user import User
 
 
 class FileStatus(StrEnum):
@@ -27,8 +34,8 @@ class KnowledgeBase(Base, BaseIdModel, AuditMixin):
     )
 
     # 关联
-    user: Mapped["User"] = relationship(back_populates="knowledge_bases")
-    files: Mapped[list["File"]] = relationship(
+    user: Mapped[User] = relationship(back_populates="knowledge_bases")
+    files: Mapped[list[File]] = relationship(
         back_populates="kb",
         cascade="all, delete-orphan",
     )
@@ -50,8 +57,8 @@ class File(Base, BaseIdModel, AuditMixin):
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[FileStatus] = mapped_column(String(20), default=FileStatus.UPLOADED)
 
-    kb: Mapped["KnowledgeBase"] = relationship(back_populates="files")
-    chunks: Mapped[list["DocumentChunk"]] = relationship(
+    kb: Mapped[KnowledgeBase] = relationship(back_populates="files")
+    chunks: Mapped[list[DocumentChunk]] = relationship(
         back_populates="file",
         cascade="all, delete-orphan",
     )

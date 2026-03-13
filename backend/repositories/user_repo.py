@@ -1,4 +1,5 @@
 import uuid
+
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,11 +41,26 @@ class UserRepository(CRUDBase[User, UserCreate, UserUpdate]):
         # 转成 set 方便后续 O(1) 复杂度的查找比对
         return set(result.scalars().all())
 
-    async def bulk_upsert(self, user_maps: list[dict]):
+    async def bulk_upsert(self, user_maps: list[dict[str, str]]) -> None:
         """
         执行 Postgres 专用的 upsert 逻辑
         """
-        stmt = pg_insert(User).values(user_maps)
+        required_keys = {"username", "email", "hashed_password"}
+        normalized_rows: list[dict[str, str]] = []
+        for idx, row in enumerate(user_maps):
+            missing = required_keys.difference(row.keys())
+            if missing:
+                missing_text = ", ".join(sorted(missing))
+                raise ValueError(f"row {idx} is missing required keys: {missing_text}")
+            normalized_rows.append(
+                {
+                    "username": row["username"],
+                    "email": row["email"],
+                    "hashed_password": row["hashed_password"],
+                }
+            )
+
+        stmt = pg_insert(User).values(normalized_rows)
         stmt = stmt.on_conflict_do_update(
             index_elements=["email"], set_={"username": stmt.excluded.username}
         )

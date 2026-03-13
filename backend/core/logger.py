@@ -1,10 +1,9 @@
 import datetime
 import logging
 import sys
+
 import orjson
 from pythonjsonlogger import jsonlogger
-
-from backend.core.config import settings
 
 
 class OrjsonFormatter(jsonlogger.JsonFormatter):
@@ -39,7 +38,7 @@ class OrjsonFormatter(jsonlogger.JsonFormatter):
                 "threadName",
                 "taskName",
             )
-        super(OrjsonFormatter, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def json_serializer(self, obj):
         # 使用 orjson 序列化，并返回字符串
@@ -48,7 +47,7 @@ class OrjsonFormatter(jsonlogger.JsonFormatter):
         return orjson.dumps(obj).decode("utf-8")
 
     def add_fields(self, log_record, record, message_dict):
-        super(OrjsonFormatter, self).add_fields(log_record, record, message_dict)
+        super().add_fields(log_record, record, message_dict)
         # 统一时间字段名为 timestamp
         if log_record.get("asctime"):
             log_record["timestamp"] = log_record.pop("asctime")
