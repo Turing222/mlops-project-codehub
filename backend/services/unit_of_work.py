@@ -32,10 +32,10 @@ class SQLAlchemyUnitOfWork(AbstractUnitOfWork):
 
         # 2. 注入 Session 到 Repository，确保整个 UoW 周期内共享同一个事务
         # 注意：这里直接传私有变量或 property 均可，此时已确保不为 None
-        self.users = UserRepository(self._session)
+        self.user_repo = UserRepository(self._session)
         self.chat_repo = ChatRepository(self._session)
-        self.knowledge = KnowledgeRepository(self._session)
-        self.task = TaskRepository(self._session)
+        self.knowledge_repo = KnowledgeRepository(self._session)
+        self.task_repo = TaskRepository(self._session)
 
         return await super().__aenter__()
 

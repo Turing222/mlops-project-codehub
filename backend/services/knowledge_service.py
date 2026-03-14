@@ -4,7 +4,12 @@ from pathlib import Path
 
 from fastapi import UploadFile
 
-from backend.core.exceptions import ResourceNotFound, ValidationError
+from backend.core.exceptions import (
+    AppError,
+    ResourceNotFound,
+    ServiceError,
+    ValidationError,
+)
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.knowledge import File, FileStatus
 
@@ -41,7 +46,7 @@ class KnowledgeService:
             raise ValidationError("上传文件为空")
 
         async with self.uow:
-            kb = await self.uow.knowledge.get_kb_for_user(kb_id=kb_id, user_id=user_id)
+            kb = await self.uow.knowledge_repo.get_kb_for_user(kb_id=kb_id, user_id=user_id)
             if not kb:
                 raise ResourceNotFound("知识库不存在或无访问权限")
 
@@ -50,26 +55,29 @@ class KnowledgeService:
 
         try:
             async with self.uow:
-                file_obj = await self.uow.knowledge.create_file(
+                file_obj = await self.uow.knowledge_repo.create_file(
                     kb_id=kb_id,
                     filename=safe_filename,
                     file_path=str(target_path),
                     file_size=len(content),
                     status=FileStatus.UPLOADED,
                 )
-        except Exception:
+        except AppError:
             target_path.unlink(missing_ok=True)
             raise
+        except Exception as exc:
+            target_path.unlink(missing_ok=True)
+            raise ServiceError("上传文件保存失败，请稍后重试") from exc
 
         return file_obj
 
     async def get_file(self, file_id: uuid.UUID) -> File | None:
         async with self.uow:
-            return await self.uow.knowledge.get_file(file_id)
+            return await self.uow.knowledge_repo.get_file(file_id)
 
     async def ensure_kb_access(self, *, kb_id: uuid.UUID, user_id: uuid.UUID) -> None:
         async with self.uow:
-            kb = await self.uow.knowledge.get_kb_for_user(kb_id=kb_id, user_id=user_id)
+            kb = await self.uow.knowledge_repo.get_kb_for_user(kb_id=kb_id, user_id=user_id)
             if not kb:
                 raise ResourceNotFound("知识库不存在或无访问权限")
 
@@ -80,7 +88,7 @@ class KnowledgeService:
         status: FileStatus,
     ) -> File | None:
         async with self.uow:
-            return await self.uow.knowledge.update_file_status(file_id=file_id, status=status)
+            return await self.uow.knowledge_repo.update_file_status(file_id=file_id, status=status)
 
     def _build_storage_path(self, *, kb_id: uuid.UUID, filename: str) -> Path:
         kb_dir = self.storage_root / str(kb_id)

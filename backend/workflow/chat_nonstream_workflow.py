@@ -7,7 +7,7 @@ from langfuse import get_client, observe
 from backend.ai.core import PromptManager
 from backend.ai.core.prompt_templates import RAG_SYSTEM_TEMPLATE
 from backend.core.config import settings
-from backend.core.exceptions import ServiceError, ValidationError
+from backend.core.exceptions import AppError, ServiceError, ValidationError
 from backend.core.redis import redis_client
 from backend.domain.interfaces import AbstractLLMService, AbstractRAGService
 from backend.models.orm.chat import MessageStatus
@@ -188,6 +188,8 @@ class ChatNonStreamWorkflow:
             return []
         try:
             return await self.rag_service.retrieve(query_text=query_text, kb_id=kb_id)
+        except AppError:
+            raise
         except Exception as exc:
             logger.warning("RAG 检索失败，降级为普通对话: %s", exc)
             return []
@@ -261,7 +263,7 @@ class ChatNonStreamWorkflow:
 
         async with self._get_db_semaphore():
             async with self.uow:
-                user = await self.uow.users.get(user_id)
+                user = await self.uow.user_repo.get(user_id)
                 if user and user.used_tokens >= user.max_tokens:
                     if client_request_id:
                         await redis.delete(lock_key)
@@ -327,7 +329,7 @@ class ChatNonStreamWorkflow:
         try:
             async with self._get_llm_semaphore():
                 result = await self.llm_service.generate_response(llm_query)
-        except Exception:
+        except AppError:
             if client_request_id:
                 await redis.delete(lock_key)
             async with self._get_db_semaphore():
@@ -335,6 +337,14 @@ class ChatNonStreamWorkflow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(assistant_msg.id)
             raise
+        except Exception as exc:
+            if client_request_id:
+                await redis.delete(lock_key)
+            async with self._get_db_semaphore():
+                async with self.uow:
+                    updater = ChatMessageUpdater(self.uow)
+                    await updater.update_as_failed(assistant_msg.id)
+            raise ServiceError("LLM 服务调用失败，请稍后重试") from exc
 
         if not result.success:
             if client_request_id:
@@ -361,7 +371,7 @@ class ChatNonStreamWorkflow:
                     tokens_output=result.completion_tokens,
                     search_context=search_context,
                 )
-                await self.uow.users.increment_used_tokens(
+                await self.uow.user_repo.increment_used_tokens(
                     user_id,
                     tokens_input + (result.completion_tokens or 0),
                 )

@@ -93,6 +93,12 @@ class DatabaseConnectionError(AppError):
     status_code = 503
 
 
+class DependencyUnavailable(AppError):
+    """外部依赖暂不可用（队列/缓存/第三方服务）"""
+
+    status_code = 503
+
+
 class LLMError(ServiceError):
     """LLM 相关错误的基类"""
 

@@ -20,7 +20,7 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         user_id: uuid.UUID,
     ) -> TaskJob:
         async with self.uow:
-            return await self.uow.task.create(
+            return await self.uow.task_repo.create(
                 action_type="KB_INGESTION",
                 status=TaskStatus.PENDING,
                 progress=0,
@@ -35,7 +35,7 @@ class TaskService(BaseService[AbstractUnitOfWork]):
 
     async def get_by_id(self, task_id: uuid.UUID) -> TaskJob | None:
         async with self.uow:
-            return await self.uow.task.get(task_id)
+            return await self.uow.task_repo.get(task_id)
 
     async def mark_processing(
         self,
@@ -44,7 +44,7 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         progress: int = 0,
     ) -> TaskJob | None:
         async with self.uow:
-            return await self.uow.task.mark_processing(
+            return await self.uow.task_repo.mark_processing(
                 task_id=task_id, progress=progress
             )
 
@@ -55,7 +55,7 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         progress: int = 100,
     ) -> TaskJob | None:
         async with self.uow:
-            return await self.uow.task.mark_completed(
+            return await self.uow.task_repo.mark_completed(
                 task_id=task_id, progress=progress
             )
 
@@ -66,7 +66,7 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         error_log: str,
     ) -> TaskJob | None:
         async with self.uow:
-            return await self.uow.task.mark_failed(
+            return await self.uow.task_repo.mark_failed(
                 task_id=task_id,
                 error_log=error_log[:5000],
             )

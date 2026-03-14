@@ -1,6 +1,7 @@
 import logging
 import uuid
 
+from backend.core.exceptions import AppError
 from backend.domain.interfaces import (
     AbstractRAGEmbedder,
     AbstractRAGService,
@@ -50,6 +51,8 @@ class RAGService(AbstractRAGService):
                 kb_id=kb_id,
                 limit=limit,
             )
+        except AppError:
+            raise
         except Exception as exc:
             logger.warning("RAG 检索失败，降级为无检索上下文: %s", exc)
             return []
@@ -75,6 +78,8 @@ class RAGService(AbstractRAGService):
                 kb_id=kb_id,
                 limit=limit,
             )
+        except AppError:
+            raise
         except Exception as exc:
             logger.warning("RAG 全文检索失败，降级为无检索上下文: %s", exc)
             return []
@@ -100,6 +105,8 @@ class RAGService(AbstractRAGService):
                 kb_id=kb_id,
                 limit=limit,
             )
+        except AppError:
+            raise
         except Exception as exc:
             logger.warning("RAG 混合检索失败，降级为无检索上下文: %s", exc)
             return []

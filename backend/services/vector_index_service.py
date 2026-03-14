@@ -42,8 +42,8 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
             )
 
         async with self.uow:
-            await self.uow.knowledge.delete_chunks_for_file(file_id=file_id)
-            await self.uow.knowledge.add_chunks(chunk_records)
+            await self.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
+            await self.uow.knowledge_repo.add_chunks(chunk_records)
 
     async def search_chunks_for_kb(
         self,
@@ -57,7 +57,7 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
 
         query_vector = await asyncio.to_thread(self.embedder.encode_query, query_text)
         async with self.uow:
-            return await self.uow.knowledge.search_chunks_for_kb(
+            return await self.uow.knowledge_repo.search_chunks_for_kb(
                 query_vector=query_vector,
                 kb_id=kb_id,
                 limit=limit,
@@ -74,7 +74,7 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
             return []
 
         async with self.uow:
-            return await self.uow.knowledge.search_chunks_for_kb_fulltext(
+            return await self.uow.knowledge_repo.search_chunks_for_kb_fulltext(
                 query_text=query_text,
                 kb_id=kb_id,
                 limit=limit,
@@ -97,12 +97,12 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
         candidate_limit = max(limit, limit * max(1, candidate_multiplier))
 
         async with self.uow:
-            vector_hits = await self.uow.knowledge.search_chunks_for_kb(
+            vector_hits = await self.uow.knowledge_repo.search_chunks_for_kb(
                 query_vector=query_vector,
                 kb_id=kb_id,
                 limit=candidate_limit,
             )
-            fulltext_hits = await self.uow.knowledge.search_chunks_for_kb_fulltext(
+            fulltext_hits = await self.uow.knowledge_repo.search_chunks_for_kb_fulltext(
                 query_text=query_text,
                 kb_id=kb_id,
                 limit=candidate_limit,

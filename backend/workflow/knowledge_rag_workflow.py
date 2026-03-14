@@ -3,7 +3,12 @@ import uuid
 from pathlib import Path
 
 from backend.core.docling_models import DoclingModelFactory
-from backend.core.exceptions import ResourceNotFound, ValidationError
+from backend.core.exceptions import (
+    AppError,
+    ResourceNotFound,
+    ServiceError,
+    ValidationError,
+)
 from backend.models.orm.knowledge import FileStatus
 from backend.services.chunking_service import ChunkingService
 from backend.services.knowledge_service import KnowledgeService
@@ -77,12 +82,18 @@ class KnowledgeRAGWorkflow:
                 file_id=file_id,
                 status=FileStatus.READY,
             )
-        except Exception:
+        except AppError:
             await self.knowledge_service.set_file_status(
                 file_id=file_id,
                 status=FileStatus.FAILED,
             )
             raise
+        except Exception as exc:
+            await self.knowledge_service.set_file_status(
+                file_id=file_id,
+                status=FileStatus.FAILED,
+            )
+            raise ServiceError("知识文件处理失败，请稍后重试") from exc
 
     def _extract_chunks(self, file_path: Path) -> list[str]:
         suffix = file_path.suffix.lower()
@@ -120,6 +131,8 @@ class KnowledgeRAGWorkflow:
 
             fallback_text = self._export_docling_document(result.document)
             return self.chunking_service.split_text(fallback_text)
+        except AppError:
+            raise
         except Exception as exc:
             raise ValidationError(f"文件解析失败: {file_path.name}") from exc
 

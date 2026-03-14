@@ -20,7 +20,7 @@ from backend.ai.core import PromptManager
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.core.token_counter import count_tokens
 from backend.core.config import settings
-from backend.core.exceptions import ServiceError
+from backend.core.exceptions import AppError, ServiceError
 from backend.core.redis import redis_client
 from backend.domain.interfaces import AbstractLLMService, AbstractRAGService
 from backend.models.schemas.chat_schema import LLMQueryDTO
@@ -106,7 +106,7 @@ class ChatWorkflow:
         async with self._get_db_semaphore():
             async with self.uow:
                 # 校验 Token 余额
-                user = await self.uow.users.get(user_id)
+                user = await self.uow.user_repo.get(user_id)
                 if user and user.used_tokens >= user.max_tokens:
                     if client_request_id:
                         await redis.delete(lock_key)
@@ -169,13 +169,37 @@ class ChatWorkflow:
         task_id = str(uuid.uuid4())
         channel = f"stream:{task_id}"
 
-        # 触发队列任务
-        await generate_llm_stream_task.kiq(llm_query.model_dump(mode="json"), channel)
+        pubsub = None
+        try:
+            # 触发队列任务
+            await generate_llm_stream_task.kiq(llm_query.model_dump(mode="json"), channel)
 
-        # 监听 Redis 频道
-        redis = await redis_client.init()
-        pubsub = redis.pubsub()
-        await pubsub.subscribe(channel)
+            # 监听 Redis 频道
+            redis = await redis_client.init()
+            pubsub = redis.pubsub()
+            await pubsub.subscribe(channel)
+        except AppError as exc:
+            if client_request_id:
+                await redis.delete(lock_key)
+            logger.warning("流式任务初始化失败: %s", exc)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            async with self._get_db_semaphore():
+                async with self.uow:
+                    updater = ChatMessageUpdater(self.uow)
+                    await updater.update_as_failed(assistant_msg.id)
+            yield "data: [DONE]\n\n"
+            return
+        except Exception as exc:
+            if client_request_id:
+                await redis.delete(lock_key)
+            logger.error("流式任务初始化异常: %s", str(exc), exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'message': '服务暂时不可用，请稍后重试'})}\n\n"
+            async with self._get_db_semaphore():
+                async with self.uow:
+                    updater = ChatMessageUpdater(self.uow)
+                    await updater.update_as_failed(assistant_msg.id)
+            yield "data: [DONE]\n\n"
+            return
 
         accumulated_content = []
         try:
@@ -193,11 +217,22 @@ class ChatWorkflow:
                         accumulated_content.append(data)
                         chunk_event = json.dumps({"type": "chunk", "content": data})
                         yield f"data: {chunk_event}\n\n"
-        except Exception as e:
+        except AppError as exc:
             if client_request_id:
                 await redis.delete(lock_key)
-            logger.error("流式 LLM 调用异常: %s", str(e), exc_info=True)
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            logger.warning("流式 LLM 调用业务异常: %s", exc)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            async with self._get_db_semaphore():
+                async with self.uow:
+                    updater = ChatMessageUpdater(self.uow)
+                    await updater.update_as_failed(assistant_msg.id)
+            yield "data: [DONE]\n\n"
+            return
+        except Exception as exc:
+            if client_request_id:
+                await redis.delete(lock_key)
+            logger.error("流式 LLM 调用异常: %s", str(exc), exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'message': '服务暂时不可用，请稍后重试'})}\n\n"
             async with self._get_db_semaphore():
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
@@ -205,7 +240,8 @@ class ChatWorkflow:
             yield "data: [DONE]\n\n"
             return
         finally:
-            await pubsub.unsubscribe()
+            if pubsub is not None:
+                await pubsub.unsubscribe()
 
         # 5. 更新助手消息并累加 Token
         full_content = "".join(accumulated_content)
@@ -221,7 +257,7 @@ class ChatWorkflow:
                     tokens_output=tokens_output,
                     search_context=search_context,
                 )
-                await self.uow.users.increment_used_tokens(
+                await self.uow.user_repo.increment_used_tokens(
                     user_id, tokens_input + tokens_output
                 )
 

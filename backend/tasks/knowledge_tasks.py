@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.core.config import settings
 from backend.core.database import create_db_assets
+from backend.core.exceptions import AppError, ServiceError
 from backend.core.task_broker import broker
 from backend.services.chunking_service import ChunkingService
 from backend.services.knowledge_service import KnowledgeService
@@ -74,9 +75,27 @@ async def ingest_knowledge_file_task(file_id: str, task_id: str | None = None):
         await workflow.ingest_file(file_id=file_uuid)
         if task_uuid:
             await task_service.mark_completed(task_id=task_uuid, progress=100)
-    except Exception as exc:
+    except AppError as exc:
         if task_uuid:
             await task_service.mark_failed(task_id=task_uuid, error_log=str(exc))
+        logger.warning(
+            "TaskIQ 知识库任务业务失败: file_id=%s task_id=%s error=%s",
+            file_id,
+            task_id,
+            exc,
+        )
         raise
+    except Exception as exc:
+        if task_uuid:
+            await task_service.mark_failed(
+                task_id=task_uuid,
+                error_log="知识文件处理失败，请稍后重试",
+            )
+        logger.exception(
+            "TaskIQ 知识库任务系统异常: file_id=%s task_id=%s",
+            file_id,
+            task_id,
+        )
+        raise ServiceError("知识文件处理失败，请稍后重试") from exc
 
     logger.info("TaskIQ 完成知识库文件处理: file_id=%s task_id=%s", file_id, task_id)
