@@ -13,8 +13,8 @@ from backend.tasks.knowledge_tasks import ingest_knowledge_file_task
 logger = logging.getLogger(__name__)
 
 
-class KnowledgeUploadService:
-    """知识库上传编排服务：保存文件、创建任务并投递异步处理。"""
+class KnowledgeUploadWorkflow:
+    """知识库上传工作流：保存文件、创建任务并投递异步处理。"""
 
     def __init__(
         self,
@@ -31,19 +31,21 @@ class KnowledgeUploadService:
         user_id: uuid.UUID,
         upload_file: UploadFile,
     ) -> KnowledgeUploadResponse:
-        file_obj = await self.knowledge_service.save_upload_file(
-            kb_id=kb_id,
-            user_id=user_id,
-            upload_file=upload_file,
-        )
-        try:
-            task = await self.task_service.create_kb_ingestion_task(
+        async with self.knowledge_service.uow:
+            file_obj = await self.knowledge_service.save_upload_file(
                 kb_id=kb_id,
-                file_id=file_obj.id,
-                file_path=file_obj.file_path,
-                filename=file_obj.filename,
                 user_id=user_id,
+                upload_file=upload_file,
             )
+        try:
+            async with self.task_service.uow:
+                task = await self.task_service.create_kb_ingestion_task(
+                    kb_id=kb_id,
+                    file_id=file_obj.id,
+                    file_path=file_obj.file_path,
+                    filename=file_obj.filename,
+                    user_id=user_id,
+                )
         except AppError as exc:
             await self._handle_task_creation_failure(
                 kb_id=kb_id,
@@ -93,10 +95,11 @@ class KnowledgeUploadService:
         exc: Exception,
     ) -> None:
         try:
-            await self.knowledge_service.set_file_status(
-                file_id=file_id,
-                status=FileStatus.FAILED,
-            )
+            async with self.knowledge_service.uow:
+                await self.knowledge_service.set_file_status(
+                    file_id=file_id,
+                    status=FileStatus.FAILED,
+                )
         except Exception:
             logger.exception("任务创建失败后文件状态更新异常: file_id=%s", file_id)
 
@@ -123,15 +126,20 @@ class KnowledgeUploadService:
         exc: Exception,
     ) -> None:
         try:
-            await self.task_service.mark_failed(task_id=task_id, error_log=f"任务投递失败: {exc}")
+            async with self.task_service.uow:
+                await self.task_service.mark_failed(
+                    task_id=task_id,
+                    error_log=f"任务投递失败: {exc}",
+                )
         except Exception:
             logger.exception("任务失败状态更新异常: task_id=%s", task_id)
 
         try:
-            await self.knowledge_service.set_file_status(
-                file_id=file_id,
-                status=FileStatus.FAILED,
-            )
+            async with self.knowledge_service.uow:
+                await self.knowledge_service.set_file_status(
+                    file_id=file_id,
+                    status=FileStatus.FAILED,
+                )
         except Exception:
             logger.exception("文件失败状态更新异常: file_id=%s", file_id)
 

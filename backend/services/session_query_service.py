@@ -26,13 +26,12 @@ class SessionQueryService(BaseService[AbstractUnitOfWork]):
     ) -> SessionListResponse:
         logger.debug("获取会话列表: user_id=%s, skip=%d, limit=%d", user_id, skip, limit)
 
-        async with self.uow:
-            rows = await self.uow.chat_repo.get_user_sessions_with_total_tokens(
-                user_id=user_id,
-                skip=skip,
-                limit=limit,
-            )
-            total = await self.uow.chat_repo.count_user_sessions(user_id)
+        rows = await self.uow.chat_repo.get_user_sessions_with_total_tokens(
+            user_id=user_id,
+            skip=skip,
+            limit=limit,
+        )
+        total = await self.uow.chat_repo.count_user_sessions(user_id)
 
         items = [self._to_session_response(session, total_tokens) for session, total_tokens in rows]
         return SessionListResponse(
@@ -52,26 +51,25 @@ class SessionQueryService(BaseService[AbstractUnitOfWork]):
     ) -> SessionDetailResponse:
         logger.debug("获取会话详情: session_id=%s, user_id=%s", session_id, user_id)
 
-        async with self.uow:
-            session = await self.uow.chat_repo.get_session(session_id)
-            if not session:
-                raise ResourceNotFound(
-                    f"会话不存在: {session_id}",
-                    details={"session_id": str(session_id)},
-                )
-            if session.user_id != user_id:
-                raise ValidationError(
-                    "无权访问该会话",
-                    details={"session_id": str(session_id)},
-                )
-
-            messages = await self.uow.chat_repo.get_session_messages(
-                session_id=session.id,
-                skip=skip,
-                limit=limit,
+        session = await self.uow.chat_repo.get_session(session_id)
+        if not session:
+            raise ResourceNotFound(
+                f"会话不存在: {session_id}",
+                details={"session_id": str(session_id)},
             )
-            total_messages = await self.uow.chat_repo.count_session_messages(session.id)
-            total_tokens = await self.uow.chat_repo.get_session_total_tokens(session.id)
+        if session.user_id != user_id:
+            raise ValidationError(
+                "无权访问该会话",
+                details={"session_id": str(session_id)},
+            )
+
+        messages = await self.uow.chat_repo.get_session_messages(
+            session_id=session.id,
+            skip=skip,
+            limit=limit,
+        )
+        total_messages = await self.uow.chat_repo.count_session_messages(session.id)
+        total_tokens = await self.uow.chat_repo.get_session_total_tokens(session.id)
 
         session_res = self._to_session_response(session, total_tokens)
         return SessionDetailResponse(

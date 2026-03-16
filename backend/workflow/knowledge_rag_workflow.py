@@ -47,19 +47,21 @@ class KnowledgeRAGWorkflow:
         *,
         file_id: uuid.UUID,
     ) -> None:
-        file_obj = await self.knowledge_service.set_file_status(
-            file_id=file_id,
-            status=FileStatus.PARSING,
-        )
+        async with self.knowledge_service.uow:
+            file_obj = await self.knowledge_service.set_file_status(
+                file_id=file_id,
+                status=FileStatus.PARSING,
+            )
         if not file_obj:
             raise ResourceNotFound("文件不存在")
 
         file_path = Path(file_obj.file_path)
         if not file_path.exists():
-            await self.knowledge_service.set_file_status(
-                file_id=file_id,
-                status=FileStatus.FAILED,
-            )
+            async with self.knowledge_service.uow:
+                await self.knowledge_service.set_file_status(
+                    file_id=file_id,
+                    status=FileStatus.FAILED,
+                )
             raise ResourceNotFound("上传文件在存储路径中不存在")
 
         try:
@@ -67,32 +69,36 @@ class KnowledgeRAGWorkflow:
             if not chunks:
                 raise ValidationError("文件无可用文本内容，无法构建 RAG 索引")
 
-            await self.knowledge_service.set_file_status(
-                file_id=file_id,
-                status=FileStatus.CHUNKING,
-            )
-            await self.vector_index_service.replace_file_chunks(
-                file_id=file_id,
-                chunks=chunks,
-                filename=file_obj.filename,
-                file_path=str(file_path),
-            )
-
-            await self.knowledge_service.set_file_status(
-                file_id=file_id,
-                status=FileStatus.READY,
-            )
+            async with self.knowledge_service.uow:
+                await self.knowledge_service.set_file_status(
+                    file_id=file_id,
+                    status=FileStatus.CHUNKING,
+                )
+            async with self.vector_index_service.uow:
+                await self.vector_index_service.replace_file_chunks(
+                    file_id=file_id,
+                    chunks=chunks,
+                    filename=file_obj.filename,
+                    file_path=str(file_path),
+                )
+            async with self.knowledge_service.uow:
+                await self.knowledge_service.set_file_status(
+                    file_id=file_id,
+                    status=FileStatus.READY,
+                )
         except AppError:
-            await self.knowledge_service.set_file_status(
-                file_id=file_id,
-                status=FileStatus.FAILED,
-            )
+            async with self.knowledge_service.uow:
+                await self.knowledge_service.set_file_status(
+                    file_id=file_id,
+                    status=FileStatus.FAILED,
+                )
             raise
         except Exception as exc:
-            await self.knowledge_service.set_file_status(
-                file_id=file_id,
-                status=FileStatus.FAILED,
-            )
+            async with self.knowledge_service.uow:
+                await self.knowledge_service.set_file_status(
+                    file_id=file_id,
+                    status=FileStatus.FAILED,
+                )
             raise ServiceError("知识文件处理失败，请稍后重试") from exc
 
     def _extract_chunks(self, file_path: Path) -> list[str]:

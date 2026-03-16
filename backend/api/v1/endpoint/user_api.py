@@ -106,4 +106,5 @@ async def csv_balk_insert_users(
     _: SuperUser,
     import_service: UserImportServiceDep,
 ) -> UserImportResponse:
-    return await import_service.import_from_upload(file)
+    async with import_service.uow:
+        return await import_service.import_from_upload(file)

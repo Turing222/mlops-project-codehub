@@ -6,7 +6,7 @@ from backend.api.deps.ai import (
     get_rag_service,
     get_vector_index_service,
 )
-from backend.api.deps.services import get_knowledge_service
+from backend.api.deps.services import get_knowledge_service, get_task_service
 from backend.api.deps.uow import get_uow
 from backend.domain.interfaces import (
     AbstractLLMService,
@@ -15,10 +15,12 @@ from backend.domain.interfaces import (
 )
 from backend.services.chunking_service import ChunkingService
 from backend.services.knowledge_service import KnowledgeService
+from backend.services.task_service import TaskService
 from backend.services.vector_index_service import VectorIndexService
 from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
 from backend.workflow.chat_workflow import ChatWorkflow
 from backend.workflow.knowledge_rag_workflow import KnowledgeRAGWorkflow
+from backend.workflow.knowledge_upload_workflow import KnowledgeUploadWorkflow
 
 
 def get_chat_workflow(
@@ -46,4 +48,14 @@ def get_knowledge_rag_workflow(
         knowledge_service=knowledge_service,
         chunking_service=chunking_service,
         vector_index_service=vector_index_service,
+    )
+
+
+def get_knowledge_upload_workflow(
+    knowledge_service: KnowledgeService = Depends(get_knowledge_service),
+    task_service: TaskService = Depends(get_task_service),
+) -> KnowledgeUploadWorkflow:
+    return KnowledgeUploadWorkflow(
+        knowledge_service=knowledge_service,
+        task_service=task_service,
     )

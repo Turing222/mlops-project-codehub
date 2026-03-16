@@ -22,10 +22,13 @@ from backend.ai.core.token_counter import count_tokens
 from backend.core.config import settings
 from backend.core.exceptions import AppError, ServiceError
 from backend.core.redis import redis_client
-from backend.domain.interfaces import AbstractLLMService, AbstractRAGService
+from backend.domain.interfaces import (
+    AbstractLLMService,
+    AbstractRAGService,
+    AbstractUnitOfWork,
+)
 from backend.models.schemas.chat_schema import LLMQueryDTO
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
-from backend.services.unit_of_work import AbstractUnitOfWork
 from backend.tasks.llm_tasks import generate_llm_stream_task
 
 logger = logging.getLogger(__name__)

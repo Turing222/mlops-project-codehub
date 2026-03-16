@@ -112,11 +112,12 @@ async def get_sessions(
     session_query_service: SessionQueryServiceDep,
 ) -> SessionListResponse:
     """获取当前用户的会话列表（侧边栏）"""
-    return await session_query_service.list_user_sessions(
-        user_id=current_user.id,
-        skip=skip,
-        limit=limit,
-    )
+    async with session_query_service.uow:
+        return await session_query_service.list_user_sessions(
+            user_id=current_user.id,
+            skip=skip,
+            limit=limit,
+        )
 
 
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
@@ -128,9 +129,10 @@ async def get_session_detail(
     session_query_service: SessionQueryServiceDep,
 ) -> SessionDetailResponse:
     """获取会话详情及历史消息"""
-    return await session_query_service.get_user_session_detail(
-        user_id=current_user.id,
-        session_id=session_id,
-        skip=skip,
-        limit=limit,
-    )
+    async with session_query_service.uow:
+        return await session_query_service.get_user_session_detail(
+            user_id=current_user.id,
+            session_id=session_id,
+            skip=skip,
+            limit=limit,
+        )

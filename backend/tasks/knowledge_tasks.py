@@ -69,15 +69,18 @@ async def ingest_knowledge_file_task(file_id: str, task_id: str | None = None):
     )
 
     if task_uuid:
-        await task_service.mark_processing(task_id=task_uuid, progress=5)
+        async with uow:
+            await task_service.mark_processing(task_id=task_uuid, progress=5)
 
     try:
         await workflow.ingest_file(file_id=file_uuid)
         if task_uuid:
-            await task_service.mark_completed(task_id=task_uuid, progress=100)
+            async with uow:
+                await task_service.mark_completed(task_id=task_uuid, progress=100)
     except AppError as exc:
         if task_uuid:
-            await task_service.mark_failed(task_id=task_uuid, error_log=str(exc))
+            async with uow:
+                await task_service.mark_failed(task_id=task_uuid, error_log=str(exc))
         logger.warning(
             "TaskIQ 知识库任务业务失败: file_id=%s task_id=%s error=%s",
             file_id,
@@ -87,10 +90,11 @@ async def ingest_knowledge_file_task(file_id: str, task_id: str | None = None):
         raise
     except Exception as exc:
         if task_uuid:
-            await task_service.mark_failed(
-                task_id=task_uuid,
-                error_log="知识文件处理失败，请稍后重试",
-            )
+            async with uow:
+                await task_service.mark_failed(
+                    task_id=task_uuid,
+                    error_log="知识文件处理失败，请稍后重试",
+                )
         logger.exception(
             "TaskIQ 知识库任务系统异常: file_id=%s task_id=%s",
             file_id,

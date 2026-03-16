@@ -4,7 +4,6 @@ from backend.api.deps.uow import get_uow
 from backend.core.config import settings
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.services.knowledge_service import KnowledgeService
-from backend.services.knowledge_upload_service import KnowledgeUploadService
 from backend.services.session_query_service import SessionQueryService
 from backend.services.task_service import TaskService
 from backend.services.user_import_service import UserImportService
@@ -25,16 +24,6 @@ def get_task_service(
     uow: AbstractUnitOfWork = Depends(get_uow),
 ) -> TaskService:
     return TaskService(uow=uow)
-
-
-def get_knowledge_upload_service(
-    knowledge_service: KnowledgeService = Depends(get_knowledge_service),
-    task_service: TaskService = Depends(get_task_service),
-) -> KnowledgeUploadService:
-    return KnowledgeUploadService(
-        knowledge_service=knowledge_service,
-        task_service=task_service,
-    )
 
 
 def get_session_query_service(

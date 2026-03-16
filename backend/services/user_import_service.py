@@ -44,8 +44,7 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
         total_rows = len(raw_data)
         cleaned_data = await self.transform_and_validate(raw_data)
 
-        async with self.uow:
-            imported_rows = await self.import_users(cleaned_data)
+        imported_rows = await self.import_users(cleaned_data)
 
         return UserImportResponse(
             filename=upload_file.filename,

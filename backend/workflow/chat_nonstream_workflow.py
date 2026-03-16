@@ -9,7 +9,11 @@ from backend.ai.core.prompt_templates import RAG_SYSTEM_TEMPLATE
 from backend.core.config import settings
 from backend.core.exceptions import AppError, ServiceError, ValidationError
 from backend.core.redis import redis_client
-from backend.domain.interfaces import AbstractLLMService, AbstractRAGService
+from backend.domain.interfaces import (
+    AbstractLLMService,
+    AbstractRAGService,
+    AbstractUnitOfWork,
+)
 from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat_schema import (
     ChatQueryResponse,
@@ -17,7 +21,6 @@ from backend.models.schemas.chat_schema import (
     MessageResponse,
 )
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
-from backend.services.unit_of_work import AbstractUnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +190,16 @@ class ChatNonStreamWorkflow:
         if not self.rag_service or kb_id is None:
             return []
         try:
-            return await self.rag_service.retrieve(query_text=query_text, kb_id=kb_id)
+            rag_uow = getattr(self.rag_service, "uow", None)
+            if rag_uow is None or getattr(rag_uow, "_session", None) is not None:
+                return await self.rag_service.retrieve(query_text=query_text, kb_id=kb_id)
+
+            async with self._get_db_semaphore():
+                async with rag_uow:
+                    return await self.rag_service.retrieve(
+                        query_text=query_text,
+                        kb_id=kb_id,
+                    )
         except AppError:
             raise
         except Exception as exc:

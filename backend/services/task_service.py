@@ -19,23 +19,21 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         filename: str,
         user_id: uuid.UUID,
     ) -> TaskJob:
-        async with self.uow:
-            return await self.uow.task_repo.create(
-                action_type="KB_INGESTION",
-                status=TaskStatus.PENDING,
-                progress=0,
-                payload={
-                    "kb_id": str(kb_id),
-                    "file_id": str(file_id),
-                    "file_path": file_path,
-                    "filename": filename,
-                    "user_id": str(user_id),
-                },
-            )
+        return await self.uow.task_repo.create(
+            action_type="KB_INGESTION",
+            status=TaskStatus.PENDING,
+            progress=0,
+            payload={
+                "kb_id": str(kb_id),
+                "file_id": str(file_id),
+                "file_path": file_path,
+                "filename": filename,
+                "user_id": str(user_id),
+            },
+        )
 
     async def get_by_id(self, task_id: uuid.UUID) -> TaskJob | None:
-        async with self.uow:
-            return await self.uow.task_repo.get(task_id)
+        return await self.uow.task_repo.get(task_id)
 
     async def mark_processing(
         self,
@@ -43,10 +41,9 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         task_id: uuid.UUID,
         progress: int = 0,
     ) -> TaskJob | None:
-        async with self.uow:
-            return await self.uow.task_repo.mark_processing(
-                task_id=task_id, progress=progress
-            )
+        return await self.uow.task_repo.mark_processing(
+            task_id=task_id, progress=progress
+        )
 
     async def mark_completed(
         self,
@@ -54,10 +51,9 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         task_id: uuid.UUID,
         progress: int = 100,
     ) -> TaskJob | None:
-        async with self.uow:
-            return await self.uow.task_repo.mark_completed(
-                task_id=task_id, progress=progress
-            )
+        return await self.uow.task_repo.mark_completed(
+            task_id=task_id, progress=progress
+        )
 
     async def mark_failed(
         self,
@@ -65,11 +61,10 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         task_id: uuid.UUID,
         error_log: str,
     ) -> TaskJob | None:
-        async with self.uow:
-            return await self.uow.task_repo.mark_failed(
-                task_id=task_id,
-                error_log=error_log[:5000],
-            )
+        return await self.uow.task_repo.mark_failed(
+            task_id=task_id,
+            error_log=error_log[:5000],
+        )
 
     async def ensure_user_access(self, *, task: TaskJob, user_id: uuid.UUID) -> None:
         payload = task.payload or {}

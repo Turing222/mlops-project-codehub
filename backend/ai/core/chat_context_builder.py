@@ -202,7 +202,12 @@ class ChatContextBuilder:
         if not self.rag_service or kb_id is None:
             return []
         try:
-            return await self.rag_service.retrieve(query_text=query_text, kb_id=kb_id)
+            uow = getattr(self.rag_service, "uow", None)
+            if uow is None or getattr(uow, "_session", None) is not None:
+                return await self.rag_service.retrieve(query_text=query_text, kb_id=kb_id)
+
+            async with uow:
+                return await self.rag_service.retrieve(query_text=query_text, kb_id=kb_id)
         except Exception as exc:
             logger.warning("RAG 检索失败，降级为普通对话: %s", exc)
             return []

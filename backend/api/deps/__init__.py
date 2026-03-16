@@ -14,7 +14,6 @@ from backend.api.deps.auth import (
 )
 from backend.api.deps.services import (
     get_knowledge_service,
-    get_knowledge_upload_service,
     get_task_service,
     get_user_import_service,
     get_user_service,
@@ -24,6 +23,7 @@ from backend.api.deps.workflows import (
     get_chat_nonstream_workflow,
     get_chat_workflow,
     get_knowledge_rag_workflow,
+    get_knowledge_upload_workflow,
 )
 
 __all__ = [
@@ -39,11 +39,11 @@ __all__ = [
     "get_chunking_service",
     "get_vector_index_service",
     "get_knowledge_service",
-    "get_knowledge_upload_service",
     "get_task_service",
     "get_user_service",
     "get_user_import_service",
     "get_chat_nonstream_workflow",
     "get_chat_workflow",
+    "get_knowledge_upload_workflow",
     "get_knowledge_rag_workflow",
 ]

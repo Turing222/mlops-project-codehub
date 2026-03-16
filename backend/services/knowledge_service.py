@@ -45,23 +45,21 @@ class KnowledgeService:
         if not content:
             raise ValidationError("上传文件为空")
 
-        async with self.uow:
-            kb = await self.uow.knowledge_repo.get_kb_for_user(kb_id=kb_id, user_id=user_id)
-            if not kb:
-                raise ResourceNotFound("知识库不存在或无访问权限")
+        kb = await self.uow.knowledge_repo.get_kb_for_user(kb_id=kb_id, user_id=user_id)
+        if not kb:
+            raise ResourceNotFound("知识库不存在或无访问权限")
 
         target_path = self._build_storage_path(kb_id=kb_id, filename=safe_filename)
         await asyncio.to_thread(self._write_file, target_path, content)
 
         try:
-            async with self.uow:
-                file_obj = await self.uow.knowledge_repo.create_file(
-                    kb_id=kb_id,
-                    filename=safe_filename,
-                    file_path=str(target_path),
-                    file_size=len(content),
-                    status=FileStatus.UPLOADED,
-                )
+            file_obj = await self.uow.knowledge_repo.create_file(
+                kb_id=kb_id,
+                filename=safe_filename,
+                file_path=str(target_path),
+                file_size=len(content),
+                status=FileStatus.UPLOADED,
+            )
         except AppError:
             target_path.unlink(missing_ok=True)
             raise
@@ -72,14 +70,12 @@ class KnowledgeService:
         return file_obj
 
     async def get_file(self, file_id: uuid.UUID) -> File | None:
-        async with self.uow:
-            return await self.uow.knowledge_repo.get_file(file_id)
+        return await self.uow.knowledge_repo.get_file(file_id)
 
     async def ensure_kb_access(self, *, kb_id: uuid.UUID, user_id: uuid.UUID) -> None:
-        async with self.uow:
-            kb = await self.uow.knowledge_repo.get_kb_for_user(kb_id=kb_id, user_id=user_id)
-            if not kb:
-                raise ResourceNotFound("知识库不存在或无访问权限")
+        kb = await self.uow.knowledge_repo.get_kb_for_user(kb_id=kb_id, user_id=user_id)
+        if not kb:
+            raise ResourceNotFound("知识库不存在或无访问权限")
 
     async def set_file_status(
         self,
@@ -87,8 +83,7 @@ class KnowledgeService:
         file_id: uuid.UUID,
         status: FileStatus,
     ) -> File | None:
-        async with self.uow:
-            return await self.uow.knowledge_repo.update_file_status(file_id=file_id, status=status)
+        return await self.uow.knowledge_repo.update_file_status(file_id=file_id, status=status)
 
     def _build_storage_path(self, *, kb_id: uuid.UUID, filename: str) -> Path:
         kb_dir = self.storage_root / str(kb_id)
