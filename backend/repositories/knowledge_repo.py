@@ -1,13 +1,16 @@
 import uuid
 
 from sqlalchemy import delete, func, insert, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.orm.chunk import DocumentChunk
 from backend.models.orm.knowledge import File, FileStatus, KnowledgeBase
 
 
 class KnowledgeRepository:
-    def __init__(self, session):
+    """知识库聚合仓储（多模型组合，不继承 CRUDBase）。"""
+
+    def __init__(self, session: AsyncSession):
         self.session = session
 
     async def get_kb(self, kb_id: uuid.UUID) -> KnowledgeBase | None:

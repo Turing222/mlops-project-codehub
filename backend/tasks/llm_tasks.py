@@ -25,8 +25,6 @@ async def generate_llm_stream_task(llm_query_dict: dict, channel: str):
         # 这个就是原生的 asyncio 生成器
         async for chunk in llm_service.stream_response(llm_query):
             await redis.publish(channel, chunk)
-
-        await redis.publish(channel, "[DONE]")
         logger.info("Taskiq Worker 成功结束流式处理: %s", channel)
     except AppError as exc:
         logger.warning("Taskiq 调用 LLM 业务异常: %s", exc)
@@ -36,3 +34,5 @@ async def generate_llm_stream_task(llm_query_dict: dict, channel: str):
         logger.exception("Taskiq 调用 LLM 系统异常")
         # 向主程序报错
         await redis.publish(channel, "[ERROR]服务暂时不可用，请稍后重试")
+    finally:
+        await redis.publish(channel, "[DONE]")

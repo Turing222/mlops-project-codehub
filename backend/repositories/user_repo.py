@@ -1,4 +1,6 @@
 import uuid
+from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -9,18 +11,33 @@ from backend.models.schemas.user_schema import UserCreate, UserUpdate
 from backend.repositories.base import CRUDBase
 
 
-class UserRepository(CRUDBase[User, UserCreate, UserUpdate]):
+class UserRepository:
     def __init__(self, session: AsyncSession):
-        # 1. 调用父类 CRUDBase 的构造函数，告诉它操作的是 User 模型
-        super().__init__(User, session)
+        self.session = session
+        self.crud: CRUDBase[User, UserCreate, UserUpdate] = CRUDBase(User, session)
+
+    async def get(self, id: Any) -> User | None:
+        return await self.crud.get(id)
+
+    async def get_multi(self, *, skip: int = 0, limit: int = 100) -> Sequence[User] | None:
+        return await self.crud.get_multi(skip=skip, limit=limit)
+
+    async def create(self, *, obj_in: UserCreate | dict[str, Any]) -> User:
+        return await self.crud.create(obj_in=obj_in)
+
+    async def update(self, *, db_obj: User, obj_in: UserUpdate | dict[str, Any]) -> User:
+        return await self.crud.update(db_obj=db_obj, obj_in=obj_in)
+
+    async def remove(self, *, id: Any) -> User | None:
+        return await self.crud.remove(id=id)
 
     async def get_by_email(self, email: str) -> User | None:
-        statement = select(self.model).where(self.model.email == email)
+        statement = select(User).where(User.email == email)
         result = await self.session.execute(statement)
         return result.scalars().first()
 
     async def get_by_username(self, username: str) -> User | None:
-        statement = select(self.model).where(self.model.username == username)
+        statement = select(User).where(User.username == username)
         result = await self.session.execute(statement)
         return result.scalars().first()
 

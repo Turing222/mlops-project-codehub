@@ -1,6 +1,7 @@
 import uuid
 from collections.abc import Sequence
 
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,8 +14,12 @@ class ChatRepository:
 
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.session_crud = CRUDBase(ChatSession, session)
-        self.message_crud = CRUDBase(ChatMessage, session)
+        self.session_crud: CRUDBase[ChatSession, BaseModel, BaseModel] = CRUDBase(
+            ChatSession, session
+        )
+        self.message_crud: CRUDBase[ChatMessage, BaseModel, BaseModel] = CRUDBase(
+            ChatMessage, session
+        )
 
     # ========== ChatSession 操作 ==========
 

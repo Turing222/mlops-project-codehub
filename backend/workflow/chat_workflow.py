@@ -174,13 +174,10 @@ class ChatWorkflow:
 
         pubsub = None
         try:
-            # 触发队列任务
-            await generate_llm_stream_task.kiq(llm_query.model_dump(mode="json"), channel)
-
-            # 监听 Redis 频道
-            redis = await redis_client.init()
-            pubsub = redis.pubsub()
+            # 先订阅后投递，避免 worker 首包发布过快导致丢消息
+            pubsub = (await redis_client.init()).pubsub()
             await pubsub.subscribe(channel)
+            await generate_llm_stream_task.kiq(llm_query.model_dump(mode="json"), channel)
         except AppError as exc:
             if client_request_id:
                 await redis.delete(lock_key)
@@ -205,21 +202,62 @@ class ChatWorkflow:
             return
 
         accumulated_content = []
-        try:
-            async for message in pubsub.listen():
-                if message["type"] == "message":
-                    data = message["data"]
-                    if isinstance(data, bytes):
-                        data = data.decode("utf-8")
+        done_received = False
+        stream_iter = pubsub.listen()
 
-                    if data == "[DONE]":
+        def _read_stream_payload(message: dict) -> str | None:
+            if message.get("type") != "message":
+                return None
+            data = message.get("data")
+            if isinstance(data, bytes):
+                return data.decode("utf-8")
+            if isinstance(data, str):
+                return data
+            return None
+
+        try:
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS
+            while True:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise ServiceError("LLM 响应超时，请稍后重试")
+                try:
+                    first_message = await asyncio.wait_for(anext(stream_iter), timeout=remaining)
+                except TimeoutError as exc:
+                    raise ServiceError("LLM 响应超时，请稍后重试") from exc
+                except StopAsyncIteration as exc:
+                    raise ServiceError("LLM 流式通道异常结束") from exc
+
+                first_payload = _read_stream_payload(first_message)
+                if first_payload is None:
+                    continue
+                if first_payload == "[DONE]":
+                    done_received = True
+                elif first_payload.startswith("[ERROR]"):
+                    raise ServiceError(f"Taskiq 队列执行 LLM 错误: {first_payload[7:]}")
+                else:
+                    accumulated_content.append(first_payload)
+                    first_chunk = json.dumps({"type": "chunk", "content": first_payload})
+                    yield f"data: {first_chunk}\n\n"
+                break
+
+            if not done_received:
+                async for message in stream_iter:
+                    payload = _read_stream_payload(message)
+                    if payload is None:
+                        continue
+                    if payload == "[DONE]":
+                        done_received = True
                         break
-                    elif data.startswith("[ERROR]"):
-                        raise ServiceError(f"Taskiq 队列执行 LLM 错误: {data[7:]}")
-                    else:
-                        accumulated_content.append(data)
-                        chunk_event = json.dumps({"type": "chunk", "content": data})
-                        yield f"data: {chunk_event}\n\n"
+                    if payload.startswith("[ERROR]"):
+                        raise ServiceError(f"Taskiq 队列执行 LLM 错误: {payload[7:]}")
+                    accumulated_content.append(payload)
+                    chunk_event = json.dumps({"type": "chunk", "content": payload})
+                    yield f"data: {chunk_event}\n\n"
+
+            if not done_received:
+                raise ServiceError("LLM 流式响应中断，请稍后重试")
         except AppError as exc:
             if client_request_id:
                 await redis.delete(lock_key)
@@ -244,7 +282,20 @@ class ChatWorkflow:
             return
         finally:
             if pubsub is not None:
-                await pubsub.unsubscribe()
+                try:
+                    await pubsub.unsubscribe(channel)
+                except Exception:
+                    logger.debug("Redis 取消订阅失败: channel=%s", channel, exc_info=True)
+
+                close_coro = getattr(pubsub, "aclose", None)
+                if close_coro is not None:
+                    await close_coro()
+                else:
+                    close_fn = getattr(pubsub, "close", None)
+                    if close_fn is not None:
+                        maybe_awaitable = close_fn()
+                        if asyncio.iscoroutine(maybe_awaitable):
+                            await maybe_awaitable
 
         # 5. 更新助手消息并累加 Token
         full_content = "".join(accumulated_content)

@@ -1,6 +1,7 @@
 import uuid
 from collections.abc import Sequence
 
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,11 +10,11 @@ from backend.repositories.base import CRUDBase
 
 
 class TaskRepository:
-    """任务相关的 Repository"""
+    """任务相关的 Repository（单模型，采用组合风格）。"""
 
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.crud = CRUDBase(TaskJob, session)
+        self.crud: CRUDBase[TaskJob, BaseModel, BaseModel] = CRUDBase(TaskJob, session)
 
     async def get(self, task_id: uuid.UUID) -> TaskJob | None:
         """根据 ID 获取任务"""
