@@ -3,10 +3,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.ai.core import token_counter
 from backend.models.schemas.chat_schema import LLMResultDTO
 from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
+
+
+class _FakeEncoding:
+    def encode(self, text: str):
+        return list(text or "")
+
+
+@pytest.fixture(autouse=True)
+def clear_token_encoding_cache():
+    token_counter._encoding_cache.clear()
+    yield
+    token_counter._encoding_cache.clear()
 
 
 async def test_idempotency():
@@ -21,14 +34,15 @@ async def test_idempotency():
     with patch("backend.workflow.chat_nonstream_workflow.redis_client.init", return_value=mock_redis), \
          patch("backend.workflow.chat_nonstream_workflow.MessageResponse.model_validate", return_value=MagicMock()), \
          patch("backend.workflow.chat_nonstream_workflow.ChatQueryResponse", return_value=MagicMock()), \
-         patch("backend.ai.core.token_counter.tiktoken.get_encoding", return_value=MagicMock()):
+         patch("backend.ai.core.token_counter.tiktoken.get_encoding", return_value=_FakeEncoding()):
         workflow = ChatNonStreamWorkflow(uow, llm_service, prompt_manager)
 
         user_id = uuid.uuid4()
         client_req_id = "test-req-123"
 
         mock_user = MagicMock(used_tokens=0, max_tokens=1000)
-        uow.users.get = AsyncMock(return_value=mock_user)
+        uow.user_repo = AsyncMock()
+        uow.user_repo.get = AsyncMock(return_value=mock_user)
         uow.__aenter__.return_value = uow
 
         try:
@@ -48,7 +62,8 @@ async def test_token_quota():
     user_id = uuid.uuid4()
 
     mock_user = MagicMock(used_tokens=1000, max_tokens=1000)
-    uow.users.get = AsyncMock(return_value=mock_user)
+    uow.user_repo = AsyncMock()
+    uow.user_repo.get = AsyncMock(return_value=mock_user)
     uow.__aenter__.return_value = uow
 
     with pytest.raises(Exception, match="Token 余额不足"):
@@ -71,7 +86,8 @@ async def test_token_recording():
     user_id = uuid.uuid4()
 
     mock_user = MagicMock(used_tokens=0, max_tokens=1000)
-    uow.users.get = AsyncMock(return_value=mock_user)
+    uow.user_repo = AsyncMock()
+    uow.user_repo.get = AsyncMock(return_value=mock_user)
     uow.__aenter__.return_value = uow
 
     session = MagicMock(id=uuid.uuid4(), title="Test Session")
@@ -84,10 +100,10 @@ async def test_token_recording():
          patch("backend.workflow.chat_nonstream_workflow.MessageResponse.model_validate", return_value=MagicMock()), \
          patch("backend.workflow.chat_nonstream_workflow.ChatQueryResponse", return_value=MagicMock()), \
          patch("backend.workflow.chat_nonstream_workflow.ChatMessageUpdater", MagicMock()) as mock_updater_cls, \
-         patch("backend.ai.core.token_counter.tiktoken.get_encoding", return_value=MagicMock()):
+        patch("backend.ai.core.token_counter.tiktoken.get_encoding", return_value=_FakeEncoding()):
         mock_updater = mock_updater_cls.return_value
         mock_updater.update_as_success = AsyncMock(return_value=assistant_msg)
-        uow.users.increment_used_tokens = AsyncMock()
+        uow.user_repo.increment_used_tokens = AsyncMock()
 
         await workflow.handle_query(user_id, "hello")
 
@@ -95,4 +111,4 @@ async def test_token_recording():
 
         assert call_args.get('tokens_input') is not None
         assert call_args.get('tokens_output') == 5
-        uow.users.increment_used_tokens.assert_called_once()
+        uow.user_repo.increment_used_tokens.assert_called_once()

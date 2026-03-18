@@ -3,6 +3,7 @@
 `tests/` 目录按测试目标拆分：
 
 - `unit/`: 纯单元测试，默认必须通过。
+- `unit/api|services|repositories|workflow...`: 建议在 `unit` 内按领域继续细分。
 - `integration/`: 集成测试（API/仓储协同等）。
 - `smoke/`: 冒烟测试，覆盖核心链路可用性。
 - `performance/`: 并发/性能测试，默认不跑。

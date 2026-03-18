@@ -164,8 +164,8 @@ class TestTruncation:
     def test_truncation_drops_oldest_rounds(self, tight_manager):
         """Token 超限时应该丢弃最早的历史轮次"""
         long_history = [
-            {"role": "user", "content": "第一个很长的问题" * 10},
-            {"role": "assistant", "content": "第一个很长的回答" * 10},
+            {"role": "user", "content": "very long question " * 300},
+            {"role": "assistant", "content": "very long answer " * 300},
             {"role": "user", "content": "短问题"},
             {"role": "assistant", "content": "短回答"},
         ]

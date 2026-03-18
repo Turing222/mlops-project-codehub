@@ -2,11 +2,11 @@ import uuid
 from unittest.mock import MagicMock
 
 from backend.core.config import settings
-from backend.workflow.chat_workflow import ChatWorkflow
+from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
 
 
-def _build_workflow() -> ChatWorkflow:
-    return ChatWorkflow(
+def _build_workflow() -> ChatNonStreamWorkflow:
+    return ChatNonStreamWorkflow(
         uow=MagicMock(),
         llm_service=MagicMock(),
     )

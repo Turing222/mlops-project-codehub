@@ -194,12 +194,14 @@ class TestSessionManagerCreateMessages:
         result = await session_manager.create_assistant_message(session_id=session_id)
 
         assert result == expected_msg
-        mock_uow.chat_repo.create_message.assert_called_once_with(
-            session_id=session_id,
-            role="assistant",
-            content="",
-            status=MessageStatus.THINKING,
-        )
+        mock_uow.chat_repo.create_message.assert_called_once()
+        kwargs = mock_uow.chat_repo.create_message.call_args.kwargs
+        assert kwargs["session_id"] == session_id
+        assert kwargs["role"] == "assistant"
+        assert kwargs["content"] == ""
+        assert kwargs["status"] == MessageStatus.THINKING
+        assert kwargs["client_request_id"] is None
+        assert kwargs["search_context"] is None
 
 
 class TestSessionManagerQueries:
@@ -265,12 +267,15 @@ class TestChatMessageUpdater:
         )
 
         assert result == updated_msg
-        mock_uow.chat_repo.update_message_status.assert_called_once_with(
-            message_id=message_id,
-            status=MessageStatus.SUCCESS,
-            content=content,
-            latency_ms=None,
-        )
+        mock_uow.chat_repo.update_message_status.assert_called_once()
+        kwargs = mock_uow.chat_repo.update_message_status.call_args.kwargs
+        assert kwargs["message_id"] == message_id
+        assert kwargs["status"] == MessageStatus.SUCCESS
+        assert kwargs["content"] == content
+        assert kwargs["latency_ms"] is None
+        assert kwargs["tokens_input"] is None
+        assert kwargs["tokens_output"] is None
+        assert kwargs["search_context"] is None
 
     @pytest.mark.asyncio
     async def test_update_as_success_with_latency(self, message_updater, mock_uow):

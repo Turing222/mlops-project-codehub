@@ -1,7 +1,6 @@
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from pydantic import Field, field_validator
@@ -73,7 +72,7 @@ class Settings(BaseSettings):
     RAG_EMBED_MODEL_NAME: str = "text-embedding-3-small"
     RAG_EMBED_BASE_URL: str | None = None
     RAG_EMBED_API_KEY: str | None = None
-    RAG_EMBED_DIM: Literal[768] = 768
+    RAG_EMBED_DIM: int = Field(default=768, ge=1)
     RAG_EMBED_DEVICE: str = "cpu"
 
     # --- 安全配置 (SECRET_KEY 必须从 env 读取) ---
