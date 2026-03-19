@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -36,7 +36,7 @@ class StubUserImportService:
 
 
 def make_user(**overrides):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     data = {
         "id": uuid.uuid4(),
         "username": "tester",
@@ -115,17 +115,13 @@ async def test_read_user_by_email_success(client, api_context):
     target = make_user(username="target_user", email="target@example.com")
     api_context.user_service.get_by_email.return_value = target
 
-    response = await client.get(
-        "/api/v1/users", params={"email": "target@example.com"}
-    )
+    response = await client.get("/api/v1/users", params={"email": "target@example.com"})
 
     assert response.status_code == 200
     body = response.json()
     assert body["username"] == "target_user"
     assert body["email"] == "target@example.com"
-    api_context.user_service.get_by_email.assert_awaited_once_with(
-        "target@example.com"
-    )
+    api_context.user_service.get_by_email.assert_awaited_once_with("target@example.com")
     api_context.user_service.get_by_username.assert_not_awaited()
 
 
@@ -236,7 +232,9 @@ async def test_csv_upload_success(client, api_context):
 
     response = await client.post(
         "/api/v1/users/csv_upload",
-        files={"file": ("users.csv", b"username,email\nu1,u1@example.com\n", "text/csv")},
+        files={
+            "file": ("users.csv", b"username,email\nu1,u1@example.com\n", "text/csv")
+        },
     )
 
     assert response.status_code == 200
@@ -257,7 +255,9 @@ async def test_superuser_required_on_admin_endpoint(client, api_context):
     def deny_superuser():
         raise HTTPException(status_code=403, detail="权限不足")
 
-    api_context.app.dependency_overrides[user_api.get_current_superuser] = deny_superuser
+    api_context.app.dependency_overrides[user_api.get_current_superuser] = (
+        deny_superuser
+    )
     response = await client.get("/api/v1/users", params={"username": "target_user"})
 
     assert response.status_code == 403
