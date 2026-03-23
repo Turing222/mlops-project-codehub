@@ -4,7 +4,6 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 services:
-
   postgres:
     image: pgvector/pgvector:0.8.1-pg17-bookworm
     container_name: pgvector-17-stable_test
@@ -30,21 +29,57 @@ services:
       retries: 5
     ports:
       - "5432:5432"
-  api:
-    image: ai-tutor-backend:v1
 
-    # 限制 Docker 自身收集的控制台日志大小，防止撑爆磁盘
-    #只管控制台日志
+  redis:
+    image: redis:7.4-alpine
+    container_name: redis_test
+    env_file:
+      - .env
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     logging: *default-logging
-    user: "${CURRENT_UID}:${CURRENT_GID}"
-    # 模拟 2026 生产环境 Python 3.11 优化环境
+    command: >
+      redis-server --maxmemory 384mb --maxmemory-policy allkeys-lru --requirepass "${REDIS_PASSWORD}"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  db_migrator:
+    image: ai-tutor-backend:v1
+    env_file:
+      - .env
     volumes:
       - ./backend:/app/backend
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: alembic upgrade head
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  api:
+    image: ai-tutor-backend:v1
+    logging: *default-logging
+    user: "${CURRENT_UID}:${CURRENT_GID}"
+    volumes:
+      - ./backend:/app/backend
+      - knowledge_files_volume_test:/data/knowledge_files
     env_file:
       - .env
     environment:
-      - PYTHONMALLOC=default # 生产环境使用 default，debug 模式严重拖慢性能
-      - WEB_CONCURRENCY=1 # 充分利用 1.5GB 内存，启动 2 个 Worker  Worker Process（工作进程） 测试时只开启一个
+      - PYTHONMALLOC=default
+      - WEB_CONCURRENCY=1
+      - KNOWLEDGE_STORAGE_ROOT=/data/knowledge_files
     restart: unless-stopped
     deploy:
       resources:
@@ -52,22 +87,55 @@ services:
           cpus: '1.0'
           memory: 800M
         reservations:
-          # 预留内存，确保容器不会因为内存碎片化启动失败
           memory: 256M
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      db_migrator:
+        condition: service_completed_successfully
     healthcheck:
-      # 1. 确保路径与你的路由完全一致
-      # 2. 使用 python3 确保兼容性
       test: [ "CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/v1/health_check/live\", timeout=5)' || exit 1" ]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s # 考虑到 FastAPI 启动和数据库连接，给 10 秒缓冲
+      start_period: 10s
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers
     ports:
       - "8000:8000"
+
+  task_worker:
+    image: ai-tutor-backend:v1
+    container_name: task_worker_test
+    user: "${CURRENT_UID}:${CURRENT_GID}"
+    logging: *default-logging
+    volumes:
+      - ./backend:/app/backend
+      - knowledge_files_volume_test:/data/knowledge_files
+    env_file:
+      - .env
+    environment:
+      - TASKIQ_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - KNOWLEDGE_STORAGE_ROOT=/data/knowledge_files
+    command: taskiq worker backend.core.task_broker:broker backend.tasks.llm_tasks backend.tasks.knowledge_tasks --workers 2
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      db_migrator:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 400M
+        reservations:
+          memory: 128M
+
 volumes:
   pg_data_v17_test:
     name: prod_db_volume_test
+  knowledge_files_volume_test:
+    name: knowledge_files_volume_test

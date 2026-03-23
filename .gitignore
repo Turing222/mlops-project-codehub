@@ -59,3 +59,4 @@ tests/test_demo.py
 alembic/archive_versions
 test_demo.py
 .antigravityignore
+AGENTS.md
