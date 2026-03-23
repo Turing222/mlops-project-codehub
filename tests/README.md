@@ -37,5 +37,5 @@ uv run pytest tests/unit tests/integration
 ## 其他说明
 
 - `evals/` 已迁移到项目根目录，不再属于 `pytest` 测试集。
-- 诊断脚本放在 `tools/diagnostics/`。
+- 诊断脚本放在 `scripts/diagnostics/`。
 - Locust 脚本位置：`tests/performance/locustfile.py`。
