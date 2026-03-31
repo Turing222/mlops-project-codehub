@@ -54,7 +54,7 @@ backend/
 ├── core/                        # config、db、redis、日志、异常、task broker
 ├── models/
 │   ├── orm/                     # SQLAlchemy 模型
-│   └── schemas/                 # Pydantic 请求/响应模型
+│   └── schemas/                 # Pydantic 请求/响应模型/DTO模型
 ├── repositories/                # 仓储层（User/Chat/Knowledge/Task）
 ├── services/                    # 领域服务（用户、会话、任务、RAG 等）
 ├── workflow/                    # 业务编排（聊天、上传、RAG 入库）
