@@ -3,7 +3,6 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from backend.api.v1.api import api_router
@@ -11,8 +10,8 @@ from backend.core.config import settings
 from backend.core.database import init_db
 from backend.core.exceptions import setup_exception_handlers
 from backend.core.logger import setup_logging
-from backend.middleware.tracing import setup_tracing
 from backend.core.redis import redis_client
+from backend.middleware.tracing import setup_tracing
 
 # 1. 初始化
 setup_logging()

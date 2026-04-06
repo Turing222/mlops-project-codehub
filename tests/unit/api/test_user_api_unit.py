@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -9,7 +9,12 @@ import pytest
 from fastapi import HTTPException, UploadFile
 
 from backend.api.v1.endpoint import user_api
-from backend.models.schemas.user_schema import UserCreate, UserImportResponse, UserSearch, UserUpdate
+from backend.models.schemas.user_schema import (
+    UserCreate,
+    UserImportResponse,
+    UserSearch,
+    UserUpdate,
+)
 
 
 class DummyUoW:
@@ -21,7 +26,7 @@ class DummyUoW:
 
 
 def make_user(**overrides):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     data = {
         "id": uuid.uuid4(),
         "username": "tester",
