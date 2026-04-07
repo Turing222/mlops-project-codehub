@@ -45,11 +45,9 @@ NonStreamWorkflowDep = Annotated[
 ]
 StreamWorkflowDep = Annotated[ChatWorkflow, Depends(get_chat_workflow)]
 ChatRateLimitDep = Annotated[None, Depends(chat_limiter)]
-SessionSkipParam = Annotated[int, Query(default=0, ge=0, description="跳过的记录数")]
-SessionListLimitParam = Annotated[
-    int, Query(default=20, ge=1, le=100, description="每页记录数")
-]
-SessionDetailLimitParam = Annotated[int, Query(default=100, ge=1, le=500)]
+SessionSkipParam = Annotated[int, Query(ge=0, description="跳过的记录数")]
+SessionListLimitParam = Annotated[int, Query(ge=1, le=100, description="每页记录数")]
+SessionDetailLimitParam = Annotated[int, Query(ge=1, le=500)]
 
 
 @router.post("/query_sent", response_model=ChatQueryResponse)
@@ -106,10 +104,10 @@ async def query_stream(
 
 @router.get("/sessions", response_model=SessionListResponse)
 async def get_sessions(
-    skip: SessionSkipParam,
-    limit: SessionListLimitParam,
     current_user: CurrentUser,
     session_query_service: SessionQueryServiceDep,
+    skip: SessionSkipParam = 0,
+    limit: SessionListLimitParam = 20,
 ) -> SessionListResponse:
     """获取当前用户的会话列表（侧边栏）"""
     async with session_query_service.uow:
@@ -123,10 +121,10 @@ async def get_sessions(
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
 async def get_session_detail(
     session_id: uuid.UUID,
-    skip: SessionSkipParam,
-    limit: SessionDetailLimitParam,
     current_user: CurrentUser,
     session_query_service: SessionQueryServiceDep,
+    skip: SessionSkipParam = 0,
+    limit: SessionDetailLimitParam = 100,
 ) -> SessionDetailResponse:
     """获取会话详情及历史消息"""
     async with session_query_service.uow:

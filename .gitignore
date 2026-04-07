@@ -60,3 +60,4 @@ alembic/archive_versions
 test_demo.py
 .antigravityignore
 AGENTS.md
+.codex

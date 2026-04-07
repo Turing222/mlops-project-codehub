@@ -2,6 +2,8 @@ import asyncio
 import uuid
 from pathlib import Path
 
+from docling_core.types.doc import DoclingDocument
+
 from backend.core.docling_models import DoclingModelFactory
 from backend.core.exceptions import (
     AppError,
@@ -143,9 +145,8 @@ class KnowledgeRAGWorkflow:
             raise ValidationError(f"文件解析失败: {file_path.name}") from exc
 
     @staticmethod
-    def _export_docling_document(document: object) -> str:
-        if hasattr(document, "export_to_markdown"):
-            return document.export_to_markdown()
-        if hasattr(document, "export_to_text"):
-            return document.export_to_text()
-        return ""
+    def _export_docling_document(document: DoclingDocument) -> str:
+        markdown = document.export_to_markdown()
+        if markdown:
+            return markdown
+        return document.export_to_text()

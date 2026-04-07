@@ -5,6 +5,9 @@ Token 计数工具
 """
 
 import logging
+from collections.abc import Sequence
+
+from backend.models.schemas.chat_schema import ConversationMessage
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +60,7 @@ def count_tokens(text: str, model: str = "gpt-4") -> int:
 
 
 def count_messages_tokens(
-    messages: list[dict],
+    messages: Sequence[ConversationMessage],
     model: str = "gpt-4",
 ) -> int:
     """
@@ -81,8 +84,8 @@ def count_messages_tokens(
     total = 0
     for msg in messages:
         total += tokens_per_message
-        total += count_tokens(msg.get("content", ""), model)
-        total += count_tokens(msg.get("role", ""), model)
+        total += count_tokens(msg["content"], model)
+        total += count_tokens(msg["role"], model)
 
     total += 2  # 回复的起始 token 开销
     return total

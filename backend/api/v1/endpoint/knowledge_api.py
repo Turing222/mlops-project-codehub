@@ -20,7 +20,7 @@ from backend.services.task_service import TaskService
 from backend.workflow.knowledge_upload_workflow import KnowledgeUploadWorkflow
 
 router = APIRouter()
-UpFile = Annotated[UploadFile, File(...)]
+UpFile = Annotated[UploadFile, File()]
 CurrentUser = Annotated[User, Depends(get_current_active_user)]
 KnowledgeUploadWorkflowDep = Annotated[
     KnowledgeUploadWorkflow, Depends(get_knowledge_upload_workflow)

@@ -13,12 +13,22 @@ import time
 from collections.abc import AsyncGenerator
 
 import openai
+from openai.types.chat import (
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionMessageParam,
+    ChatCompletionSystemMessageParam,
+    ChatCompletionUserMessageParam,
+)
 
 from backend.ai.core.token_counter import count_tokens
 from backend.core.config import settings
 from backend.core.exceptions import ServiceError
 from backend.domain.interfaces import AbstractLLMService
-from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
+from backend.models.schemas.chat_schema import (
+    ConversationMessage,
+    LLMQueryDTO,
+    LLMResultDTO,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +37,37 @@ class LLMService(AbstractLLMService):
     """LLM 服务：处理大语言模型 API 调用"""
 
     @staticmethod
-    def _build_messages(query: LLMQueryDTO) -> list[dict]:
+    def _to_openai_messages(
+        messages: list[ConversationMessage],
+    ) -> list[ChatCompletionMessageParam]:
+        openai_messages: list[ChatCompletionMessageParam] = []
+
+        for msg in messages:
+            if msg["role"] == "system":
+                system_message: ChatCompletionSystemMessageParam = {
+                    "role": "system",
+                    "content": msg["content"],
+                }
+                openai_messages.append(system_message)
+            elif msg["role"] == "assistant":
+                assistant_message: ChatCompletionAssistantMessageParam = {
+                    "role": "assistant",
+                    "content": msg["content"],
+                }
+                openai_messages.append(assistant_message)
+            else:
+                user_message: ChatCompletionUserMessageParam = {
+                    "role": "user",
+                    "content": msg["content"],
+                }
+                openai_messages.append(user_message)
+
+        return openai_messages
+
+    @staticmethod
+    def _build_messages(query: LLMQueryDTO) -> list[ChatCompletionMessageParam]:
         if query.conversation_history:
-            return query.conversation_history
+            return LLMService._to_openai_messages(query.conversation_history)
         return [{"role": "user", "content": query.query_text}]
 
     @staticmethod

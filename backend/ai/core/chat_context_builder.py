@@ -6,6 +6,7 @@ from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
 from backend.ai.core.prompt_templates import RAG_SYSTEM_TEMPLATE
 from backend.core.config import settings
 from backend.domain.interfaces import AbstractRAGService
+from backend.models.schemas.chat_schema import ConversationMessage
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class ChatContextBuilder:
         )
 
     @staticmethod
-    def _history_to_dicts(messages) -> list[dict]:
+    def _history_to_dicts(messages) -> list[ConversationMessage]:
         """将 ORM 消息对象转换为 PromptManager 所需的字典列表。"""
         return [
             {"role": msg.role, "content": msg.content}
@@ -88,14 +89,16 @@ class ChatContextBuilder:
         return f"{text[: max(0, limit - 3)]}..."
 
     @staticmethod
-    def _group_history_rounds(history: list[dict]) -> list[list[dict]]:
+    def _group_history_rounds(
+        history: list[ConversationMessage],
+    ) -> list[list[ConversationMessage]]:
         if not history:
             return []
 
-        rounds: list[list[dict]] = []
-        current_round: list[dict] = []
+        rounds: list[list[ConversationMessage]] = []
+        current_round: list[ConversationMessage] = []
         for msg in history:
-            role = msg.get("role", "")
+            role = msg["role"]
             if role == "user" and current_round:
                 rounds.append(current_round)
                 current_round = []
@@ -108,24 +111,24 @@ class ChatContextBuilder:
     @classmethod
     def _exclude_latest_query_from_history(
         cls,
-        history: list[dict],
+        history: list[ConversationMessage],
         current_query: str,
-    ) -> list[dict]:
+    ) -> list[ConversationMessage]:
         if not history:
             return history
 
         latest = history[-1]
-        if latest.get("role") != "user":
+        if latest["role"] != "user":
             return history
 
-        latest_text = cls._normalize_text(latest.get("content", ""))
+        latest_text = cls._normalize_text(latest["content"])
         query_text = cls._normalize_text(current_query)
         if latest_text and latest_text == query_text:
             return history[:-1]
         return history
 
     @classmethod
-    def _build_rounds_summary(cls, rounds: list[list[dict]]) -> str:
+    def _build_rounds_summary(cls, rounds: list[list[ConversationMessage]]) -> str:
         if not rounds:
             return ""
 
@@ -136,16 +139,16 @@ class ChatContextBuilder:
         for round_msgs in rounds:
             user_text = cls._normalize_text(
                 " ".join(
-                    msg.get("content", "")
+                    msg["content"]
                     for msg in round_msgs
-                    if msg.get("role") == "user"
+                    if msg["role"] == "user"
                 )
             )
             assistant_text = cls._normalize_text(
                 " ".join(
-                    msg.get("content", "")
+                    msg["content"]
                     for msg in round_msgs
-                    if msg.get("role") == "assistant"
+                    if msg["role"] == "assistant"
                 )
             )
             if not user_text and not assistant_text:
@@ -170,9 +173,9 @@ class ChatContextBuilder:
     @classmethod
     def _prepare_memory_context(
         cls,
-        history: list[dict],
+        history: list[ConversationMessage],
         current_query: str,
-    ) -> tuple[list[dict], str]:
+    ) -> tuple[list[ConversationMessage], str]:
         history_without_current = cls._exclude_latest_query_from_history(
             history,
             current_query,
@@ -182,7 +185,7 @@ class ChatContextBuilder:
 
         if recent_rounds <= 0:
             older_rounds = rounds
-            kept_rounds: list[list[dict]] = []
+            kept_rounds: list[list[ConversationMessage]] = []
         elif len(rounds) > recent_rounds:
             older_rounds = rounds[:-recent_rounds]
             kept_rounds = rounds[-recent_rounds:]

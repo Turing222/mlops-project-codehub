@@ -1,9 +1,15 @@
 import asyncio
 import uuid
+from typing import TypedDict
 
 from backend.domain.interfaces import AbstractRAGEmbedder, AbstractUnitOfWork
 from backend.models.orm.chunk import ChunkSourceType, DocumentChunk
 from backend.services.base import BaseService
+
+
+class _HybridHit(TypedDict):
+    chunk: DocumentChunk
+    score: float
 
 
 class VectorIndexService(BaseService[AbstractUnitOfWork]):
@@ -125,7 +131,7 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
             return []
 
         rrf_k = 60.0
-        fused: dict[str, dict[str, object]] = {}
+        fused: dict[str, _HybridHit] = {}
 
         for rank, (chunk, _) in enumerate(vector_hits, start=1):
             key = str(chunk.id)

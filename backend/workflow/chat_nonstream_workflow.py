@@ -17,6 +17,7 @@ from backend.domain.interfaces import (
 from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat_schema import (
     ChatQueryResponse,
+    ConversationMessage,
     LLMQueryDTO,
     MessageResponse,
 )
@@ -56,7 +57,7 @@ class ChatNonStreamWorkflow:
         self.rag_prompt_manager = PromptManager(system_template=RAG_SYSTEM_TEMPLATE)
         self.rag_service = rag_service
 
-    def _history_to_dicts(self, messages) -> list[dict]:
+    def _history_to_dicts(self, messages) -> list[ConversationMessage]:
         return [
             {"role": msg.role, "content": msg.content}
             for msg in messages
@@ -76,14 +77,16 @@ class ChatNonStreamWorkflow:
         return f"{text[: max(0, limit - 3)]}..."
 
     @staticmethod
-    def _group_history_rounds(history: list[dict]) -> list[list[dict]]:
+    def _group_history_rounds(
+        history: list[ConversationMessage],
+    ) -> list[list[ConversationMessage]]:
         if not history:
             return []
 
-        rounds: list[list[dict]] = []
-        current_round: list[dict] = []
+        rounds: list[list[ConversationMessage]] = []
+        current_round: list[ConversationMessage] = []
         for msg in history:
-            role = msg.get("role", "")
+            role = msg["role"]
             if role == "user" and current_round:
                 rounds.append(current_round)
                 current_round = []
@@ -96,24 +99,24 @@ class ChatNonStreamWorkflow:
     @classmethod
     def _exclude_latest_query_from_history(
         cls,
-        history: list[dict],
+        history: list[ConversationMessage],
         current_query: str,
-    ) -> list[dict]:
+    ) -> list[ConversationMessage]:
         if not history:
             return history
 
         latest = history[-1]
-        if latest.get("role") != "user":
+        if latest["role"] != "user":
             return history
 
-        latest_text = cls._normalize_text(latest.get("content", ""))
+        latest_text = cls._normalize_text(latest["content"])
         query_text = cls._normalize_text(current_query)
         if latest_text and latest_text == query_text:
             return history[:-1]
         return history
 
     @classmethod
-    def _build_rounds_summary(cls, rounds: list[list[dict]]) -> str:
+    def _build_rounds_summary(cls, rounds: list[list[ConversationMessage]]) -> str:
         if not rounds:
             return ""
 
@@ -124,16 +127,16 @@ class ChatNonStreamWorkflow:
         for round_msgs in rounds:
             user_text = cls._normalize_text(
                 " ".join(
-                    msg.get("content", "")
+                    msg["content"]
                     for msg in round_msgs
-                    if msg.get("role") == "user"
+                    if msg["role"] == "user"
                 )
             )
             assistant_text = cls._normalize_text(
                 " ".join(
-                    msg.get("content", "")
+                    msg["content"]
                     for msg in round_msgs
-                    if msg.get("role") == "assistant"
+                    if msg["role"] == "assistant"
                 )
             )
             if not user_text and not assistant_text:
@@ -158,9 +161,9 @@ class ChatNonStreamWorkflow:
     @classmethod
     def _prepare_memory_context(
         cls,
-        history: list[dict],
+        history: list[ConversationMessage],
         current_query: str,
-    ) -> tuple[list[dict], str]:
+    ) -> tuple[list[ConversationMessage], str]:
         history_without_current = cls._exclude_latest_query_from_history(
             history,
             current_query,
@@ -170,7 +173,7 @@ class ChatNonStreamWorkflow:
 
         if recent_rounds <= 0:
             older_rounds = rounds
-            kept_rounds: list[list[dict]] = []
+            kept_rounds: list[list[ConversationMessage]] = []
         elif len(rounds) > recent_rounds:
             older_rounds = rounds[:-recent_rounds]
             kept_rounds = rounds[-recent_rounds:]
@@ -249,6 +252,9 @@ class ChatNonStreamWorkflow:
             len(query_text),
         )
 
+        redis = None
+        lock_key: str | None = None
+
         if client_request_id:
             redis = await redis_client.init()
             lock_key = f"idempotency:chat:{user_id}:{client_request_id}"
@@ -267,6 +273,8 @@ class ChatNonStreamWorkflow:
                     )
                     if msg and msg.status == MessageStatus.SUCCESS:
                         session = await self.uow.chat_repo.get_session(msg.session_id)
+                        if session is None:
+                            raise ServiceError("会话不存在")
                         return ChatQueryResponse(
                             session_id=session.id,
                             session_title=session.title,
@@ -277,7 +285,7 @@ class ChatNonStreamWorkflow:
             async with self.uow:
                 user = await self.uow.user_repo.get(user_id)
                 if user and user.used_tokens >= user.max_tokens:
-                    if client_request_id:
+                    if redis is not None and lock_key is not None:
                         await redis.delete(lock_key)
                     raise ValidationError(
                         "Token 余额不足",
@@ -342,7 +350,7 @@ class ChatNonStreamWorkflow:
             async with self._get_llm_semaphore():
                 result = await self.llm_service.generate_response(llm_query)
         except AppError:
-            if client_request_id:
+            if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
             async with self._get_db_semaphore():
                 async with self.uow:
@@ -350,7 +358,7 @@ class ChatNonStreamWorkflow:
                     await updater.update_as_failed(assistant_msg.id)
             raise
         except Exception as exc:
-            if client_request_id:
+            if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
             async with self._get_db_semaphore():
                 async with self.uow:
@@ -359,7 +367,7 @@ class ChatNonStreamWorkflow:
             raise ServiceError("LLM 服务调用失败，请稍后重试") from exc
 
         if not result.success:
-            if client_request_id:
+            if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
             async with self._get_db_semaphore():
                 async with self.uow:
@@ -388,7 +396,7 @@ class ChatNonStreamWorkflow:
                     tokens_input + (result.completion_tokens or 0),
                 )
 
-        if client_request_id:
+        if redis is not None and lock_key is not None:
             await redis.set(lock_key, str(updated_msg.id), ex=3600)
 
         return ChatQueryResponse(

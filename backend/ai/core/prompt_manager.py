@@ -20,6 +20,7 @@ from backend.ai.core.prompt_templates import (
 from backend.ai.core.token_counter import count_messages_tokens
 from backend.core.config import settings
 from backend.core.exceptions import TokenLimitExceeded
+from backend.models.schemas.chat_schema import ConversationMessage
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 class AssembledPrompt:
     """Prompt 组装结果"""
 
-    messages: list[dict] = field(default_factory=list)
+    messages: list[ConversationMessage] = field(default_factory=list)
     total_tokens: int = 0
     history_rounds_used: int = 0
     truncated: bool = False
@@ -76,7 +77,7 @@ class PromptManager:
 
     def assemble(
         self,
-        history: list[dict],
+        history: list[ConversationMessage],
         current_query: str,
         extra_vars: dict | None = None,
     ) -> AssembledPrompt:
@@ -104,10 +105,10 @@ class PromptManager:
         )
 
         # 2. 构建基础消息（System + 当前 Query）
-        base_messages = []
+        base_messages: list[ConversationMessage] = []
         if system_content.strip():
             base_messages.append({"role": "system", "content": system_content})
-        user_message = {"role": "user", "content": current_query}
+        user_message: ConversationMessage = {"role": "user", "content": current_query}
 
         # 3. 计算基础 Token 消耗
         base_tokens = count_messages_tokens(
@@ -133,7 +134,7 @@ class PromptManager:
 
         # 6. 逐轮添加，超限则截断（从最新往最旧，确保近期对话优先保留）
         remaining_budget = token_budget - base_tokens
-        selected_rounds: list[list[dict]] = []
+        selected_rounds: list[list[ConversationMessage]] = []
         truncated = False
 
         for round_msgs in reversed(rounds):
@@ -171,7 +172,9 @@ class PromptManager:
         return result
 
     @staticmethod
-    def _group_into_rounds(history: list[dict]) -> list[list[dict]]:
+    def _group_into_rounds(
+        history: list[ConversationMessage],
+    ) -> list[list[ConversationMessage]]:
         """
         将扁平的消息列表分组为对话轮次
 
@@ -187,11 +190,11 @@ class PromptManager:
         if not history:
             return []
 
-        rounds: list[list[dict]] = []
-        current_round: list[dict] = []
+        rounds: list[list[ConversationMessage]] = []
+        current_round: list[ConversationMessage] = []
 
         for msg in history:
-            role = msg.get("role", "")
+            role = msg["role"]
             if role == "system":
                 # 跳过历史中的 system 消息（我们会注入自己的）
                 continue

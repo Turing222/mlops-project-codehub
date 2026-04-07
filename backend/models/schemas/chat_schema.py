@@ -12,7 +12,7 @@ Chat Schema 层 — 企业级 Pydantic 模型
 import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -43,6 +43,16 @@ class MessageStatusEnum(StrEnum):
     STREAMING = "streaming"
     SUCCESS = "success"
     FAILED = "failed"
+
+
+ChatMessageRole = Literal["system", "user", "assistant"]
+
+
+class ConversationMessage(TypedDict):
+    """内部对话消息格式，在 provider 边界层再转换为具体 SDK schema。"""
+
+    role: ChatMessageRole
+    content: str
 
 
 # ============================================================
@@ -178,7 +188,7 @@ class LLMQueryDTO(BaseModel):
 
     session_id: uuid.UUID
     query_text: str
-    conversation_history: list[dict] = Field(default_factory=list)
+    conversation_history: list[ConversationMessage] = Field(default_factory=list)
 
 
 class LLMResultDTO(BaseModel):

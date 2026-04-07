@@ -91,6 +91,9 @@ class ChatWorkflow:
             len(query_text),
         )
 
+        redis = None
+        lock_key: str | None = None
+
         # 0. 幂等校验
         if client_request_id:
             redis = await redis_client.init()
@@ -111,7 +114,7 @@ class ChatWorkflow:
                 # 校验 Token 余额
                 user = await self.uow.user_repo.get(user_id)
                 if user and user.used_tokens >= user.max_tokens:
-                    if client_request_id:
+                    if redis is not None and lock_key is not None:
                         await redis.delete(lock_key)
                     yield f"data: {json.dumps({'type': 'error', 'message': 'Token 余额不足'})}\n\n"
                     return
@@ -179,7 +182,7 @@ class ChatWorkflow:
             await pubsub.subscribe(channel)
             await generate_llm_stream_task.kiq(llm_query.model_dump(mode="json"), channel)
         except AppError as exc:
-            if client_request_id:
+            if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
             logger.warning("流式任务初始化失败: %s", exc)
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
@@ -190,7 +193,7 @@ class ChatWorkflow:
             yield "data: [DONE]\n\n"
             return
         except Exception as exc:
-            if client_request_id:
+            if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
             logger.error("流式任务初始化异常: %s", str(exc), exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'message': '服务暂时不可用，请稍后重试'})}\n\n"
@@ -259,7 +262,7 @@ class ChatWorkflow:
             if not done_received:
                 raise ServiceError("LLM 流式响应中断，请稍后重试")
         except AppError as exc:
-            if client_request_id:
+            if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
             logger.warning("流式 LLM 调用业务异常: %s", exc)
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
@@ -270,7 +273,7 @@ class ChatWorkflow:
             yield "data: [DONE]\n\n"
             return
         except Exception as exc:
-            if client_request_id:
+            if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
             logger.error("流式 LLM 调用异常: %s", str(exc), exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'message': '服务暂时不可用，请稍后重试'})}\n\n"
@@ -315,7 +318,7 @@ class ChatWorkflow:
                     user_id, tokens_input + tokens_output
                 )
 
-        if client_request_id:
+        if redis is not None and lock_key is not None:
             await redis.set(lock_key, str(assistant_msg.id), ex=3600)
 
         yield "data: [DONE]\n\n"
