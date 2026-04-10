@@ -5,6 +5,8 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DOCKER_IMAGE_NAME="${DOCKER_IMAGE_NAME:-ai-tutor-backend:v1}"
 SMOKE_COMPOSE_FILE="${SMOKE_COMPOSE_FILE:-docker-compose.db.yml}"
+SMOKE_ENV_FILE="${SMOKE_ENV_FILE:-.env.smoke}"
+SMOKE_ENV_TEMPLATE="${SMOKE_ENV_TEMPLATE:-.env.smoke.template}"
 SMOKE_BASE_URL="${SMOKE_BASE_URL:-http://localhost:8000}"
 SMOKE_LIVE_PATH="${SMOKE_LIVE_PATH:-/api/v1/health_check/live}"
 SMOKE_READY_PATH="${SMOKE_READY_PATH:-/api/v1/health_check/db_ready}"
@@ -34,8 +36,30 @@ require_cmd() {
     fi
 }
 
+resolve_project_path() {
+    local path="$1"
+    if [[ "$path" = /* ]]; then
+        printf '%s\n' "$path"
+        return
+    fi
+    printf '%s/%s\n' "$PROJECT_ROOT" "$path"
+}
+
+require_smoke_env_file() {
+    local smoke_env_path
+    smoke_env_path="$(resolve_project_path "$SMOKE_ENV_FILE")"
+    if [[ ! -f "$smoke_env_path" ]]; then
+        log_error "Missing smoke env file: $smoke_env_path"
+        log_info "Run 'make env-smoke-prepare' to generate it from $SMOKE_ENV_TEMPLATE"
+        exit 1
+    fi
+}
+
 compose_smoke() {
-    docker compose -f "$SMOKE_COMPOSE_FILE" "$@"
+    local smoke_env_path
+    smoke_env_path="$(resolve_project_path "$SMOKE_ENV_FILE")"
+    require_smoke_env_file
+    SMOKE_ENV_FILE="$smoke_env_path" docker compose --env-file "$smoke_env_path" -f "$SMOKE_COMPOSE_FILE" "$@"
 }
 
 print_smoke_logs() {

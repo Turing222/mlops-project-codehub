@@ -2,6 +2,8 @@ SHELL := /bin/bash
 
 DOCKER_IMAGE_NAME ?= ai-tutor-backend:v1
 SMOKE_COMPOSE_FILE ?= docker-compose.db.yml
+SMOKE_ENV_FILE ?= .env.smoke
+SMOKE_ENV_TEMPLATE ?= .env.smoke.template
 SMOKE_BASE_URL ?= http://localhost:8000
 SMOKE_LIVE_PATH ?= /api/v1/health_check/live
 SMOKE_READY_PATH ?= /api/v1/health_check/db_ready
@@ -11,6 +13,8 @@ PYTEST_ARGS ?=
 
 export DOCKER_IMAGE_NAME
 export SMOKE_COMPOSE_FILE
+export SMOKE_ENV_FILE
+export SMOKE_ENV_TEMPLATE
 export SMOKE_BASE_URL
 export SMOKE_LIVE_PATH
 export SMOKE_READY_PATH
@@ -20,7 +24,7 @@ export SMOKE_READY_PATH
 .PHONY: help \
 	qa-lint qa-format qa-typecheck qa-test-unit qa-test-integration qa-test-all qa-checks \
 	image-build \
-	env-smoke-up env-smoke-wait env-smoke-down env-smoke-logs \
+	env-smoke-prepare env-smoke-up env-smoke-wait env-smoke-down env-smoke-logs \
 	verify-smoke \
 	flow-dev-check flow-ci \
 	lint format typecheck test check clean-cache
@@ -36,6 +40,7 @@ help:
 		'  qa-test-all          Run all pytest suites except excluded markers' \
 		'  qa-checks            Run lint and typecheck via scripts' \
 		'  image-build          Build the backend Docker image' \
+		'  env-smoke-prepare    Generate the smoke env file from template' \
 		'  env-smoke-up         Start the smoke environment' \
 		'  env-smoke-wait       Wait until the smoke environment is reachable' \
 		'  verify-smoke         Run smoke HTTP checks against the running stack' \
@@ -68,6 +73,9 @@ qa-checks:
 image-build:
 	bash scripts/image/build_backend.sh
 
+env-smoke-prepare:
+	bash scripts/smoke/prepare_env.sh
+
 env-smoke-up:
 	bash scripts/smoke/up.sh
 
@@ -78,7 +86,7 @@ env-smoke-down:
 	bash scripts/smoke/down.sh
 
 env-smoke-logs:
-	docker compose -f "$(SMOKE_COMPOSE_FILE)" logs --tail=200
+	SMOKE_ENV_FILE="$(SMOKE_ENV_FILE)" docker compose --env-file "$(SMOKE_ENV_FILE)" -f "$(SMOKE_COMPOSE_FILE)" logs --tail=200
 
 verify-smoke:
 	bash scripts/smoke/test.sh

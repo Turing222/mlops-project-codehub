@@ -30,6 +30,13 @@ make qa-test-unit
 make qa-test-integration
 make qa-lint
 make qa-typecheck
+
+smoke_env_path="$(resolve_project_path "$SMOKE_ENV_FILE")"
+if [[ ! -f "$smoke_env_path" ]]; then
+    log_info "Smoke env file not found, generating it from the shared template"
+    make env-smoke-prepare
+fi
+
 make image-build
 make env-smoke-up
 make env-smoke-wait

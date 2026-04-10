@@ -24,6 +24,7 @@ mlartifacts/
 
 # 忽略所有的环境配置文件
 .env
+.env.smoke
 key.env
 *.env
 

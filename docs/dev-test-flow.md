@@ -145,6 +145,7 @@ make image-build
 启动命令：
 
 ```bash
+make env-smoke-prepare
 make env-smoke-up
 make env-smoke-wait
 ```
@@ -153,6 +154,7 @@ make env-smoke-wait
 
 - 该环境用于 Smoke，不追求完整生产拓扑。
 - `nginx`、`prometheus`、`grafana`、`vector`、`loki` 暂不作为日常 Smoke 的必需项。
+- `env-smoke-prepare` 会基于仓库里的 `.env.smoke.template` 生成本地 `.env.smoke`，本地与 CI 共用同一份模板。
 
 ### 步骤 7：运行 Smoke 测试
 
@@ -252,6 +254,7 @@ make flow-dev-check
 适用于改动范围较大、影响多个模块时：
 
 ```bash
+make env-smoke-prepare
 make qa-test-all
 make qa-lint
 make qa-typecheck
@@ -276,6 +279,7 @@ make env-smoke-down
 - `Makefile` 负责提供统一入口。
 - Shell 脚本负责复杂编排。
 - CI 不要重复手写一套新的流程逻辑，应尽量复用本地命令。
+- 环境文件优先由共享模板生成，避免本地与 CI 因手写 `.env` 漂移。
 
 ## 7. 当前结论
 
