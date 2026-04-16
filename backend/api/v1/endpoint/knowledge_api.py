@@ -47,6 +47,24 @@ async def upload_file(
     )
 
 
+@router.post(
+    "/bases/{kb_id}/upload-stream",
+    response_model=KnowledgeUploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def upload_file_stream(
+    kb_id: uuid.UUID,
+    file: UpFile,
+    current_user: CurrentUser,
+    upload_workflow: KnowledgeUploadWorkflowDep,
+) -> KnowledgeUploadResponse:
+    return await upload_workflow.submit_stream_ingestion(
+        kb_id=kb_id,
+        user_id=current_user.id,
+        upload_file=file,
+    )
+
+
 @router.get("/tasks/{task_id}", response_model=TaskResponse)
 async def get_task_status(
     task_id: uuid.UUID,

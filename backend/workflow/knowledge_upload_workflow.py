@@ -4,7 +4,7 @@ import uuid
 from fastapi import UploadFile
 
 from backend.core.exceptions import AppError, DependencyUnavailable, ServiceError
-from backend.models.orm.knowledge import FileStatus
+from backend.models.orm.knowledge import File, FileStatus
 from backend.models.schemas.knowledge_schema import KnowledgeUploadResponse
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.task_service import TaskService
@@ -37,6 +37,38 @@ class KnowledgeUploadWorkflow:
                 user_id=user_id,
                 upload_file=upload_file,
             )
+        return await self._create_and_dispatch_ingestion(
+            kb_id=kb_id,
+            user_id=user_id,
+            file_obj=file_obj,
+        )
+
+    async def submit_stream_ingestion(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        user_id: uuid.UUID,
+        upload_file: UploadFile,
+    ) -> KnowledgeUploadResponse:
+        async with self.knowledge_service.uow:
+            file_obj = await self.knowledge_service.save_upload_file_streaming(
+                kb_id=kb_id,
+                user_id=user_id,
+                upload_file=upload_file,
+            )
+        return await self._create_and_dispatch_ingestion(
+            kb_id=kb_id,
+            user_id=user_id,
+            file_obj=file_obj,
+        )
+
+    async def _create_and_dispatch_ingestion(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        user_id: uuid.UUID,
+        file_obj: File,
+    ) -> KnowledgeUploadResponse:
         try:
             async with self.task_service.uow:
                 task = await self.task_service.create_kb_ingestion_task(
