@@ -9,6 +9,10 @@
 
 本文档偏“工程实现标准”，用于长期复用和重复阅读。
 
+相关规范：
+
+- [async-default-style.md](./async-default-style.md)
+
 ## 1. 设计目标
 
 自动化体系应满足以下要求：
