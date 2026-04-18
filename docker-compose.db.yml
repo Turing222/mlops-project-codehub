@@ -117,7 +117,14 @@ services:
       - "${SMOKE_ENV_FILE:-.env.smoke}"
     environment:
       - TASKIQ_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - TASKIQ_HEALTH_MIN_PROCESSES=2
       - KNOWLEDGE_STORAGE_ROOT=/data/knowledge_files
+    healthcheck:
+      test: [ "CMD-SHELL", "python -m backend.core.task_worker_healthcheck || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     command: taskiq worker backend.core.task_broker:broker backend.tasks.llm_tasks backend.tasks.knowledge_tasks --workers 2
     restart: unless-stopped
     depends_on:

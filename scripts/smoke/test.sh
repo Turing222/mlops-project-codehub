@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -exuo pipefail
 
 source "$(cd "$(dirname "$0")/.." && pwd)/lib/common.sh"
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import uuid
 
@@ -15,6 +16,7 @@ SMOKE_READY_PATH = os.getenv("SMOKE_READY_PATH", "/api/v1/health_check/db_ready"
 REGISTER_PATH = "/api/v1/auth/register"
 LOGIN_PATH = "/api/v1/auth/login"
 QUERY_SENT_PATH = "/api/v1/chat/query_sent"
+QUERY_STREAM_PATH = "/api/v1/chat/query_stream"
 
 
 async def _ensure_live_environment(client: httpx.AsyncClient) -> None:
@@ -79,6 +81,54 @@ async def _login_user(
     return token
 
 
+async def _create_auth_headers(client: httpx.AsyncClient) -> tuple[dict[str, str], str]:
+    suffix = uuid.uuid4().hex[:12]
+    username = f"smoke_{suffix}"
+    email = f"{username}@example.com"
+    password = "Password123"
+
+    await _register_user(
+        client,
+        username=username,
+        email=email,
+        password=password,
+    )
+    token = await _login_user(
+        client,
+        username=username,
+        password=password,
+    )
+    return {"Authorization": f"Bearer {token}"}, suffix
+
+
+async def _collect_sse_payloads(
+    client: httpx.AsyncClient,
+    *,
+    headers: dict[str, str],
+    payload: dict,
+) -> list[str]:
+    async with client.stream(
+        "POST",
+        QUERY_STREAM_PATH,
+        headers=headers,
+        json=payload,
+        timeout=30.0,
+    ) as response:
+        assert response.status_code == 200, await response.aread()
+
+        payloads: list[str] = []
+        async for line in response.aiter_lines():
+            if not line.startswith("data: "):
+                continue
+
+            data = line[6:]
+            payloads.append(data)
+            if data == "[DONE]":
+                break
+
+    return payloads
+
+
 @pytest.fixture
 async def smoke_client():
     async with httpx.AsyncClient(
@@ -96,24 +146,7 @@ async def test_chat_query_sent_over_http(smoke_client: httpx.AsyncClient):
     assert ready_response.status_code == 200, ready_response.text
     assert ready_response.json()["status"] == "ready"
 
-    suffix = uuid.uuid4().hex[:12]
-    username = f"smoke_{suffix}"
-    email = f"{username}@example.com"
-    password = "Password123"
-
-    await _register_user(
-        smoke_client,
-        username=username,
-        email=email,
-        password=password,
-    )
-    token = await _login_user(
-        smoke_client,
-        username=username,
-        password=password,
-    )
-
-    headers = {"Authorization": f"Bearer {token}"}
+    headers, suffix = await _create_auth_headers(smoke_client)
 
     first_response = await smoke_client.post(
         QUERY_SENT_PATH,
@@ -148,3 +181,38 @@ async def test_chat_query_sent_over_http(smoke_client: httpx.AsyncClient):
     assert second_body["answer"]["role"] == "assistant"
     assert second_body["answer"]["status"] == "success"
     assert second_body["answer"]["content"]
+
+
+@pytest.mark.asyncio
+async def test_chat_query_stream_over_http_uses_task_worker(
+    smoke_client: httpx.AsyncClient,
+):
+    headers, suffix = await _create_auth_headers(smoke_client)
+    payloads = await _collect_sse_payloads(
+        smoke_client,
+        headers=headers,
+        payload={
+            "query": "请用流式方式确认 task worker 工作正常。",
+            "client_request_id": f"smoke-stream-{suffix}",
+        },
+    )
+
+    assert payloads
+    assert payloads[-1] == "[DONE]"
+
+    events = [
+        json.loads(item)
+        for item in payloads
+        if item != "[DONE]"
+    ]
+    meta_events = [event for event in events if event["type"] == "meta"]
+    chunk_events = [event for event in events if event["type"] == "chunk"]
+    error_events = [event for event in events if event["type"] == "error"]
+
+    assert len(meta_events) == 1
+    assert meta_events[0]["session_id"]
+    assert meta_events[0]["session_title"]
+    assert meta_events[0]["message_id"]
+    assert not error_events
+    assert chunk_events
+    assert "".join(event["content"] for event in chunk_events).strip()
