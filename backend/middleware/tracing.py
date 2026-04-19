@@ -1,13 +1,12 @@
 import logging
-import time
 from contextvars import ContextVar
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from opentelemetry import trace
 from starlette.middleware.base import RequestResponseEndpoint
-from ulid import ULID
 
-# 这里的变量是“协程安全”的，每个请求都有自己独立的副本
+# 保留 ContextVar 以便业务层获取 RID（如日志、异常报告等）
 REQUEST_ID_CTX: ContextVar[str] = ContextVar("request_id", default="")
 
 # 设置日志
@@ -15,39 +14,48 @@ logger = logging.getLogger(__name__)
 
 
 def setup_tracing(app: FastAPI):
+    """
+    简化版请求追踪中间件。
+
+    OTel FastAPI Instrumentation 已自动处理：
+    - span 创建与 trace_id 生成
+    - 请求耗时测量（http.server.request.duration）
+    - HTTP 指标采集
+
+    本中间件仅负责：
+    - 透传 Nginx 的 X-Request-ID 或使用 OTel trace_id 作为 RID
+    - 注入 X-Request-ID / X-Trace-ID 响应头（方便前端 / 日志关联）
+    - 将 RID 存入 ContextVar（供业务层使用）
+    """
+
     @app.middleware("http")
     async def tracing_middleware(
         request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        # 1. 前置逻辑：生成/获取 RID
-        rid = request.headers.get("X-Request-ID", str(ULID()))
+        # 1. 从 OTel span 获取 trace_id
+        span = trace.get_current_span()
+        span_ctx = span.get_span_context()
+        trace_id = (
+            f"{span_ctx.trace_id:032x}" if span_ctx and span_ctx.trace_id else ""
+        )
+
+        # 2. 优先使用 Nginx 传入的 X-Request-ID，否则用 OTel trace_id
+        rid = request.headers.get("X-Request-ID", trace_id)
         token = REQUEST_ID_CTX.set(rid)
         request.state.request_id = rid
-        start_time = time.perf_counter()
 
         try:
-            # 2. 核心：执行后续的路由逻辑
+            # 3. 执行后续的路由逻辑（耗时由 OTel span 自动记录）
             response = await call_next(request)
 
-            # 3. 后置逻辑：注入 Header 和记录日志
-            process_time = (time.perf_counter() - start_time) * 1000
+            # 4. 注入关联 header
             response.headers["X-Request-ID"] = rid
-            response.headers["X-Process-Time"] = f"{process_time:.2f}ms"
+            response.headers["X-Trace-ID"] = trace_id
 
-            logger.info(
-                "Request Finished",
-                extra={
-                    "rid": rid,
-                    "path": request.url.path,
-                    "status": response.status_code,
-                    "process_time_ms": round(process_time, 2),
-                },
-            )
             return response
 
         except Exception as e:
             logger.error("Request Failed", extra={"rid": rid, "error": str(e)})
-            process_time = (time.perf_counter() - start_time) * 1000
             return JSONResponse(
                 status_code=500,
                 content={
@@ -56,9 +64,9 @@ def setup_tracing(app: FastAPI):
                 },
                 headers={
                     "X-Request-ID": rid,
-                    "X-Process-Time": f"{process_time:.2f}ms",
+                    "X-Trace-ID": trace_id,
                 },
             )
         finally:
-            # 4. 必须执行：清理上下文，防止内存泄露或协程间干扰
+            # 5. 清理上下文，防止内存泄露或协程间干扰
             REQUEST_ID_CTX.reset(token)

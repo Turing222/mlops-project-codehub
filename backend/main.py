@@ -3,7 +3,9 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from prometheus_fastapi_instrumentator import Instrumentator
+from starlette.responses import PlainTextResponse
+
+from backend.core.telemetry import setup_telemetry, shutdown_telemetry
 
 from backend.api.v1.api import api_router
 from backend.core.config import settings
@@ -35,6 +37,7 @@ async def lifespan(app: FastAPI):
         yield
         # 关闭 Redis
         await redis_client.close()
+    shutdown_telemetry()
     logger.info("系统已关闭")
 
 
@@ -51,8 +54,8 @@ setup_exception_handlers(app)
 # 中间件策略
 setup_tracing(app)
 
-# 监控埋点 (默认在 /metrics 暴露指标)
-Instrumentator().instrument(app).expose(app)
+# OpenTelemetry 统一遥测初始化 (指标通过 OTLP 推送到 Prometheus)
+setup_telemetry(app)
 
 # 路由挂载
 app.include_router(api_router, prefix=settings.API_V1_STR)
@@ -62,6 +65,12 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 @app.get("/")
 def read_root():
     return {"message": "AI Mentor 数据库已就绪！"}
+
+
+@app.get("/metrics")
+def metrics_endpoint():
+    """Prometheus scrape 健康探针（实际指标通过 OTLP 推送）。"""
+    return PlainTextResponse("")
 
 
 @app.get("/debug-request")

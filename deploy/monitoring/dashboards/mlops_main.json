@@ -36,8 +36,8 @@
             },
             "targets": [
                 {
-                    "expr": "sum(rate(http_requests_total[1m])) by (method, handler)",
-                    "legendFormat": "{{method}} {{handler}}"
+                    "expr": "sum(rate(http_server_request_duration_seconds_count[1m])) by (http_request_method, http_route)",
+                    "legendFormat": "{{http_request_method}} {{http_route}}"
                 }
             ],
             "fieldConfig": {
@@ -61,8 +61,8 @@
             },
             "targets": [
                 {
-                    "expr": "sum(rate(http_requests_total[1m])) by (status)",
-                    "legendFormat": "Status {{status}}"
+                    "expr": "sum(rate(http_server_request_duration_seconds_count[1m])) by (http_response_status_code)",
+                    "legendFormat": "Status {{http_response_status_code}}"
                 }
             ],
             "fieldConfig": {
@@ -86,8 +86,8 @@
             },
             "targets": [
                 {
-                    "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))",
-                    "legendFormat": "{{handler}}"
+                    "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le, http_route))",
+                    "legendFormat": "{{http_route}}"
                 }
             ],
             "fieldConfig": {
@@ -111,8 +111,8 @@
             },
             "targets": [
                 {
-                    "expr": "sum(rate(http_request_duration_seconds_sum[5m])) by (handler) / sum(rate(http_request_duration_seconds_count[5m])) by (handler)",
-                    "legendFormat": "{{handler}} - Avg"
+                    "expr": "sum(rate(http_server_request_duration_seconds_sum[5m])) by (http_route) / sum(rate(http_server_request_duration_seconds_count[5m])) by (http_route)",
+                    "legendFormat": "{{http_route}} - Avg"
                 }
             ],
             "fieldConfig": {

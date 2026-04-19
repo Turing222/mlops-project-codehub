@@ -14,23 +14,23 @@ groups:
       # 2. LLM 后端高延迟告警 (P99 > 45秒)
       # 理由：LLM 推理慢，如果 P99 还是超过 45s，说明系统可能出现了严重的排队或显存瓶颈
       - alert: ApiHighLatency
-        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler)) > 45
+        expr: histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket{job="fastapi-backend"}[5m])) by (le, http_route)) > 45
         for: 2m
         labels:
           severity: warning
         annotations:
-          summary: 'API 响应过慢: {{ $labels.handler }}'
-          description: 'API 接口 {{ $labels.handler }} 的 P99 响应延迟已达到 {{ $value | printf "%.2f" }}s。'
+          summary: 'API 响应过慢: {{ $labels.http_route }}'
+          description: 'API 接口 {{ $labels.http_route }} 的 P99 响应延迟已达到 {{ $value | printf "%.2f" }}s。'
 
       # 3. 后端 5xx 错误率预警 (> 5%)
       - alert: ApiErrorRateHigh
-        expr: (sum(rate(http_requests_total{status=~"5.."}[5m])) by (handler) / sum(rate(http_requests_total[5m])) by (handler)) > 0.05
+        expr: (sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",job="fastapi-backend"}[5m])) by (http_route) / sum(rate(http_server_request_duration_seconds_count{job="fastapi-backend"}[5m])) by (http_route)) > 0.05
         for: 2m
         labels:
           severity: critical
         annotations:
-          summary: 'API 错误率飙升: {{ $labels.handler }}'
-          description: '接口 {{ $labels.handler }} 的 5xx 错误率已超过 5% (当前: {{ $value | printf "%.2f" }}%)。'
+          summary: 'API 错误率飙升: {{ $labels.http_route }}'
+          description: '接口 {{ $labels.http_route }} 的 5xx 错误率已超过 5% (当前: {{ $value | printf "%.2f" }}%)。'
 
       # 4. Redis 内存预警 (> 85%)
       # 理由：Redis 爆满会导致聊天会话无法存取，导致系统瘫痪

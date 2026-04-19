@@ -10,7 +10,7 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # FastAPI 后端指标抓取
+  # FastAPI 后端：实际指标通过 OTLP push，此处仅用于 `up` 存活探测
   - job_name: "fastapi-backend"
     static_configs:
       - targets: ["api:8000"]

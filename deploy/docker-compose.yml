@@ -138,6 +138,7 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-otlp-receiver'
     deploy:
       resources:
         limits:

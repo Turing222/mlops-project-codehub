@@ -5,6 +5,13 @@ import sys
 import orjson
 from pythonjsonlogger import jsonlogger
 
+try:
+    from opentelemetry import trace as otel_trace
+
+    _OTEL_AVAILABLE = True
+except ImportError:
+    _OTEL_AVAILABLE = False
+
 
 class OrjsonFormatter(jsonlogger.JsonFormatter):
     """
@@ -62,6 +69,14 @@ class OrjsonFormatter(jsonlogger.JsonFormatter):
         log_record["module"] = record.module
         log_record["func_name"] = record.funcName
         log_record["line_no"] = record.lineno
+
+        # 注入 OTel trace context，实现 Logs ↔ Traces 关联
+        if _OTEL_AVAILABLE:
+            span = otel_trace.get_current_span()
+            ctx = span.get_span_context()
+            if ctx and ctx.trace_id:
+                log_record["trace_id"] = f"{ctx.trace_id:032x}"
+                log_record["span_id"] = f"{ctx.span_id:016x}"
 
 
 def setup_logging():
