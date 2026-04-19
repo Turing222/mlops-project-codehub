@@ -1,18 +1,38 @@
-name: CI
+name: Backend CI
 
 on:
   pull_request:
+    paths:
+      - "backend/**"
+      - "tests/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "Dockerfile"
+      - "docker-compose*.yml"
+      - "Makefile"
+      - ".github/workflows/backend-ci.yml"
   push:
     branches:
       - main
       - master
+    paths:
+      - "backend/**"
+      - "tests/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "Dockerfile"
+      - "docker-compose*.yml"
+      - "Makefile"
+      - ".github/workflows/backend-ci.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: backend-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -7,6 +7,8 @@ SMOKE_ENV_TEMPLATE ?= .env.smoke.template
 SMOKE_BASE_URL ?= http://localhost:8000
 SMOKE_LIVE_PATH ?= /api/v1/health_check/live
 SMOKE_READY_PATH ?= /api/v1/health_check/db_ready
+FRONTEND_DIR ?= frontend
+FRONTEND_APP ?= admin
 UNIT_TARGETS ?= tests/unit
 INTEGRATION_TARGETS ?= tests/integration
 PYTEST_ARGS ?=
@@ -23,6 +25,7 @@ export SMOKE_READY_PATH
 
 .PHONY: help \
 	qa-lint qa-format qa-typecheck qa-test-unit qa-test-integration qa-test-all qa-checks \
+	frontend-test frontend-build \
 	image-build \
 	env-smoke-prepare env-smoke-up env-smoke-wait env-smoke-down env-smoke-logs \
 	verify-smoke \
@@ -39,6 +42,8 @@ help:
 		'  qa-test-integration  Run integration tests (INTEGRATION_TARGETS=...)' \
 		'  qa-test-all          Run all pytest suites except excluded markers' \
 		'  qa-checks            Run lint and typecheck via scripts' \
+		'  frontend-test        Run the frontend unit/smoke tests' \
+		'  frontend-build       Build the frontend app bundle' \
 		'  image-build          Build the backend Docker image' \
 		'  env-smoke-prepare    Generate the smoke env file from template' \
 		'  env-smoke-up         Start the smoke environment' \
@@ -69,6 +74,12 @@ qa-test-all:
 
 qa-checks:
 	bash scripts/qa/run_checks.sh
+
+frontend-test:
+	pnpm --dir "$(FRONTEND_DIR)" --filter "$(FRONTEND_APP)" test
+
+frontend-build:
+	pnpm --dir "$(FRONTEND_DIR)" --filter "$(FRONTEND_APP)" build
 
 image-build:
 	bash scripts/image/build_backend.sh
@@ -111,3 +122,10 @@ check:
 
 clean-cache:
 	uv run python -c "import pathlib; [p.unlink() for p in pathlib.Path('.').rglob('*.py[co]')]; [p.rmdir() for p in pathlib.Path('.').rglob('__pycache__')]"
+
+ARGS = $(filter-out $@,$(MAKECMDGOALS))
+
+check-context:
+	@echo "上线文变量查询: $(ARGS) : $($(ARGS))"
+%:
+	@:
