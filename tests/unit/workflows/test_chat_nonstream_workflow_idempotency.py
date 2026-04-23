@@ -7,7 +7,7 @@ from backend.ai.core import token_counter
 from backend.models.schemas.chat_schema import LLMResultDTO
 from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
+pytestmark = pytest.mark.asyncio
 
 
 class _FakeEncoding:
@@ -31,10 +31,24 @@ async def test_idempotency():
     mock_redis.set.side_effect = [True, False]
     mock_redis.get.return_value = "PROCESSING"
 
-    with patch("backend.workflow.chat_nonstream_workflow.redis_client.init", return_value=mock_redis), \
-         patch("backend.workflow.chat_nonstream_workflow.MessageResponse.model_validate", return_value=MagicMock()), \
-         patch("backend.workflow.chat_nonstream_workflow.ChatQueryResponse", return_value=MagicMock()), \
-         patch("backend.ai.core.token_counter.tiktoken.get_encoding", return_value=_FakeEncoding()):
+    with (
+        patch(
+            "backend.workflow.chat_nonstream_workflow.redis_client.init",
+            return_value=mock_redis,
+        ),
+        patch(
+            "backend.workflow.chat_nonstream_workflow.MessageResponse.model_validate",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "backend.workflow.chat_nonstream_workflow.ChatQueryResponse",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "backend.ai.core.token_counter.tiktoken.get_encoding",
+            return_value=_FakeEncoding(),
+        ),
+    ):
         workflow = ChatNonStreamWorkflow(uow, llm_service, prompt_manager)
 
         user_id = uuid.uuid4()
@@ -93,14 +107,40 @@ async def test_token_recording():
     session = MagicMock(id=uuid.uuid4(), title="Test Session")
     assistant_msg = MagicMock(id=uuid.uuid4())
 
-    with patch("backend.services.chat_service.SessionManager.ensure_session", AsyncMock(return_value=session)), \
-         patch("backend.services.chat_service.SessionManager.create_user_message", AsyncMock()), \
-         patch("backend.services.chat_service.SessionManager.create_assistant_message", AsyncMock(return_value=assistant_msg)), \
-         patch("backend.services.chat_service.SessionManager.get_session_messages", AsyncMock(return_value=[])), \
-         patch("backend.workflow.chat_nonstream_workflow.MessageResponse.model_validate", return_value=MagicMock()), \
-         patch("backend.workflow.chat_nonstream_workflow.ChatQueryResponse", return_value=MagicMock()), \
-         patch("backend.workflow.chat_nonstream_workflow.ChatMessageUpdater", MagicMock()) as mock_updater_cls, \
-        patch("backend.ai.core.token_counter.tiktoken.get_encoding", return_value=_FakeEncoding()):
+    with (
+        patch(
+            "backend.services.chat_service.SessionManager.ensure_session",
+            AsyncMock(return_value=session),
+        ),
+        patch(
+            "backend.services.chat_service.SessionManager.create_user_message",
+            AsyncMock(),
+        ),
+        patch(
+            "backend.services.chat_service.SessionManager.create_assistant_message",
+            AsyncMock(return_value=assistant_msg),
+        ),
+        patch(
+            "backend.services.chat_service.SessionManager.get_session_messages",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "backend.workflow.chat_nonstream_workflow.MessageResponse.model_validate",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "backend.workflow.chat_nonstream_workflow.ChatQueryResponse",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "backend.workflow.chat_nonstream_workflow.ChatMessageUpdater",
+            MagicMock(),
+        ) as mock_updater_cls,
+        patch(
+            "backend.ai.core.token_counter.tiktoken.get_encoding",
+            return_value=_FakeEncoding(),
+        ),
+    ):
         mock_updater = mock_updater_cls.return_value
         mock_updater.update_as_success = AsyncMock(return_value=assistant_msg)
         uow.user_repo.increment_used_tokens = AsyncMock()
@@ -109,6 +149,6 @@ async def test_token_recording():
 
         call_args = mock_updater.update_as_success.call_args[1]
 
-        assert call_args.get('tokens_input') is not None
-        assert call_args.get('tokens_output') == 5
+        assert call_args.get("tokens_input") is not None
+        assert call_args.get("tokens_output") == 5
         uow.user_repo.increment_used_tokens.assert_called_once()

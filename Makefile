@@ -24,7 +24,7 @@ export SMOKE_READY_PATH
 .PHONY: help \
 	qa-lint qa-format qa-typecheck qa-test-unit qa-test-integration qa-test-all qa-checks \
 	image-build \
-	env-smoke-prepare env-smoke-up env-smoke-wait env-smoke-down env-smoke-logs \
+	env-smoke-prepare env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	verify-smoke \
 	flow-dev-check flow-ci \
 	lint format typecheck test check clean-cache
@@ -43,6 +43,7 @@ help:
 		'  env-smoke-prepare    Generate the smoke env file from template' \
 		'  env-smoke-up         Start the smoke environment' \
 		'  env-smoke-wait       Wait until the smoke environment is reachable' \
+		'  env-smoke-create-kb  Create a manual/smoke knowledge base for an existing user' \
 		'  verify-smoke         Run smoke HTTP checks against the running stack' \
 		'  env-smoke-down       Stop the smoke environment' \
 		'  env-smoke-logs       Show recent smoke logs' \
@@ -81,6 +82,9 @@ env-smoke-up:
 
 env-smoke-wait:
 	bash scripts/smoke/wait.sh
+
+env-smoke-create-kb:
+	bash scripts/smoke/create_kb.sh $(ARGS)
 
 env-smoke-down:
 	bash scripts/smoke/down.sh

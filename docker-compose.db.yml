@@ -6,7 +6,6 @@ x-logging: &default-logging
 services:
   postgres:
     image: pgvector/pgvector:0.8.1-pg17-bookworm
-    container_name: pgvector-17-stable_test
     env_file:
       - "${SMOKE_ENV_FILE:-.env.smoke}"
     # 1. 在服务内挂载卷
@@ -32,7 +31,6 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    container_name: redis_test
     env_file:
       - "${SMOKE_ENV_FILE:-.env.smoke}"
     deploy:
@@ -67,6 +65,17 @@ services:
         reservations:
           memory: 64M
 
+  knowledge_storage_init:
+    image: alpine:3.20
+    logging: *default-logging
+    user: "0:0"
+    volumes:
+      - knowledge_files_volume_test:/data/knowledge_files
+    command: >
+      sh -c "mkdir -p /data/knowledge_files &&
+      chown -R ${CURRENT_UID}:${CURRENT_GID} /data/knowledge_files"
+    restart: "no"
+
   api:
     image: ai-tutor-backend:v1
     logging: *default-logging
@@ -95,6 +104,8 @@ services:
         condition: service_healthy
       db_migrator:
         condition: service_completed_successfully
+      knowledge_storage_init:
+        condition: service_completed_successfully
     healthcheck:
       test: [ "CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/v1/health_check/live\", timeout=5)' || exit 1" ]
       interval: 30s
@@ -107,7 +118,6 @@ services:
 
   task_worker:
     image: ai-tutor-backend:v1
-    container_name: task_worker_test
     user: "${CURRENT_UID}:${CURRENT_GID}"
     logging: *default-logging
     volumes:
@@ -133,6 +143,8 @@ services:
       postgres:
         condition: service_healthy
       db_migrator:
+        condition: service_completed_successfully
+      knowledge_storage_init:
         condition: service_completed_successfully
     deploy:
       resources:

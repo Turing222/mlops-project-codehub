@@ -38,6 +38,12 @@ _PROMETHEUS_OTLP_ENDPOINT = os.getenv(
     "PROMETHEUS_OTLP_ENDPOINT",
     "http://prometheus:9090/api/v1/otlp",
 )
+_ENABLE_OTEL_METRICS = os.getenv("ENABLE_OTEL_METRICS", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 
 def setup_telemetry(app: FastAPI) -> None:
@@ -56,17 +62,22 @@ def setup_telemetry(app: FastAPI) -> None:
     trace.set_tracer_provider(tracer_provider)
 
     # ── 2. Metrics ─────────────────────────────────────────────
-    # 通过 OTLP HTTP 推送指标到 Prometheus 的原生 OTLP receiver
-    metric_exporter = OTLPMetricExporter(
-        endpoint=_PROMETHEUS_OTLP_ENDPOINT,
-    )
-    metric_reader = PeriodicExportingMetricReader(
-        metric_exporter,
-        export_interval_millis=15_000,  # 与 Prometheus scrape_interval 对齐
-    )
+    metric_readers = []
+    if _ENABLE_OTEL_METRICS:
+        # 通过 OTLP HTTP 推送指标到 Prometheus 的原生 OTLP receiver
+        metric_exporter = OTLPMetricExporter(
+            endpoint=_PROMETHEUS_OTLP_ENDPOINT,
+        )
+        metric_readers.append(
+            PeriodicExportingMetricReader(
+                metric_exporter,
+                export_interval_millis=15_000,  # 与 Prometheus scrape_interval 对齐
+            )
+        )
+
     meter_provider = MeterProvider(
         resource=_RESOURCE,
-        metric_readers=[metric_reader],
+        metric_readers=metric_readers,
     )
     metrics.set_meter_provider(meter_provider)
 
@@ -75,8 +86,9 @@ def setup_telemetry(app: FastAPI) -> None:
     FastAPIInstrumentor.instrument_app(app)
 
     logger.info(
-        "OpenTelemetry 初始化完成: metrics→%s, traces→TracerProvider ready",
-        _PROMETHEUS_OTLP_ENDPOINT,
+        "OpenTelemetry 初始化完成: metrics=%s%s, traces→TracerProvider ready",
+        "enabled" if _ENABLE_OTEL_METRICS else "disabled",
+        f"→{_PROMETHEUS_OTLP_ENDPOINT}" if _ENABLE_OTEL_METRICS else "",
     )
 
 
