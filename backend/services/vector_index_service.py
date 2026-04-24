@@ -31,7 +31,10 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
     ) -> None:
         chunk_records: list[dict] = []
         for idx, chunk_text in enumerate(chunks):
-            embedding = await asyncio.to_thread(self.embedder.encode_query, chunk_text)
+            embedding = await asyncio.to_thread(
+                self.embedder.encode_document,
+                chunk_text,
+            )
             chunk_records.append(
                 {
                     "source_type": ChunkSourceType.FILE,

@@ -6,6 +6,7 @@ import os
 import sys
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from sqlalchemy import select
@@ -15,8 +16,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.models.orm.knowledge import KnowledgeBase
-from backend.models.orm.user import User
+if TYPE_CHECKING:
+    from backend.models.orm.knowledge import KnowledgeBase
+    from backend.models.orm.user import User
 
 
 def _default_database_url() -> str:
@@ -47,6 +49,9 @@ async def _create_kb(
     name: str,
     description: str | None,
 ) -> tuple[KnowledgeBase, User]:
+    from backend.models.orm.knowledge import KnowledgeBase
+    from backend.models.orm.user import User
+
     engine = create_async_engine(database_url, pool_pre_ping=True)
     session_factory = async_sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     try:

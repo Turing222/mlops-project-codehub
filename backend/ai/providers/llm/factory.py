@@ -3,6 +3,7 @@ from backend.domain.interfaces import AbstractLLMService
 
 from .llm_service import LLMService
 from .mock_provider import MockLLMService
+from .pydantic_ai_service import PydanticAILLMService
 
 
 class LLMProviderFactory:
@@ -13,6 +14,8 @@ class LLMProviderFactory:
         normalized = (provider or settings.LLM_PROVIDER).strip().lower()
         if normalized in {"mock", "mock-llm", "fake"}:
             return MockLLMService()
-        if normalized in {"openai", "openai-compatible", "ollama"}:
+        if normalized in {"openai", "openai-compatible", "external-api"}:
             return LLMService()
+        if normalized in {"pydantic-ai", "pydantic_ai", "gemini", "google", "google-gla"}:
+            return PydanticAILLMService()
         raise ValueError(f"Unsupported LLM provider: {provider or settings.LLM_PROVIDER}")

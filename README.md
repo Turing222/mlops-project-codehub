@@ -36,12 +36,14 @@
 - Async Task: `TaskIQ + taskiq-redis`
 - LLM:
   - `mock`（默认）
-  - `openai-compatible`（兼容 OpenAI/Ollama/vLLM 等）
+  - `openai-compatible`（兼容外部 OpenAI-style API 网关/模型服务）
+  - `gemini` / `pydantic-ai`（通过 Pydantic AI 接入 Gemini）
 - Embedding:
-  - `openai-compatible`（当前启用）
+  - `google` / `gemini`（当前启用，Google GenAI embeddings）
+  - `openai-compatible`（保留为外部 OpenAI-style API 后备）
 - Parsing/Chunking:
   - 文本文件直接切分
-  - `docling` 处理 `pdf/docx/pptx`
+  - `pypdfium2` 轻量抽取 PDF 文本
 
 ## 3. 关键目录（backend）
 
@@ -91,10 +93,16 @@ uv sync
 - 推荐
   - `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` 或直接 `REDIS_URL`
   - `TASKIQ_REDIS_URL`（不填则自动回退到 Redis DB1）
-  - `LLM_PROVIDER`（默认 `mock`）
+  - `LLM_PROVIDER`（第一版推荐 `gemini`）
   - `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL_NAME`
-  - `RAG_EMBED_PROVIDER` / `RAG_EMBED_BASE_URL` / `RAG_EMBED_API_KEY`
+  - `GEMINI_API_KEY` / `GEMINI_MODEL_NAME`（`LLM_PROVIDER=gemini` 时使用）
+  - `RAG_EMBED_PROVIDER=google` / `RAG_EMBED_MODEL_NAME=gemini-embedding-001`
+  - `RAG_EMBED_API_KEY`（可不填，默认复用 `GEMINI_API_KEY` / `GOOGLE_API_KEY`）
+  - `RAG_EMBED_DIM=768`（保持与当前 pgvector 字段一致）
   - `KNOWLEDGE_STORAGE_ROOT`
+- 可选监控
+  - `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`
+  - `LANGFUSE_BASE_URL`（Cloud EU 默认 `https://cloud.langfuse.com`；US 区通常为 `https://us.cloud.langfuse.com`）
 
 说明：
 - 代码中路由版本前缀为 `API_V1_STR=/v1`。
@@ -190,7 +198,7 @@ uv run taskiq worker backend.core.task_broker:broker backend.tasks.llm_tasks bac
 
 支持的知识文件类型：
 - 文本类：`.txt/.md/.csv/.json/.yaml/.py/.sql/...`
-- 结构化文档：`.pdf/.docx/.pptx`（docling）
+- PDF：`.pdf`（轻量文本抽取；扫描件/OCR 暂不在后端处理）
 
 ## 8. 数据模型摘要
 
@@ -232,9 +240,14 @@ uv run pytest -m performance
 
 2. 聊天接口返回“服务暂时不可用”
 - 若使用 `openai-compatible`，检查 `LLM_BASE_URL/LLM_API_KEY/LLM_MODEL_NAME`。
+- 若使用 Gemini，设置 `LLM_PROVIDER=gemini`、`GEMINI_API_KEY`，可选设置 `GEMINI_MODEL_NAME`。
 - 若只想联调链路，先把 `LLM_PROVIDER=mock`。
 
 3. RAG 检索为空
 - 检查文件是否到 `ready` 状态。
-- 检查 embedding 配置和 `RAG_EMBED_DIM` 是否匹配库中向量维度（当前模型字段为 768 维）。
+- Google 第一版推荐 `RAG_EMBED_PROVIDER=google`、`RAG_EMBED_MODEL_NAME=gemini-embedding-001`，并设置 `GEMINI_API_KEY`。
+- 检查 `RAG_EMBED_DIM` 是否匹配库中向量维度（当前模型字段为 768 维）。
 
+4. Langfuse 看不到 Gemini 调用
+- 确认已设置 `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_BASE_URL`。
+- 当前 Gemini provider 已通过 Pydantic AI `instrument=True` 输出 OTel spans；非流式接口会挂在 `@observe()` 的 workflow trace 下，流式接口的 TaskIQ worker 会生成独立 generation trace。

@@ -10,13 +10,13 @@ dependencies = [
     "bcrypt==4.0.1",
     "fastapi~=0.128.0",
     "jinja2~=3.1.0",
-    "ollama==0.6.1",
     "openai==2.21.0",
     "openpyxl~=3.1.0",
     "orjson~=3.10.15",
     "pgvector~=0.4.2",
     "pwdlib[argon2]~=0.2.0",
     "pydantic-settings~=2.12.0",
+    "pydantic-ai-slim[google]>=1.30.0",
     "pydantic[email]~=2.12.0",
     "pyjwt[crypto]~=2.10.0",
     "opentelemetry-api~=1.40.0",
@@ -34,16 +34,18 @@ dependencies = [
     "taskiq~=0.12.0",
     "taskiq-redis~=1.2.0",
     "taskiq-fastapi~=0.4.0",
-    "docling~=2.76.0",
-    "torch @ https://download.pytorch.org/whl/cpu/torch-2.5.1%2Bcpu-cp312-cp312-linux_x86_64.whl",
-    "torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.20.1%2Bcpu-cp312-cp312-linux_x86_64.whl",
+    "pypdfium2~=5.3.0",
     "langfuse~=3.14.0",
 ]
 
 [tool.ruff]
 # 1. 设置行宽限制（PEP 8 建议 79，但现代开发通常用 88 或 100）
 line-length = 88
+exclude = [
+    "alembic/versions",  # 排除生成的迁移脚本
+]
 
+[tool.ruff.lint]
 # 2. 指定要检查的规则包
 # E/W: PEP 8
 # F: Pyflakes (基础错误)
@@ -54,9 +56,6 @@ select = ["E", "F", "B", "I", "UP"]
 
 # 3. 指定要忽略的规则
 ignore = ["E501"] # 比如忽略“行太长”的警告，因为有些 URL 确实很长
-exclude = [
-    "alembic/versions",  # 排除生成的迁移脚本
-]
 
 [tool.ruff.format]
 # 格式化器（类似 Black）的配置

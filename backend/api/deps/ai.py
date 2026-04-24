@@ -23,7 +23,6 @@ def get_rag_embedder() -> AbstractRAGEmbedder:
     return RAGEmbedderFactory.create(
         provider=settings.RAG_EMBED_PROVIDER,
         model_name=settings.RAG_EMBED_MODEL_NAME,
-        device=settings.RAG_EMBED_DEVICE,
         base_url=settings.RAG_EMBED_BASE_URL,
         api_key=settings.RAG_EMBED_API_KEY,
         dimensions=settings.RAG_EMBED_DIM,

@@ -2,9 +2,8 @@ import asyncio
 import uuid
 from pathlib import Path
 
-from docling_core.types.doc import DoclingDocument
+import pypdfium2 as pdfium
 
-from backend.core.docling_models import DoclingModelFactory
 from backend.core.exceptions import (
     AppError,
     ResourceNotFound,
@@ -30,7 +29,7 @@ TEXT_FILE_SUFFIXES = {
     ".sql",
 }
 
-DOCLING_STRUCTURED_SUFFIXES = {".pdf", ".docx", ".pptx"}
+PDF_FILE_SUFFIXES = {".pdf"}
 
 
 class KnowledgeRAGWorkflow:
@@ -106,47 +105,41 @@ class KnowledgeRAGWorkflow:
     def _extract_chunks(self, file_path: Path) -> list[str]:
         suffix = file_path.suffix.lower()
         if suffix in TEXT_FILE_SUFFIXES:
-            text = file_path.read_text(encoding="utf-8", errors="ignore")
-            return self.chunking_service.split_text(text)
-        if suffix in DOCLING_STRUCTURED_SUFFIXES:
-            return self._extract_docling_chunks(file_path)
+            return self._extract_text_chunks(file_path)
+        if suffix in PDF_FILE_SUFFIXES:
+            return self._extract_pdf_chunks(file_path)
 
         raise ValidationError(
-            f"暂不支持的文件类型: {suffix or '(无扩展名)'}，建议使用 txt/md/pdf/docx"
+            f"暂不支持的文件类型: {suffix or '(无扩展名)'}，建议使用 txt/md/pdf"
         )
 
-    def _extract_docling_chunks(self, file_path: Path) -> list[str]:
+    def _extract_text_chunks(self, file_path: Path) -> list[str]:
+        text = file_path.read_text(encoding="utf-8", errors="ignore")
+        return self.chunking_service.split_text(text)
+
+    def _extract_pdf_chunks(self, file_path: Path) -> list[str]:
         try:
-            converter = DoclingModelFactory.get_converter()
-            chunker = DoclingModelFactory.get_hierarchical_chunker()
-
-            result = converter.convert(str(file_path))
-            chunks: list[str] = []
-
-            for chunk in chunker.chunk(dl_doc=result.document):
-                text = chunker.contextualize(chunk).strip()
-                if not text:
-                    continue
-
-                # 对超长结构块做二次切分，避免向量块过大
-                if len(text) > self.chunking_service.chunk_size:
-                    chunks.extend(self.chunking_service.split_text(text))
-                else:
-                    chunks.append(text)
-
-            if chunks:
-                return chunks
-
-            fallback_text = self._export_docling_document(result.document)
-            return self.chunking_service.split_text(fallback_text)
+            text = self._extract_pdf_text(file_path)
+            return self.chunking_service.split_text(text)
         except AppError:
             raise
         except Exception as exc:
             raise ValidationError(f"文件解析失败: {file_path.name}") from exc
 
     @staticmethod
-    def _export_docling_document(document: DoclingDocument) -> str:
-        markdown = document.export_to_markdown()
-        if markdown:
-            return markdown
-        return document.export_to_text()
+    def _extract_pdf_text(file_path: Path) -> str:
+        page_texts: list[str] = []
+        with pdfium.PdfDocument(file_path) as document:
+            for page_index in range(len(document)):
+                page = document[page_index]
+                text_page = None
+                try:
+                    text_page = page.get_textpage()
+                    text = text_page.get_text_range().strip()
+                    if text:
+                        page_texts.append(text)
+                finally:
+                    if text_page is not None:
+                        text_page.close()
+                    page.close()
+        return "\n\n".join(page_texts)

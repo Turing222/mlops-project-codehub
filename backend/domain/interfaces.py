@@ -95,3 +95,7 @@ class AbstractRAGEmbedder(ABC):
     def encode_query(self, text: str) -> list[float]:
         """将查询文本编码为向量"""
         ...
+
+    def encode_document(self, text: str) -> list[float]:
+        """将文档片段编码为向量；默认复用查询编码。"""
+        return self.encode_query(text)

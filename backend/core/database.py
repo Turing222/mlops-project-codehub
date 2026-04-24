@@ -1,15 +1,95 @@
 import logging
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from sqlalchemy import text
+from opentelemetry import trace
+from sqlalchemy import event, text
+from sqlalchemy.engine import ExceptionContext
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from backend.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+_TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
+_DB_TRACER = trace.get_tracer(__name__)
+_INSTRUMENTED_ENGINE_IDS: set[int] = set()
+
+
+def _env_flag(name: str, default: str) -> bool:
+    return os.getenv(name, default).strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def _sql_operation_name(statement: str) -> str:
+    if not statement:
+        return "SQL"
+    return statement.lstrip().split(None, 1)[0].upper()
+
+
+def _instrument_engine(engine: AsyncEngine) -> None:
+    if not _env_flag("ENABLE_OTEL_TRACES", "false"):
+        return
+
+    sync_engine = engine.sync_engine
+    sync_engine_id = id(sync_engine)
+    if sync_engine_id in _INSTRUMENTED_ENGINE_IDS:
+        return
+    _INSTRUMENTED_ENGINE_IDS.add(sync_engine_id)
+
+    db_system = sync_engine.dialect.name
+    db_name = engine.url.database or ""
+    db_host = engine.url.host or ""
+    db_port = engine.url.port
+
+    @event.listens_for(sync_engine, "before_cursor_execute")
+    def before_cursor_execute(
+        conn, cursor, statement, parameters, context, executemany
+    ) -> None:
+        operation = _sql_operation_name(statement)
+        span = _DB_TRACER.start_span(
+            name=f"db.{operation.lower()}",
+            kind=trace.SpanKind.CLIENT,
+        )
+        span.set_attribute("db.system", db_system)
+        span.set_attribute("db.operation", operation)
+        if db_name:
+            span.set_attribute("db.name", db_name)
+        if db_host:
+            span.set_attribute("server.address", db_host)
+        if db_port is not None:
+            span.set_attribute("server.port", db_port)
+        if statement:
+            span.set_attribute("db.statement", statement.strip())
+        context._otel_db_span = span
+
+    @event.listens_for(sync_engine, "after_cursor_execute")
+    def after_cursor_execute(
+        conn, cursor, statement, parameters, context, executemany
+    ) -> None:
+        span = getattr(context, "_otel_db_span", None)
+        if span is None:
+            return
+        span.end()
+        delattr(context, "_otel_db_span")
+
+    @event.listens_for(sync_engine, "handle_error")
+    def handle_error(exception_context: ExceptionContext) -> None:
+        context = exception_context.execution_context
+        if context is None:
+            return
+
+        span = getattr(context, "_otel_db_span", None)
+        if span is None:
+            return
+
+        span.record_exception(exception_context.original_exception)
+        span.set_status(trace.Status(trace.StatusCode.ERROR))
+        span.end()
+        delattr(context, "_otel_db_span")
+
+    logger.info("OpenTelemetry 数据库 tracing 已启用: %s", settings.database_url_safe)
 
 
 # 1. 配置化 Engine 创建函数 (不再直接在顶层实例化)
@@ -22,6 +102,7 @@ def create_db_assets() -> tuple[AsyncEngine, async_sessionmaker]:
         max_overflow=settings.POSTGRES_MAX_OVERFLOW,
         pool_pre_ping=True,
     )
+    _instrument_engine(engine)
 
     session_factory = async_sessionmaker(
         bind=engine, autoflush=False, expire_on_commit=False

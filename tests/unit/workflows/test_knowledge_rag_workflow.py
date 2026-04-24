@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -39,80 +38,67 @@ def test_extract_chunks_uses_plain_text_channel(tmp_path):
     assert chunking.split_calls == ["plain content"]
 
 
-def test_extract_chunks_uses_docling_hierarchical_channel(monkeypatch, tmp_path):
+def test_extract_chunks_uses_lightweight_pdf_channel(monkeypatch, tmp_path):
     chunking = FakeChunkingService(chunk_size=10)
     workflow = make_workflow(chunking)
     file_path = tmp_path / "demo.pdf"
     file_path.write_text("fake", encoding="utf-8")
 
-    class FakeConverter:
-        def convert(self, _: str):
-            return SimpleNamespace(document=object())
+    class FakeTextPage:
+        def __init__(self, text: str):
+            self.text = text
 
-    class FakeChunker:
-        def chunk(self, *, dl_doc: object):
-            _ = dl_doc
-            return iter(["0123456789ABC", "short"])
+        def get_text_range(self) -> str:
+            return self.text
 
-        def contextualize(self, chunk: str) -> str:
-            return chunk
+        def close(self) -> None:
+            pass
+
+    class FakePage:
+        def __init__(self, text: str):
+            self.text = text
+
+        def get_textpage(self) -> FakeTextPage:
+            return FakeTextPage(self.text)
+
+        def close(self) -> None:
+            pass
+
+    class FakePdfDocument:
+        def __init__(self, _: object):
+            self.pages = [FakePage("0123456789ABC"), FakePage("short")]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def __len__(self) -> int:
+            return len(self.pages)
+
+        def __getitem__(self, index: int) -> FakePage:
+            return self.pages[index]
 
     monkeypatch.setattr(
-        "backend.workflow.knowledge_rag_workflow.DoclingModelFactory.get_converter",
-        lambda: FakeConverter(),
-    )
-    monkeypatch.setattr(
-        (
-            "backend.workflow."
-            "knowledge_rag_workflow.DoclingModelFactory.get_hierarchical_chunker"
-        ),
-        lambda: FakeChunker(),
+        "backend.workflow.knowledge_rag_workflow.pdfium.PdfDocument",
+        FakePdfDocument,
     )
 
     chunks = workflow._extract_chunks(file_path)
 
-    assert chunks == ["0123456789", "ABC", "short"]
-    assert chunking.split_calls == ["0123456789ABC"]
+    assert chunks == ["0123456789", "ABC\n\nshort"]
+    assert chunking.split_calls == ["0123456789ABC\n\nshort"]
 
 
-def test_extract_chunks_docling_fallbacks_to_exported_text(monkeypatch, tmp_path):
-    chunking = FakeChunkingService(chunk_size=20)
+def test_extract_chunks_rejects_docx_without_structured_parser(tmp_path):
+    chunking = FakeChunkingService()
     workflow = make_workflow(chunking)
     file_path = tmp_path / "demo.docx"
     file_path.write_text("fake", encoding="utf-8")
 
-    class FakeDocument:
-        def export_to_markdown(self) -> str:
-            return "fallback markdown"
-
-    class FakeConverter:
-        def convert(self, _: str):
-            return SimpleNamespace(document=FakeDocument())
-
-    class FakeChunker:
-        def chunk(self, *, dl_doc: object):
-            _ = dl_doc
-            return iter([])
-
-        def contextualize(self, chunk: str) -> str:
-            return chunk
-
-    monkeypatch.setattr(
-        "backend.workflow.knowledge_rag_workflow.DoclingModelFactory.get_converter",
-        lambda: FakeConverter(),
-    )
-    monkeypatch.setattr(
-        (
-            "backend.workflow."
-            "knowledge_rag_workflow.DoclingModelFactory.get_hierarchical_chunker"
-        ),
-        lambda: FakeChunker(),
-    )
-
-    chunks = workflow._extract_chunks(file_path)
-
-    assert chunks == ["fallback markdown"]
-    assert chunking.split_calls == ["fallback markdown"]
+    with pytest.raises(ValidationError):
+        workflow._extract_chunks(file_path)
 
 
 def test_extract_chunks_rejects_unsupported_file_suffix(tmp_path):

@@ -1,0 +1,172 @@
+import logging
+import time
+from collections.abc import AsyncGenerator
+
+from backend.ai.core.token_counter import count_tokens
+from backend.core.config import settings
+from backend.core.exceptions import ServiceError
+from backend.domain.interfaces import AbstractLLMService
+from backend.models.schemas.chat_schema import (
+    ConversationMessage,
+    LLMQueryDTO,
+    LLMResultDTO,
+)
+
+logger = logging.getLogger(__name__)
+
+_ROLE_LABELS = {
+    "user": "用户",
+    "assistant": "助手",
+}
+
+
+class PydanticAILLMService(AbstractLLMService):
+    """LLM service backed by Pydantic AI's Google/Gemini provider."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        model_name: str | None = None,
+    ):
+        self.api_key = api_key or settings.GEMINI_API_KEY or settings.GOOGLE_API_KEY
+        self.model_name = model_name or settings.GEMINI_MODEL_NAME
+
+    async def stream_response(
+        self,
+        query: LLMQueryDTO,
+    ) -> AsyncGenerator[str, None]:
+        logger.info("Pydantic AI Gemini 开始流式请求: session_id=%s", query.session_id)
+        try:
+            instructions, prompt = self._build_agent_input(query)
+            agent = self._create_agent(instructions)
+
+            async with agent.run_stream(prompt) as result:
+                async for delta in result.stream_text(delta=True):
+                    if delta:
+                        yield delta
+
+            logger.info("Pydantic AI Gemini 流式请求完成: session_id=%s", query.session_id)
+        except ServiceError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "Pydantic AI Gemini 流式请求失败: session_id=%s, error=%s",
+                query.session_id,
+                str(exc),
+                exc_info=True,
+            )
+            raise ServiceError(
+                "Gemini 服务调用失败",
+                details={"session_id": str(query.session_id), "error": str(exc)},
+            ) from exc
+
+    async def generate_response(
+        self,
+        query: LLMQueryDTO,
+    ) -> LLMResultDTO:
+        logger.info("Pydantic AI Gemini 开始非流式请求: session_id=%s", query.session_id)
+        start = time.perf_counter()
+
+        try:
+            instructions, prompt = self._build_agent_input(query)
+            agent = self._create_agent(instructions)
+            result = await agent.run(prompt)
+        except ServiceError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "Pydantic AI Gemini 非流式请求失败: session_id=%s, error=%s",
+                query.session_id,
+                str(exc),
+                exc_info=True,
+            )
+            raise ServiceError(
+                "Gemini 服务调用失败",
+                details={"session_id": str(query.session_id), "error": str(exc)},
+            ) from exc
+
+        content = str(getattr(result, "output", ""))
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        completion_tokens = count_tokens(content, self.model_name)
+
+        return LLMResultDTO(
+            content=content,
+            latency_ms=latency_ms,
+            success=True,
+            error_message=None,
+            prompt_tokens=None,
+            completion_tokens=completion_tokens,
+        )
+
+    def _create_agent(self, instructions: str | None):
+        if not self.api_key:
+            raise ServiceError(
+                "Gemini API Key 未配置",
+                details={"env": "GEMINI_API_KEY 或 GOOGLE_API_KEY"},
+            )
+
+        try:
+            from pydantic_ai import Agent
+            from pydantic_ai.models.google import GoogleModel
+            from pydantic_ai.providers.google import GoogleProvider
+        except ImportError as exc:
+            raise ServiceError(
+                "Pydantic AI Gemini provider 未安装",
+                details={"install": 'uv add "pydantic-ai-slim[google]"'},
+            ) from exc
+
+        provider = GoogleProvider(api_key=self.api_key)
+        model = GoogleModel(self.model_name, provider=provider)
+        return Agent(
+            model,
+            instructions=instructions,
+            instrument=True,
+            name="gemini_llm",
+        )
+
+    @classmethod
+    def _build_agent_input(cls, query: LLMQueryDTO) -> tuple[str | None, str]:
+        messages = query.conversation_history or [
+            {"role": "user", "content": query.query_text}
+        ]
+        system_parts = [
+            message["content"].strip()
+            for message in messages
+            if message["role"] == "system" and message["content"].strip()
+        ]
+        dialogue = [message for message in messages if message["role"] != "system"]
+
+        if dialogue and dialogue[-1]["role"] == "user":
+            current_query = dialogue[-1]["content"]
+            prior_messages = dialogue[:-1]
+        else:
+            current_query = query.query_text
+            prior_messages = dialogue
+
+        prompt = cls._build_prompt(current_query=current_query, prior_messages=prior_messages)
+        instructions = "\n\n".join(system_parts) if system_parts else None
+        return instructions, prompt
+
+    @classmethod
+    def _build_prompt(
+        cls,
+        *,
+        current_query: str,
+        prior_messages: list[ConversationMessage],
+    ) -> str:
+        if not prior_messages:
+            return current_query
+
+        history_lines: list[str] = []
+        for message in prior_messages:
+            role_label = _ROLE_LABELS.get(message["role"], message["role"])
+            content = message["content"].strip()
+            if content:
+                history_lines.append(f"{role_label}: {content}")
+
+        if not history_lines:
+            return current_query
+
+        history = "\n".join(history_lines)
+        return f"以下是对话历史（按时间顺序）：\n{history}\n\n当前用户问题：\n{current_query}"

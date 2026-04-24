@@ -46,6 +46,20 @@ services:
       timeout: 3s
       retries: 5
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.57.0
+    logging: *default-logging
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
   db_migrator:
     image: ai-tutor-backend:v1
     env_file:
@@ -102,6 +116,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      jaeger:
+        condition: service_started
       db_migrator:
         condition: service_completed_successfully
       knowledge_storage_init:
