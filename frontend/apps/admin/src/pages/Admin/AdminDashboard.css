@@ -1,0 +1,88 @@
+.admin-layout {
+    min-height: 100vh;
+    background: #f5f7fa !important;
+}
+
+/* --- Header --- */
+
+.admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, #1a1a2e, #16213e) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 0 24px !important;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.admin-header .header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.admin-header .header-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.admin-header .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.admin-header .header-user {
+    font-size: 13px;
+    color: #94a3b8;
+}
+
+/* --- Content --- */
+
+.admin-content {
+    padding: 24px;
+}
+
+.admin-content .content-card {
+    background: #fff;
+    border: 1px solid #eee;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+.admin-content .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.admin-content .card-header h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin: 0;
+}
+
+/* --- Table --- */
+
+.admin-layout .ant-table-thead>tr>th {
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #666;
+}
+
+.admin-layout .ant-table-tbody>tr:hover>td {
+    background: rgba(22, 119, 255, 0.04) !important;
+}

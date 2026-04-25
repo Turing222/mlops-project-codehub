@@ -16,7 +16,6 @@ venv/
 
 # 测试数据
 data/
-src/
 
 #mlflow的本地数据存储
 mlruns/
