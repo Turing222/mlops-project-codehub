@@ -4,6 +4,11 @@ import uuid
 from fastapi import UploadFile
 
 from backend.core.exceptions import AppError, DependencyUnavailable, ServiceError
+from backend.core.trace_utils import (
+    inject_trace_context,
+    set_span_attributes,
+    trace_span,
+)
 from backend.models.orm.knowledge import File, FileStatus
 from backend.models.schemas.knowledge_schema import KnowledgeUploadResponse
 from backend.services.knowledge_service import KnowledgeService
@@ -31,11 +36,27 @@ class KnowledgeUploadWorkflow:
         user_id: uuid.UUID,
         upload_file: UploadFile,
     ) -> KnowledgeUploadResponse:
-        async with self.knowledge_service.uow:
-            file_obj = await self.knowledge_service.save_upload_file(
-                kb_id=kb_id,
-                user_id=user_id,
-                upload_file=upload_file,
+        with trace_span(
+            "knowledge.upload.save_file",
+            {
+                "rag.kb_id": kb_id,
+                "user.id": user_id,
+                "file.name": getattr(upload_file, "filename", None),
+                "knowledge.upload.streaming": False,
+            },
+        ) as span:
+            async with self.knowledge_service.uow:
+                file_obj = await self.knowledge_service.save_upload_file(
+                    kb_id=kb_id,
+                    user_id=user_id,
+                    upload_file=upload_file,
+                )
+            set_span_attributes(
+                span,
+                {
+                    "rag.file_id": file_obj.id,
+                    "file.size": getattr(file_obj, "file_size", None),
+                },
             )
         return await self._create_and_dispatch_ingestion(
             kb_id=kb_id,
@@ -50,11 +71,27 @@ class KnowledgeUploadWorkflow:
         user_id: uuid.UUID,
         upload_file: UploadFile,
     ) -> KnowledgeUploadResponse:
-        async with self.knowledge_service.uow:
-            file_obj = await self.knowledge_service.save_upload_file_streaming(
-                kb_id=kb_id,
-                user_id=user_id,
-                upload_file=upload_file,
+        with trace_span(
+            "knowledge.upload.save_file",
+            {
+                "rag.kb_id": kb_id,
+                "user.id": user_id,
+                "file.name": getattr(upload_file, "filename", None),
+                "knowledge.upload.streaming": True,
+            },
+        ) as span:
+            async with self.knowledge_service.uow:
+                file_obj = await self.knowledge_service.save_upload_file_streaming(
+                    kb_id=kb_id,
+                    user_id=user_id,
+                    upload_file=upload_file,
+                )
+            set_span_attributes(
+                span,
+                {
+                    "rag.file_id": file_obj.id,
+                    "file.size": getattr(file_obj, "file_size", None),
+                },
             )
         return await self._create_and_dispatch_ingestion(
             kb_id=kb_id,
@@ -70,14 +107,24 @@ class KnowledgeUploadWorkflow:
         file_obj: File,
     ) -> KnowledgeUploadResponse:
         try:
-            async with self.task_service.uow:
-                task = await self.task_service.create_kb_ingestion_task(
-                    kb_id=kb_id,
-                    file_id=file_obj.id,
-                    file_path=file_obj.file_path,
-                    filename=file_obj.filename,
-                    user_id=user_id,
-                )
+            with trace_span(
+                "knowledge.upload.create_task",
+                {
+                    "rag.kb_id": kb_id,
+                    "rag.file_id": file_obj.id,
+                    "user.id": user_id,
+                    "file.name": file_obj.filename,
+                },
+            ) as span:
+                async with self.task_service.uow:
+                    task = await self.task_service.create_kb_ingestion_task(
+                        kb_id=kb_id,
+                        file_id=file_obj.id,
+                        file_path=file_obj.file_path,
+                        filename=file_obj.filename,
+                        user_id=user_id,
+                    )
+                set_span_attributes(span, {"task.id": task.id, "task.status": task.status})
         except AppError as exc:
             await self._handle_task_creation_failure(
                 kb_id=kb_id,
@@ -94,7 +141,19 @@ class KnowledgeUploadWorkflow:
             raise ServiceError("创建知识处理任务失败，请稍后重试") from exc
 
         try:
-            await ingest_knowledge_file_task.kiq(str(file_obj.id), str(task.id))
+            with trace_span(
+                "knowledge.upload.dispatch_task",
+                {
+                    "rag.kb_id": kb_id,
+                    "rag.file_id": file_obj.id,
+                    "task.id": task.id,
+                },
+            ):
+                await ingest_knowledge_file_task.kiq(
+                    str(file_obj.id),
+                    str(task.id),
+                    inject_trace_context(),
+                )
         except AppError as exc:
             await self._handle_dispatch_failure(
                 kb_id=kb_id,

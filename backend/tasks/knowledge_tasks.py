@@ -8,6 +8,7 @@ from backend.core.config import settings
 from backend.core.database import create_db_assets
 from backend.core.exceptions import AppError, ServiceError, ValidationError
 from backend.core.task_broker import broker
+from backend.core.trace_utils import set_span_attributes, trace_span, use_trace_context
 from backend.services.chunking_service import ChunkingService
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.task_service import TaskService
@@ -59,40 +60,63 @@ async def _safe_mark_failed(
 
 
 @broker.task(task_name="ingest_knowledge_file")
-async def ingest_knowledge_file_task(file_id: str, task_id: str | None = None):
+async def ingest_knowledge_file_task(
+    file_id: str,
+    task_id: str | None = None,
+    trace_context: dict[str, str] | None = None,
+):
+    with use_trace_context(trace_context):
+        await _ingest_knowledge_file_task(file_id=file_id, task_id=task_id)
+
+
+async def _ingest_knowledge_file_task(file_id: str, task_id: str | None = None):
     logger.info("TaskIQ 开始处理知识库文件: file_id=%s task_id=%s", file_id, task_id)
 
-    uow = SQLAlchemyUnitOfWork(_get_session_factory())
-    task_service = TaskService(uow)
-    chunking_service = ChunkingService(
-        chunk_size=settings.KNOWLEDGE_CHUNK_SIZE,
-        chunk_overlap=settings.KNOWLEDGE_CHUNK_OVERLAP,
-    )
-    vector_index_service = VectorIndexService(uow=uow, embedder=_get_embedder())
-    knowledge_service = KnowledgeService(
-        uow=uow,
-        storage_root=settings.KNOWLEDGE_STORAGE_ROOT,
-        max_upload_size_mb=settings.KNOWLEDGE_MAX_UPLOAD_SIZE_MB,
-    )
-    workflow = KnowledgeRAGWorkflow(
-        knowledge_service=knowledge_service,
-        chunking_service=chunking_service,
-        vector_index_service=vector_index_service,
-    )
+    with trace_span(
+        "taskiq.knowledge.ingest.setup",
+        {
+            "rag.file_id": file_id,
+            "task.id": task_id,
+            "rag.embed.provider": settings.RAG_EMBED_PROVIDER,
+            "rag.embed.model": settings.RAG_EMBED_MODEL_NAME,
+        },
+    ):
+        uow = SQLAlchemyUnitOfWork(_get_session_factory())
+        task_service = TaskService(uow)
+        chunking_service = ChunkingService(
+            chunk_size=settings.KNOWLEDGE_CHUNK_SIZE,
+            chunk_overlap=settings.KNOWLEDGE_CHUNK_OVERLAP,
+        )
+        vector_index_service = VectorIndexService(uow=uow, embedder=_get_embedder())
+        knowledge_service = KnowledgeService(
+            uow=uow,
+            storage_root=settings.KNOWLEDGE_STORAGE_ROOT,
+            max_upload_size_mb=settings.KNOWLEDGE_MAX_UPLOAD_SIZE_MB,
+        )
+        workflow = KnowledgeRAGWorkflow(
+            knowledge_service=knowledge_service,
+            chunking_service=chunking_service,
+            vector_index_service=vector_index_service,
+        )
 
     task_uuid: uuid.UUID | None = None
     try:
         file_uuid = uuid.UUID(file_id)
         task_uuid = uuid.UUID(task_id) if task_id else None
 
-        if task_uuid:
-            async with uow:
-                await task_service.mark_processing(task_id=task_uuid, progress=5)
+        with trace_span(
+            "taskiq.knowledge.ingest.run",
+            {"rag.file_id": file_uuid, "task.id": task_uuid},
+        ) as span:
+            if task_uuid:
+                async with uow:
+                    await task_service.mark_processing(task_id=task_uuid, progress=5)
 
-        await workflow.ingest_file(file_id=file_uuid)
-        if task_uuid:
-            async with uow:
-                await task_service.mark_completed(task_id=task_uuid, progress=100)
+            await workflow.ingest_file(file_id=file_uuid)
+            if task_uuid:
+                async with uow:
+                    await task_service.mark_completed(task_id=task_uuid, progress=100)
+            set_span_attributes(span, {"task.status": "completed"})
     except ValueError as exc:
         logger.warning(
             "TaskIQ 知识库任务参数非法: file_id=%s task_id=%s",

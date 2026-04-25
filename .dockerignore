@@ -40,6 +40,7 @@ data/
 deploy/
 .env
 .env.*
+secrets/
 Dockerfile
 .dockerignore
 

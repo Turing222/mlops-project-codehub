@@ -3,11 +3,63 @@ x-logging: &default-logging
   options:
     max-size: "10m"
     max-file: "3"
+
+x-app-secrets: &app-secrets
+  - SECRET_KEY
+  - POSTGRES_PASSWORD
+  - REDIS_PASSWORD
+  - OPENAI_API_KEY
+  - GEMINI_API_KEY
+  - GOOGLE_API_KEY
+  - DEEPSEEK_API_KEY
+  - LLM_API_KEY
+  - RAG_EMBED_API_KEY
+  - LANGFUSE_SECRET_KEY
+
+x-secret-file-env: &secret-file-env
+  SECRET_KEY_FILE: /run/secrets/SECRET_KEY
+  POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
+  REDIS_PASSWORD_FILE: /run/secrets/REDIS_PASSWORD
+  OPENAI_API_KEY_FILE: /run/secrets/OPENAI_API_KEY
+  GEMINI_API_KEY_FILE: /run/secrets/GEMINI_API_KEY
+  GOOGLE_API_KEY_FILE: /run/secrets/GOOGLE_API_KEY
+  DEEPSEEK_API_KEY_FILE: /run/secrets/DEEPSEEK_API_KEY
+  LLM_API_KEY_FILE: /run/secrets/LLM_API_KEY
+  RAG_EMBED_API_KEY_FILE: /run/secrets/RAG_EMBED_API_KEY
+  LANGFUSE_SECRET_KEY_FILE: /run/secrets/LANGFUSE_SECRET_KEY
+
+x-app-environment: &app-environment
+  CURRENT_UID: ${CURRENT_UID:-1000}
+  CURRENT_GID: ${CURRENT_GID:-1000}
+  POSTGRES_USER: ${POSTGRES_USER:-admin}
+  POSTGRES_DB: ${POSTGRES_DB:-postgres}
+  POSTGRES_SERVER: ${POSTGRES_SERVER:-postgres}
+  REDIS_HOST: ${REDIS_HOST:-redis}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+  GEMINI_MODEL_NAME: ${GEMINI_MODEL_NAME:-gemini-2.5-flash}
+  DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+  DEEPSEEK_MODEL_NAME: ${DEEPSEEK_MODEL_NAME:-deepseek-chat}
+  RAG_EMBED_PROVIDER: ${RAG_EMBED_PROVIDER:-google}
+  RAG_EMBED_MODEL_NAME: ${RAG_EMBED_MODEL_NAME:-gemini-embedding-001}
+  RAG_EMBED_DIM: ${RAG_EMBED_DIM:-768}
+  KNOWLEDGE_STORAGE_ROOT: ${KNOWLEDGE_STORAGE_ROOT:-/data/knowledge_files}
+  ENABLE_OTEL_METRICS: ${ENABLE_OTEL_METRICS:-false}
+  ENABLE_OTEL_TRACES: ${ENABLE_OTEL_TRACES:-false}
+  OTEL_TRACES_ENDPOINT: ${OTEL_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+  PROMETHEUS_OTLP_ENDPOINT: ${PROMETHEUS_OTLP_ENDPOINT:-http://otel-collector:4318/v1/metrics}
+  LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+  LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://cloud.langfuse.com}
+
 services:
   postgres:
     image: pgvector/pgvector:0.8.1-pg17-bookworm
-    env_file:
-      - "${SMOKE_ENV_FILE:-.env.smoke}"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-admin}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/POSTGRES_PASSWORD
+    secrets:
+      - POSTGRES_PASSWORD
     # 1. 在服务内挂载卷
     volumes:
       - pg_data_v17_test:/var/lib/postgresql/data
@@ -22,7 +74,7 @@ services:
     command: >
       postgres -c shared_buffers=256MB   -c work_mem=32MB   -c maintenance_work_mem=128MB  -c effective_cache_size=768MB -c max_connections=200 -c logging_collector=on
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      test: [ "CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -31,39 +83,28 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    env_file:
-      - "${SMOKE_ENV_FILE:-.env.smoke}"
+    secrets:
+      - REDIS_PASSWORD
     deploy:
       resources:
         limits:
           memory: 512M
     logging: *default-logging
     command: >
-      redis-server --maxmemory 384mb --maxmemory-policy allkeys-lru --requirepass "${REDIS_PASSWORD}"
+      sh -c 'umask 077 &&
+      printf "maxmemory 384mb\nmaxmemory-policy allkeys-lru\nrequirepass %s\n" "$$(cat /run/secrets/REDIS_PASSWORD)" > /tmp/redis.conf &&
+      exec redis-server /tmp/redis.conf'
     healthcheck:
-      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      test: [ "CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/REDIS_PASSWORD)\" ping" ]
       interval: 10s
       timeout: 3s
       retries: 5
 
-  jaeger:
-    image: jaegertracing/all-in-one:1.57.0
-    logging: *default-logging
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-    ports:
-      - "16686:16686"
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 64M
-
   db_migrator:
     image: ai-tutor-backend:v1
-    env_file:
-      - "${SMOKE_ENV_FILE:-.env.smoke}"
+    secrets: *app-secrets
+    environment:
+      <<: [*app-environment, *secret-file-env]
     volumes:
       - ./backend:/app/backend
       - ./alembic:/app/alembic
@@ -87,22 +128,21 @@ services:
       - knowledge_files_volume_test:/data/knowledge_files
     command: >
       sh -c "mkdir -p /data/knowledge_files &&
-      chown -R ${CURRENT_UID}:${CURRENT_GID} /data/knowledge_files"
+      chown -R ${CURRENT_UID:-1000}:${CURRENT_GID:-1000} /data/knowledge_files"
     restart: "no"
 
   api:
     image: ai-tutor-backend:v1
     logging: *default-logging
-    user: "${CURRENT_UID}:${CURRENT_GID}"
+    user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     volumes:
       - ./backend:/app/backend
       - knowledge_files_volume_test:/data/knowledge_files
-    env_file:
-      - "${SMOKE_ENV_FILE:-.env.smoke}"
+    secrets: *app-secrets
     environment:
-      - PYTHONMALLOC=default
-      - WEB_CONCURRENCY=1
-      - KNOWLEDGE_STORAGE_ROOT=/data/knowledge_files
+      <<: [*app-environment, *secret-file-env]
+      PYTHONMALLOC: default
+      WEB_CONCURRENCY: "1"
     restart: unless-stopped
     deploy:
       resources:
@@ -116,8 +156,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      jaeger:
-        condition: service_started
       db_migrator:
         condition: service_completed_successfully
       knowledge_storage_init:
@@ -134,17 +172,15 @@ services:
 
   task_worker:
     image: ai-tutor-backend:v1
-    user: "${CURRENT_UID}:${CURRENT_GID}"
+    user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     logging: *default-logging
     volumes:
       - ./backend:/app/backend
       - knowledge_files_volume_test:/data/knowledge_files
-    env_file:
-      - "${SMOKE_ENV_FILE:-.env.smoke}"
+    secrets: *app-secrets
     environment:
-      - TASKIQ_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
-      - TASKIQ_HEALTH_MIN_PROCESSES=2
-      - KNOWLEDGE_STORAGE_ROOT=/data/knowledge_files
+      <<: [*app-environment, *secret-file-env]
+      TASKIQ_HEALTH_MIN_PROCESSES: "2"
     healthcheck:
       test: [ "CMD-SHELL", "python -m backend.core.task_worker_healthcheck || exit 1" ]
       interval: 30s
@@ -169,8 +205,222 @@ services:
         reservations:
           memory: 128M
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    profiles: ["observability"]
+    logging: *default-logging
+    volumes:
+      - ./deploy/monitoring/otel-collector-db.yml:/etc/otelcol-contrib/config.yml:ro
+    command: ["--config=/etc/otelcol-contrib/config.yml"]
+    depends_on:
+      tempo:
+        condition: service_started
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  tempo:
+    image: grafana/tempo:2.7.1
+    profiles: ["observability"]
+    logging: *default-logging
+    command: ["-config.file=/etc/tempo.yml"]
+    volumes:
+      - ./deploy/monitoring/tempo-db.yml:/etc/tempo.yml:ro
+      - tempo_data_db:/tmp/tempo
+    ports:
+      - "3200:3200"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    profiles: ["observability"]
+    logging: *default-logging
+    volumes:
+      - ./deploy/monitoring/prometheus-db.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_data_db:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+      - "--storage.tsdb.path=/prometheus"
+    depends_on:
+      otel-collector:
+        condition: service_started
+      postgres_exporter:
+        condition: service_started
+      redis_exporter:
+        condition: service_started
+    ports:
+      - "9090:9090"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  grafana:
+    image: grafana/grafana-oss:11.5.8-ubuntu
+    profiles: ["observability"]
+    logging: *default-logging
+    environment:
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./deploy/monitoring/grafana_datasources_db.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./deploy/monitoring/grafana_dashboards_provisioning.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./deploy/monitoring/dashboards:/etc/grafana/provisioning/dashboards/mlops:ro
+      - grafana_data_db:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  loki:
+    image: grafana/loki:3.4.0
+    profiles: ["observability"]
+    logging: *default-logging
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./deploy/monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data_db:/loki
+    ports:
+      - "3100:3100"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  vector:
+    image: timberio/vector:0.50.0-debian
+    profiles: ["observability"]
+    volumes:
+      - ./deploy/logging/vector-db.yaml:/etc/vector/vector.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      loki:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    profiles: ["observability"]
+    logging: *default-logging
+    secrets:
+      - POSTGRES_PASSWORD
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-admin}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+    command: >
+      sh -c 'export DATA_SOURCE_NAME="postgresql://$${POSTGRES_USER}:$$(cat /run/secrets/POSTGRES_PASSWORD)@postgres:5432/$${POSTGRES_DB}?sslmode=disable";
+      exec /bin/postgres_exporter'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  redis_exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    profiles: ["observability"]
+    logging: *default-logging
+    secrets:
+      - REDIS_PASSWORD
+    environment:
+      - REDIS_ADDR=redis:6379
+    command: >
+      sh -c 'export REDIS_PASSWORD="$$(cat /run/secrets/REDIS_PASSWORD)";
+      exec /redis_exporter'
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    profiles: ["observability"]
+    logging: *default-logging
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
 volumes:
   pg_data_v17_test:
     name: prod_db_volume_test
   knowledge_files_volume_test:
     name: knowledge_files_volume_test
+  tempo_data_db:
+    name: tempo_data_db
+  prometheus_data_db:
+    name: prometheus_data_db
+  grafana_data_db:
+    name: grafana_data_db
+  loki_data_db:
+    name: loki_data_db
+
+secrets:
+  SECRET_KEY:
+    file: ${SMOKE_SECRET_KEY_FILE:-./secrets/smoke/secret_key.txt}
+  POSTGRES_PASSWORD:
+    file: ${SMOKE_POSTGRES_PASSWORD_FILE:-./secrets/smoke/postgres_password.txt}
+  REDIS_PASSWORD:
+    file: ${SMOKE_REDIS_PASSWORD_FILE:-./secrets/smoke/redis_password.txt}
+  OPENAI_API_KEY:
+    file: ${SMOKE_OPENAI_API_KEY_FILE:-./deploy/empty-secret.txt}
+  GEMINI_API_KEY:
+    file: ${SMOKE_GEMINI_API_KEY_FILE:-./deploy/empty-secret.txt}
+  GOOGLE_API_KEY:
+    file: ${SMOKE_GOOGLE_API_KEY_FILE:-./deploy/empty-secret.txt}
+  DEEPSEEK_API_KEY:
+    file: ${SMOKE_DEEPSEEK_API_KEY_FILE:-./deploy/empty-secret.txt}
+  LLM_API_KEY:
+    file: ${SMOKE_LLM_API_KEY_FILE:-./deploy/empty-secret.txt}
+  RAG_EMBED_API_KEY:
+    file: ${SMOKE_RAG_EMBED_API_KEY_FILE:-./deploy/empty-secret.txt}
+  LANGFUSE_SECRET_KEY:
+    file: ${SMOKE_LANGFUSE_SECRET_KEY_FILE:-./deploy/empty-secret.txt}

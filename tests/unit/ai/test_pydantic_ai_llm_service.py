@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.ai.providers.llm.factory import LLMProviderFactory
+from backend.ai.providers.llm.llm_service import LLMService
 from backend.ai.providers.llm.pydantic_ai_service import PydanticAILLMService
 from backend.core.exceptions import ServiceError
 from backend.models.schemas.chat_schema import LLMQueryDTO
@@ -101,3 +102,52 @@ def test_factory_returns_pydantic_ai_service_for_gemini_provider():
     service = LLMProviderFactory.create("gemini")
 
     assert isinstance(service, PydanticAILLMService)
+
+
+def test_factory_returns_openai_compatible_service_for_deepseek(monkeypatch):
+    monkeypatch.setattr(
+        "backend.ai.providers.llm.factory.settings.DEEPSEEK_API_KEY",
+        "deepseek-key",
+    )
+    monkeypatch.setattr(
+        "backend.ai.providers.llm.factory.settings.DEEPSEEK_BASE_URL",
+        "https://api.deepseek.com",
+    )
+    monkeypatch.setattr(
+        "backend.ai.providers.llm.factory.settings.DEEPSEEK_MODEL_NAME",
+        "deepseek-chat",
+    )
+
+    service = LLMProviderFactory.create("deepseek")
+
+    assert isinstance(service, LLMService)
+    assert service.provider_name == "deepseek"
+    assert service.base_url == "https://api.deepseek.com"
+    assert service.api_key == "deepseek-key"
+    assert service.model_name == "deepseek-chat"
+
+
+def test_factory_deepseek_reasoner_alias_sets_model(monkeypatch):
+    monkeypatch.setattr(
+        "backend.ai.providers.llm.factory.settings.DEEPSEEK_API_KEY",
+        "deepseek-key",
+    )
+
+    service = LLMProviderFactory.create("deepseek-reasoner")
+
+    assert isinstance(service, LLMService)
+    assert service.provider_name == "deepseek"
+    assert service.model_name == "deepseek-reasoner"
+
+
+def test_factory_deepseek_v4_alias_sets_model(monkeypatch):
+    monkeypatch.setattr(
+        "backend.ai.providers.llm.factory.settings.DEEPSEEK_API_KEY",
+        "deepseek-key",
+    )
+
+    service = LLMProviderFactory.create("deepseek-v4-flash")
+
+    assert isinstance(service, LLMService)
+    assert service.provider_name == "deepseek"
+    assert service.model_name == "deepseek-v4-flash"

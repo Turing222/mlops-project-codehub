@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
 from backend.ai.core.prompt_templates import RAG_SYSTEM_TEMPLATE
 from backend.core.config import settings
+from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.domain.interfaces import AbstractRAGService
 from backend.models.schemas.chat_schema import ConversationMessage
 
@@ -38,34 +39,59 @@ class ChatContextBuilder:
         current_query: str,
         kb_id: uuid.UUID | None,
     ) -> PreparedChatContext:
-        history_dicts = self._history_to_dicts(history_messages)
-        memory_history, memory_summary = self._prepare_memory_context(
-            history_dicts,
-            current_query,
-        )
-        rag_chunks = await self._retrieve_rag_chunks(query_text=current_query, kb_id=kb_id)
-        search_context = self._build_search_context(kb_id=kb_id, rag_chunks=rag_chunks)
-
-        if rag_chunks:
-            assembled = self.rag_prompt_manager.assemble(
-                memory_history,
+        with trace_span(
+            "chat.context.build",
+            {
+                "chat.kb_id": kb_id,
+                "chat.query.char_count": len(current_query),
+            },
+        ) as span:
+            history_dicts = self._history_to_dicts(history_messages)
+            memory_history, memory_summary = self._prepare_memory_context(
+                history_dicts,
                 current_query,
-                extra_vars={
-                    "context_chunks": [chunk["content"] for chunk in rag_chunks],
-                    "conversation_summary": memory_summary,
+            )
+            rag_chunks = await self._retrieve_rag_chunks(
+                query_text=current_query,
+                kb_id=kb_id,
+            )
+            search_context = self._build_search_context(
+                kb_id=kb_id,
+                rag_chunks=rag_chunks,
+            )
+
+            if rag_chunks:
+                assembled = self.rag_prompt_manager.assemble(
+                    memory_history,
+                    current_query,
+                    extra_vars={
+                        "context_chunks": [chunk["content"] for chunk in rag_chunks],
+                        "conversation_summary": memory_summary,
+                    },
+                )
+            else:
+                assembled = self.prompt_manager.assemble(
+                    memory_history,
+                    current_query,
+                    extra_vars={"conversation_summary": memory_summary},
+                )
+
+            set_span_attributes(
+                span,
+                {
+                    "chat.history.message_count": len(history_dicts),
+                    "chat.memory.message_count": len(memory_history),
+                    "chat.memory.summary_char_count": len(memory_summary),
+                    "rag.hit_count": len(rag_chunks),
+                    "chat.prompt.uses_rag": bool(rag_chunks),
+                    "chat.prompt.message_count": len(assembled.messages),
+                    "chat.prompt.tokens_input": assembled.total_tokens,
                 },
             )
-        else:
-            assembled = self.prompt_manager.assemble(
-                memory_history,
-                current_query,
-                extra_vars={"conversation_summary": memory_summary},
+            return PreparedChatContext(
+                assembled_prompt=assembled,
+                search_context=search_context,
             )
-
-        return PreparedChatContext(
-            assembled_prompt=assembled,
-            search_context=search_context,
-        )
 
     @staticmethod
     def _history_to_dicts(messages) -> list[ConversationMessage]:
@@ -205,12 +231,27 @@ class ChatContextBuilder:
         if not self.rag_service or kb_id is None:
             return []
         try:
-            uow = getattr(self.rag_service, "uow", None)
-            if uow is None or getattr(uow, "_session", None) is not None:
-                return await self.rag_service.retrieve(query_text=query_text, kb_id=kb_id)
-
-            async with uow:
-                return await self.rag_service.retrieve(query_text=query_text, kb_id=kb_id)
+            with trace_span(
+                "chat.context.retrieve_rag",
+                {
+                    "rag.kb_id": kb_id,
+                    "rag.query.char_count": len(query_text),
+                },
+            ) as span:
+                uow = getattr(self.rag_service, "uow", None)
+                if uow is None or getattr(uow, "_session", None) is not None:
+                    chunks = await self.rag_service.retrieve(
+                        query_text=query_text,
+                        kb_id=kb_id,
+                    )
+                else:
+                    async with uow:
+                        chunks = await self.rag_service.retrieve(
+                            query_text=query_text,
+                            kb_id=kb_id,
+                        )
+                set_span_attributes(span, {"rag.hit_count": len(chunks)})
+                return chunks
         except Exception as exc:
             logger.warning("RAG 检索失败，降级为普通对话: %s", exc)
             return []

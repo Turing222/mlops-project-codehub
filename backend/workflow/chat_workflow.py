@@ -22,6 +22,11 @@ from backend.ai.core.token_counter import count_tokens
 from backend.core.config import settings
 from backend.core.exceptions import AppError, ServiceError
 from backend.core.redis import redis_client
+from backend.core.trace_utils import (
+    inject_trace_context,
+    set_span_attributes,
+    trace_span,
+)
 from backend.domain.interfaces import (
     AbstractLLMService,
     AbstractRAGService,
@@ -93,65 +98,100 @@ class ChatWorkflow:
 
         redis = None
         lock_key: str | None = None
+        trace_attrs = {
+            "chat.user_id": user_id,
+            "chat.session_id": session_id,
+            "chat.kb_id": kb_id,
+            "chat.client_request_id.present": client_request_id is not None,
+            "chat.query.char_count": len(query_text),
+            "chat.stream": True,
+        }
 
         # 0. 幂等校验
-        if client_request_id:
-            redis = await redis_client.init()
-            lock_key = f"idempotency:chat:{user_id}:{client_request_id}"
-            is_new = await redis.set(lock_key, "PROCESSING", nx=True, ex=300)
-            if not is_new:
-                val = await redis.get(lock_key)
-                if val == "PROCESSING":
-                    yield f"data: {json.dumps({'type': 'error', 'message': '正在加速计算中...'})}\n\n"
-                    return
-                else:
-                    yield f"data: {json.dumps({'type': 'error', 'message': '该请求已完成，请刷新页面'})}\n\n"
-                    return
+        with trace_span("chat.stream.idempotency_check", trace_attrs) as span:
+            if client_request_id:
+                redis = await redis_client.init()
+                lock_key = f"idempotency:chat:{user_id}:{client_request_id}"
+                is_new = await redis.set(lock_key, "PROCESSING", nx=True, ex=300)
+                set_span_attributes(span, {"chat.idempotency.is_new": bool(is_new)})
+                if not is_new:
+                    val = await redis.get(lock_key)
+                    set_span_attributes(span, {"chat.idempotency.value": val})
+                    if val == "PROCESSING":
+                        yield f"data: {json.dumps({'type': 'error', 'message': '正在加速计算中...'})}\n\n"
+                        return
+                    else:
+                        yield f"data: {json.dumps({'type': 'error', 'message': '该请求已完成，请刷新页面'})}\n\n"
+                        return
 
         # 1. 确认或创建会话 + 保存用户消息 + 创建助手消息占位
-        async with self._get_db_semaphore():
-            async with self.uow:
-                # 校验 Token 余额
-                user = await self.uow.user_repo.get(user_id)
-                if user and user.used_tokens >= user.max_tokens:
-                    if redis is not None and lock_key is not None:
-                        await redis.delete(lock_key)
-                    yield f"data: {json.dumps({'type': 'error', 'message': 'Token 余额不足'})}\n\n"
-                    return
+        with trace_span("chat.stream.create_session_and_messages", trace_attrs) as span:
+            async with self._get_db_semaphore():
+                async with self.uow:
+                    # 校验 Token 余额
+                    user = await self.uow.user_repo.get(user_id)
+                    if user and user.used_tokens >= user.max_tokens:
+                        if redis is not None and lock_key is not None:
+                            await redis.delete(lock_key)
+                        yield f"data: {json.dumps({'type': 'error', 'message': 'Token 余额不足'})}\n\n"
+                        return
 
-                session_manager = SessionManager(self.uow)
-                session = await session_manager.ensure_session(
-                    user_id=user_id,
-                    query_text=query_text,
-                    session_id=session_id,
-                    kb_id=kb_id,
-                )
-                await session_manager.create_user_message(
-                    session_id=session.id,
-                    content=query_text,
-                )
-                assistant_msg = await session_manager.create_assistant_message(
-                    session_id=session.id,
-                    client_request_id=client_request_id,
-                )
+                    session_manager = SessionManager(self.uow)
+                    session = await session_manager.ensure_session(
+                        user_id=user_id,
+                        query_text=query_text,
+                        session_id=session_id,
+                        kb_id=kb_id,
+                    )
+                    await session_manager.create_user_message(
+                        session_id=session.id,
+                        content=query_text,
+                    )
+                    assistant_msg = await session_manager.create_assistant_message(
+                        session_id=session.id,
+                        client_request_id=client_request_id,
+                    )
+            set_span_attributes(
+                span,
+                {
+                    "chat.session_id": session.id,
+                    "chat.assistant_message_id": assistant_msg.id,
+                },
+            )
+            trace_attrs["chat.session_id"] = session.id
+            trace_attrs["chat.assistant_message_id"] = assistant_msg.id
 
         # 2. 查询历史消息并组装 Prompt
-        async with self._get_db_semaphore():
-            async with self.uow:
-                session_manager = SessionManager(self.uow)
-                history_messages = await session_manager.get_session_messages(
-                    session_id=session.id,
-                    limit=settings.CHAT_MEMORY_FETCH_LIMIT,
-                )
+        with trace_span("chat.stream.fetch_history", trace_attrs) as span:
+            async with self._get_db_semaphore():
+                async with self.uow:
+                    session_manager = SessionManager(self.uow)
+                    history_messages = await session_manager.get_session_messages(
+                        session_id=session.id,
+                        limit=settings.CHAT_MEMORY_FETCH_LIMIT,
+                    )
+            set_span_attributes(span, {"chat.history.message_count": len(history_messages)})
 
-        prepared_context = await self.chat_context_builder.build(
-            history_messages=history_messages,
-            current_query=query_text,
-            kb_id=kb_id,
-        )
-        assembled = prepared_context.assembled_prompt
-        search_context = prepared_context.search_context
-        tokens_input = assembled.total_tokens
+        with trace_span("chat.stream.prepare_context", trace_attrs) as span:
+            prepared_context = await self.chat_context_builder.build(
+                history_messages=history_messages,
+                current_query=query_text,
+                kb_id=kb_id,
+            )
+            assembled = prepared_context.assembled_prompt
+            search_context = prepared_context.search_context
+            tokens_input = assembled.total_tokens
+            set_span_attributes(
+                span,
+                {
+                    "chat.prompt.tokens_input": tokens_input,
+                    "chat.prompt.message_count": len(assembled.messages),
+                    "chat.prompt.uses_rag": search_context is not None,
+                    "rag.hit_count": len(search_context["chunks"])
+                    if search_context
+                    else 0,
+                },
+            )
 
         # 3. 发送 meta 事件
         meta_event = json.dumps(
@@ -177,10 +217,18 @@ class ChatWorkflow:
 
         pubsub = None
         try:
-            # 先订阅后投递，避免 worker 首包发布过快导致丢消息
-            pubsub = (await redis_client.init()).pubsub()
-            await pubsub.subscribe(channel)
-            await generate_llm_stream_task.kiq(llm_query.model_dump(mode="json"), channel)
+            with trace_span(
+                "chat.stream.dispatch_task",
+                {**trace_attrs, "task.id": task_id, "redis.channel": channel},
+            ):
+                # 先订阅后投递，避免 worker 首包发布过快导致丢消息
+                pubsub = (await redis_client.init()).pubsub()
+                await pubsub.subscribe(channel)
+                await generate_llm_stream_task.kiq(
+                    llm_query.model_dump(mode="json"),
+                    channel,
+                    inject_trace_context(),
+                )
         except AppError as exc:
             if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
@@ -219,48 +267,65 @@ class ChatWorkflow:
             return None
 
         try:
-            loop = asyncio.get_running_loop()
-            deadline = loop.time() + settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS
-            while True:
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    raise ServiceError("LLM 响应超时，请稍后重试")
-                try:
-                    first_message = await asyncio.wait_for(anext(stream_iter), timeout=remaining)
-                except TimeoutError as exc:
-                    raise ServiceError("LLM 响应超时，请稍后重试") from exc
-                except StopAsyncIteration as exc:
-                    raise ServiceError("LLM 流式通道异常结束") from exc
+            with trace_span(
+                "chat.stream.consume_worker_stream",
+                {**trace_attrs, "task.id": task_id, "redis.channel": channel},
+            ) as span:
+                loop = asyncio.get_running_loop()
+                deadline = loop.time() + settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS
+                while True:
+                    remaining = deadline - loop.time()
+                    if remaining <= 0:
+                        raise ServiceError("LLM 响应超时，请稍后重试")
+                    try:
+                        first_message = await asyncio.wait_for(
+                            anext(stream_iter),
+                            timeout=remaining,
+                        )
+                    except TimeoutError as exc:
+                        raise ServiceError("LLM 响应超时，请稍后重试") from exc
+                    except StopAsyncIteration as exc:
+                        raise ServiceError("LLM 流式通道异常结束") from exc
 
-                first_payload = _read_stream_payload(first_message)
-                if first_payload is None:
-                    continue
-                if first_payload == "[DONE]":
-                    done_received = True
-                elif first_payload.startswith("[ERROR]"):
-                    raise ServiceError(f"Taskiq 队列执行 LLM 错误: {first_payload[7:]}")
-                else:
-                    accumulated_content.append(first_payload)
-                    first_chunk = json.dumps({"type": "chunk", "content": first_payload})
-                    yield f"data: {first_chunk}\n\n"
-                break
-
-            if not done_received:
-                async for message in stream_iter:
-                    payload = _read_stream_payload(message)
-                    if payload is None:
+                    first_payload = _read_stream_payload(first_message)
+                    if first_payload is None:
                         continue
-                    if payload == "[DONE]":
+                    if first_payload == "[DONE]":
                         done_received = True
-                        break
-                    if payload.startswith("[ERROR]"):
-                        raise ServiceError(f"Taskiq 队列执行 LLM 错误: {payload[7:]}")
-                    accumulated_content.append(payload)
-                    chunk_event = json.dumps({"type": "chunk", "content": payload})
-                    yield f"data: {chunk_event}\n\n"
+                    elif first_payload.startswith("[ERROR]"):
+                        raise ServiceError(f"Taskiq 队列执行 LLM 错误: {first_payload[7:]}")
+                    else:
+                        accumulated_content.append(first_payload)
+                        first_chunk = json.dumps({"type": "chunk", "content": first_payload})
+                        yield f"data: {first_chunk}\n\n"
+                    break
 
-            if not done_received:
-                raise ServiceError("LLM 流式响应中断，请稍后重试")
+                if not done_received:
+                    async for message in stream_iter:
+                        payload = _read_stream_payload(message)
+                        if payload is None:
+                            continue
+                        if payload == "[DONE]":
+                            done_received = True
+                            break
+                        if payload.startswith("[ERROR]"):
+                            raise ServiceError(f"Taskiq 队列执行 LLM 错误: {payload[7:]}")
+                        accumulated_content.append(payload)
+                        chunk_event = json.dumps({"type": "chunk", "content": payload})
+                        yield f"data: {chunk_event}\n\n"
+
+                if not done_received:
+                    raise ServiceError("LLM 流式响应中断，请稍后重试")
+                set_span_attributes(
+                    span,
+                    {
+                        "llm.response.chunk_count": len(accumulated_content),
+                        "llm.response.char_count": sum(
+                            len(chunk) for chunk in accumulated_content
+                        ),
+                        "llm.stream.done_received": done_received,
+                    },
+                )
         except AppError as exc:
             if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
@@ -302,21 +367,31 @@ class ChatWorkflow:
 
         # 5. 更新助手消息并累加 Token
         full_content = "".join(accumulated_content)
-        tokens_output = count_tokens(full_content, settings.LLM_MODEL_NAME)
+        model_name = getattr(self.llm_service, "model_name", settings.LLM_MODEL_NAME)
+        tokens_output = count_tokens(full_content, model_name)
 
-        async with self._get_db_semaphore():
-            async with self.uow:
-                updater = ChatMessageUpdater(self.uow)
-                await updater.update_as_success(
-                    message_id=assistant_msg.id,
-                    content=full_content,
-                    tokens_input=tokens_input,
-                    tokens_output=tokens_output,
-                    search_context=search_context,
-                )
-                await self.uow.user_repo.increment_used_tokens(
-                    user_id, tokens_input + tokens_output
-                )
+        with trace_span("chat.stream.finalize_message", trace_attrs) as span:
+            async with self._get_db_semaphore():
+                async with self.uow:
+                    updater = ChatMessageUpdater(self.uow)
+                    await updater.update_as_success(
+                        message_id=assistant_msg.id,
+                        content=full_content,
+                        tokens_input=tokens_input,
+                        tokens_output=tokens_output,
+                        search_context=search_context,
+                    )
+                    await self.uow.user_repo.increment_used_tokens(
+                        user_id, tokens_input + tokens_output
+                    )
+            set_span_attributes(
+                span,
+                {
+                    "chat.tokens_input": tokens_input,
+                    "chat.tokens_output": tokens_output,
+                    "llm.response.char_count": len(full_content),
+                },
+            )
 
         if redis is not None and lock_key is not None:
             await redis.set(lock_key, str(assistant_msg.id), ex=3600)

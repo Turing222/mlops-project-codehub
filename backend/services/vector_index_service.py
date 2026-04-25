@@ -2,6 +2,7 @@ import asyncio
 import uuid
 from typing import TypedDict
 
+from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.domain.interfaces import AbstractRAGEmbedder, AbstractUnitOfWork
 from backend.models.orm.chunk import ChunkSourceType, DocumentChunk
 from backend.services.base import BaseService
@@ -29,29 +30,46 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
         filename: str,
         file_path: str,
     ) -> None:
-        chunk_records: list[dict] = []
-        for idx, chunk_text in enumerate(chunks):
-            embedding = await asyncio.to_thread(
-                self.embedder.encode_document,
-                chunk_text,
-            )
-            chunk_records.append(
-                {
-                    "source_type": ChunkSourceType.FILE,
-                    "file_id": file_id,
-                    "content": chunk_text,
-                    "token_count": len(chunk_text),
-                    "chunk_index": idx,
-                    "meta_info": {
-                        "filename": filename,
-                        "path": file_path,
-                    },
-                    "embedding": embedding,
-                }
-            )
+        with trace_span(
+            "vector_index.replace_file_chunks",
+            {
+                "rag.file_id": file_id,
+                "rag.filename": filename,
+                "rag.chunk_count": len(chunks),
+            },
+        ) as span:
+            chunk_records: list[dict] = []
+            for idx, chunk_text in enumerate(chunks):
+                embedding = await asyncio.to_thread(
+                    self.embedder.encode_document,
+                    chunk_text,
+                )
+                chunk_records.append(
+                    {
+                        "source_type": ChunkSourceType.FILE,
+                        "file_id": file_id,
+                        "content": chunk_text,
+                        "token_count": len(chunk_text),
+                        "chunk_index": idx,
+                        "meta_info": {
+                            "filename": filename,
+                            "path": file_path,
+                        },
+                        "embedding": embedding,
+                    }
+                )
 
-        await self.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
-        await self.uow.knowledge_repo.add_chunks(chunk_records)
+            await self.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
+            await self.uow.knowledge_repo.add_chunks(chunk_records)
+            set_span_attributes(
+                span,
+                {
+                    "rag.indexed_chunk_count": len(chunk_records),
+                    "embedding.output_dim": len(chunk_records[0]["embedding"])
+                    if chunk_records
+                    else None,
+                },
+            )
 
     async def search_chunks_for_kb(
         self,
@@ -63,12 +81,28 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
         if not query_text.strip() or limit <= 0:
             return []
 
-        query_vector = await asyncio.to_thread(self.embedder.encode_query, query_text)
-        return await self.uow.knowledge_repo.search_chunks_for_kb(
-            query_vector=query_vector,
-            kb_id=kb_id,
-            limit=limit,
-        )
+        with trace_span(
+            "vector_index.search.vector",
+            {
+                "rag.kb_id": kb_id,
+                "rag.top_k": limit,
+                "rag.query.char_count": len(query_text),
+            },
+        ) as span:
+            query_vector = await asyncio.to_thread(self.embedder.encode_query, query_text)
+            hits = await self.uow.knowledge_repo.search_chunks_for_kb(
+                query_vector=query_vector,
+                kb_id=kb_id,
+                limit=limit,
+            )
+            set_span_attributes(
+                span,
+                {
+                    "embedding.query_dim": len(query_vector),
+                    "rag.hit_count": len(hits),
+                },
+            )
+            return hits
 
     async def search_chunks_for_kb_fulltext(
         self,
@@ -80,11 +114,21 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
         if not query_text.strip() or limit <= 0:
             return []
 
-        return await self.uow.knowledge_repo.search_chunks_for_kb_fulltext(
-            query_text=query_text,
-            kb_id=kb_id,
-            limit=limit,
-        )
+        with trace_span(
+            "vector_index.search.fulltext",
+            {
+                "rag.kb_id": kb_id,
+                "rag.top_k": limit,
+                "rag.query.char_count": len(query_text),
+            },
+        ) as span:
+            hits = await self.uow.knowledge_repo.search_chunks_for_kb_fulltext(
+                query_text=query_text,
+                kb_id=kb_id,
+                limit=limit,
+            )
+            set_span_attributes(span, {"rag.hit_count": len(hits)})
+            return hits
 
     async def search_chunks_for_kb_hybrid(
         self,
@@ -99,27 +143,48 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
         if not query_text.strip() or limit <= 0:
             return []
 
-        query_vector = await asyncio.to_thread(self.embedder.encode_query, query_text)
-        candidate_limit = max(limit, limit * max(1, candidate_multiplier))
+        with trace_span(
+            "vector_index.search.hybrid",
+            {
+                "rag.kb_id": kb_id,
+                "rag.top_k": limit,
+                "rag.query.char_count": len(query_text),
+                "rag.vector_weight": vector_weight,
+                "rag.fulltext_weight": fulltext_weight,
+            },
+        ) as span:
+            query_vector = await asyncio.to_thread(self.embedder.encode_query, query_text)
+            candidate_limit = max(limit, limit * max(1, candidate_multiplier))
 
-        vector_hits = await self.uow.knowledge_repo.search_chunks_for_kb(
-            query_vector=query_vector,
-            kb_id=kb_id,
-            limit=candidate_limit,
-        )
-        fulltext_hits = await self.uow.knowledge_repo.search_chunks_for_kb_fulltext(
-            query_text=query_text,
-            kb_id=kb_id,
-            limit=candidate_limit,
-        )
+            vector_hits = await self.uow.knowledge_repo.search_chunks_for_kb(
+                query_vector=query_vector,
+                kb_id=kb_id,
+                limit=candidate_limit,
+            )
+            fulltext_hits = await self.uow.knowledge_repo.search_chunks_for_kb_fulltext(
+                query_text=query_text,
+                kb_id=kb_id,
+                limit=candidate_limit,
+            )
 
-        return self._fuse_hybrid_hits(
-            vector_hits=vector_hits,
-            fulltext_hits=fulltext_hits,
-            limit=limit,
-            vector_weight=vector_weight,
-            fulltext_weight=fulltext_weight,
-        )
+            hits = self._fuse_hybrid_hits(
+                vector_hits=vector_hits,
+                fulltext_hits=fulltext_hits,
+                limit=limit,
+                vector_weight=vector_weight,
+                fulltext_weight=fulltext_weight,
+            )
+            set_span_attributes(
+                span,
+                {
+                    "embedding.query_dim": len(query_vector),
+                    "rag.candidate_limit": candidate_limit,
+                    "rag.vector_hit_count": len(vector_hits),
+                    "rag.fulltext_hit_count": len(fulltext_hits),
+                    "rag.hit_count": len(hits),
+                },
+            )
+            return hits
 
     @staticmethod
     def _fuse_hybrid_hits(

@@ -37,6 +37,7 @@
 - LLM:
   - `mock`（默认）
   - `openai-compatible`（兼容外部 OpenAI-style API 网关/模型服务）
+  - `deepseek`（DeepSeek OpenAI-compatible API）
   - `gemini` / `pydantic-ai`（通过 Pydantic AI 接入 Gemini）
 - Embedding:
   - `google` / `gemini`（当前启用，Google GenAI embeddings）
@@ -96,6 +97,7 @@ uv sync
   - `LLM_PROVIDER`（第一版推荐 `gemini`）
   - `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL_NAME`
   - `GEMINI_API_KEY` / `GEMINI_MODEL_NAME`（`LLM_PROVIDER=gemini` 时使用）
+  - `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` / `DEEPSEEK_MODEL_NAME`（`LLM_PROVIDER=deepseek` 时使用）
   - `RAG_EMBED_PROVIDER=google` / `RAG_EMBED_MODEL_NAME=gemini-embedding-001`
   - `RAG_EMBED_API_KEY`（可不填，默认复用 `GEMINI_API_KEY` / `GOOGLE_API_KEY`）
   - `RAG_EMBED_DIM=768`（保持与当前 pgvector 字段一致）
@@ -240,6 +242,7 @@ uv run pytest -m performance
 
 2. 聊天接口返回“服务暂时不可用”
 - 若使用 `openai-compatible`，检查 `LLM_BASE_URL/LLM_API_KEY/LLM_MODEL_NAME`。
+- 若使用 DeepSeek，设置 `LLM_PROVIDER=deepseek`、`DEEPSEEK_API_KEY`，可选设置 `DEEPSEEK_MODEL_NAME=deepseek-chat`、`deepseek-reasoner`、`deepseek-v4-flash` 或 `deepseek-v4-pro`。
 - 若使用 Gemini，设置 `LLM_PROVIDER=gemini`、`GEMINI_API_KEY`，可选设置 `GEMINI_MODEL_NAME`。
 - 若只想联调链路，先把 `LLM_PROVIDER=mock`。
 
@@ -250,4 +253,4 @@ uv run pytest -m performance
 
 4. Langfuse 看不到 Gemini 调用
 - 确认已设置 `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_BASE_URL`。
-- 当前 Gemini provider 已通过 Pydantic AI `instrument=True` 输出 OTel spans；非流式接口会挂在 `@observe()` 的 workflow trace 下，流式接口的 TaskIQ worker 会生成独立 generation trace。
+- 当前 Gemini provider 已通过 Pydantic AI `instrument=True` 输出 OTel spans；OpenAI-compatible / DeepSeek provider、RAG 检索、知识库入库、TaskIQ worker、chat workflow 也会输出 `llm.*`、`rag.*`、`vector_index.*`、`knowledge.*`、`taskiq.*`、`chat.*` 业务 spans。

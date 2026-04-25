@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from starlette.responses import PlainTextResponse
 
+import backend.core.secret_env  # noqa: F401
 from backend.api.v1.api import api_router
 from backend.core.config import settings
 from backend.core.database import init_db

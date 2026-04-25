@@ -6,6 +6,7 @@ from google.genai import types
 
 from backend.core.config import settings
 from backend.core.exceptions import ServiceError
+from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.domain.interfaces import AbstractRAGEmbedder
 
 logger = logging.getLogger(__name__)
@@ -46,24 +47,41 @@ class OpenAICompatibleEmbedder(AbstractRAGEmbedder):
             request_kwargs["dimensions"] = self.dimensions
 
         try:
-            response = self._get_client().embeddings.create(
-                model=self.model_name,
-                input=payload,
-                **request_kwargs,
-            )
-            if not response.data:
-                raise ServiceError("RAG embedding 服务未返回向量数据")
+            with trace_span(
+                "embedding.openai_compatible.encode",
+                {
+                    "gen_ai.system": "openai-compatible",
+                    "gen_ai.operation.name": "embeddings",
+                    "gen_ai.request.model": self.model_name,
+                    "embedding.base_url": self.base_url,
+                    "embedding.input.char_count": len(payload),
+                    "embedding.expected_dim": self.dimensions,
+                },
+            ) as span:
+                response = self._get_client().embeddings.create(
+                    model=self.model_name,
+                    input=payload,
+                    **request_kwargs,
+                )
+                if not response.data:
+                    raise ServiceError("RAG embedding 服务未返回向量数据")
 
-            embedding = response.data[0].embedding
-            if self.dimensions is not None and len(embedding) != self.dimensions:
-                raise ServiceError(
-                    "RAG embedding 维度不匹配",
-                    details={
-                        "expected_dim": self.dimensions,
-                        "actual_dim": len(embedding),
-                        "model": self.model_name,
+                embedding = response.data[0].embedding
+                set_span_attributes(
+                    span,
+                    {
+                        "embedding.output_dim": len(embedding),
                     },
                 )
+                if self.dimensions is not None and len(embedding) != self.dimensions:
+                    raise ServiceError(
+                        "RAG embedding 维度不匹配",
+                        details={
+                            "expected_dim": self.dimensions,
+                            "actual_dim": len(embedding),
+                            "model": self.model_name,
+                        },
+                    )
             return [float(value) for value in embedding]
         except ServiceError:
             raise
@@ -115,24 +133,41 @@ class GoogleGenAIEmbedder(AbstractRAGEmbedder):
             config_kwargs["output_dimensionality"] = self.dimensions
 
         try:
-            response = self._get_client().models.embed_content(
-                model=self.model_name,
-                contents=payload,
-                config=types.EmbedContentConfig(**config_kwargs),
-            )
-            if not response.embeddings or not response.embeddings[0].values:
-                raise ServiceError("Google embedding 服务未返回向量数据")
+            with trace_span(
+                "embedding.google_genai.encode",
+                {
+                    "gen_ai.system": "google-genai",
+                    "gen_ai.operation.name": "embeddings",
+                    "gen_ai.request.model": self.model_name,
+                    "embedding.task_type": task_type,
+                    "embedding.input.char_count": len(payload),
+                    "embedding.expected_dim": self.dimensions,
+                },
+            ) as span:
+                response = self._get_client().models.embed_content(
+                    model=self.model_name,
+                    contents=payload,
+                    config=types.EmbedContentConfig(**config_kwargs),
+                )
+                if not response.embeddings or not response.embeddings[0].values:
+                    raise ServiceError("Google embedding 服务未返回向量数据")
 
-            embedding = response.embeddings[0].values
-            if self.dimensions is not None and len(embedding) != self.dimensions:
-                raise ServiceError(
-                    "Google embedding 维度不匹配",
-                    details={
-                        "expected_dim": self.dimensions,
-                        "actual_dim": len(embedding),
-                        "model": self.model_name,
+                embedding = response.embeddings[0].values
+                set_span_attributes(
+                    span,
+                    {
+                        "embedding.output_dim": len(embedding),
                     },
                 )
+                if self.dimensions is not None and len(embedding) != self.dimensions:
+                    raise ServiceError(
+                        "Google embedding 维度不匹配",
+                        details={
+                            "expected_dim": self.dimensions,
+                            "actual_dim": len(embedding),
+                            "model": self.model_name,
+                        },
+                    )
             return [float(value) for value in embedding]
         except ServiceError:
             raise

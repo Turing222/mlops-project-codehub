@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 from backend.ai.core.token_counter import count_tokens
 from backend.core.config import settings
 from backend.core.exceptions import ServiceError
+from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import (
     ConversationMessage,
@@ -39,12 +40,35 @@ class PydanticAILLMService(AbstractLLMService):
         logger.info("Pydantic AI Gemini 开始流式请求: session_id=%s", query.session_id)
         try:
             instructions, prompt = self._build_agent_input(query)
-            agent = self._create_agent(instructions)
+            with trace_span(
+                "llm.gemini.stream",
+                {
+                    "gen_ai.system": "gemini",
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.request.model": self.model_name,
+                    "chat.session_id": query.session_id,
+                    "llm.stream": True,
+                    "llm.prompt.char_count": len(prompt),
+                    "llm.instructions.present": instructions is not None,
+                },
+            ) as span:
+                agent = self._create_agent(instructions)
+                chunk_count = 0
+                char_count = 0
 
-            async with agent.run_stream(prompt) as result:
-                async for delta in result.stream_text(delta=True):
-                    if delta:
-                        yield delta
+                async with agent.run_stream(prompt) as result:
+                    async for delta in result.stream_text(delta=True):
+                        if delta:
+                            chunk_count += 1
+                            char_count += len(delta)
+                            yield delta
+                set_span_attributes(
+                    span,
+                    {
+                        "llm.response.chunk_count": chunk_count,
+                        "llm.response.char_count": char_count,
+                    },
+                )
 
             logger.info("Pydantic AI Gemini 流式请求完成: session_id=%s", query.session_id)
         except ServiceError:
@@ -70,8 +94,20 @@ class PydanticAILLMService(AbstractLLMService):
 
         try:
             instructions, prompt = self._build_agent_input(query)
-            agent = self._create_agent(instructions)
-            result = await agent.run(prompt)
+            with trace_span(
+                "llm.gemini.generate",
+                {
+                    "gen_ai.system": "gemini",
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.request.model": self.model_name,
+                    "chat.session_id": query.session_id,
+                    "llm.stream": False,
+                    "llm.prompt.char_count": len(prompt),
+                    "llm.instructions.present": instructions is not None,
+                },
+            ) as span:
+                agent = self._create_agent(instructions)
+                result = await agent.run(prompt)
         except ServiceError:
             raise
         except Exception as exc:
@@ -89,6 +125,14 @@ class PydanticAILLMService(AbstractLLMService):
         content = str(getattr(result, "output", ""))
         latency_ms = int((time.perf_counter() - start) * 1000)
         completion_tokens = count_tokens(content, self.model_name)
+        set_span_attributes(
+            span,
+            {
+                "llm.response.char_count": len(content),
+                "llm.response.completion_tokens": completion_tokens,
+                "llm.latency_ms": latency_ms,
+            },
+        )
 
         return LLMResultDTO(
             content=content,
@@ -127,8 +171,12 @@ class PydanticAILLMService(AbstractLLMService):
 
     @classmethod
     def _build_agent_input(cls, query: LLMQueryDTO) -> tuple[str | None, str]:
-        messages = query.conversation_history or [
-            {"role": "user", "content": query.query_text}
+        fallback_message: ConversationMessage = {
+            "role": "user",
+            "content": query.query_text,
+        }
+        messages: list[ConversationMessage] = query.conversation_history or [
+            fallback_message
         ]
         system_parts = [
             message["content"].strip()

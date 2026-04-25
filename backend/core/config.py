@@ -7,6 +7,8 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
+import backend.core.secret_env  # noqa: F401
+
 
 class Settings(BaseSettings):
     # --- 目录配置 ---
@@ -36,6 +38,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
     GOOGLE_API_KEY: str | None = None
+    DEEPSEEK_API_KEY: str | None = None
 
     OBSIDIAN_VAULT_PATH: str = "/data/obsidian"
     KNOWLEDGE_STORAGE_ROOT: Path = Path(".files/knowledge_files")
@@ -61,6 +64,8 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = "https://api.openai.com/v1"
     LLM_API_KEY: str = ""
     GEMINI_MODEL_NAME: str = "gemini-2.5-flash"
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL_NAME: str = "deepseek-chat"
     LLM_MAX_CONTEXT_TOKENS: int = 4096
     LLM_MAX_HISTORY_ROUNDS: int = 10
     LLM_RESERVED_RESPONSE_TOKENS: int = 1024

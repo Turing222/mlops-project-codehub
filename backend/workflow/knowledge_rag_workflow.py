@@ -10,6 +10,7 @@ from backend.core.exceptions import (
     ServiceError,
     ValidationError,
 )
+from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.models.orm.knowledge import FileStatus
 from backend.services.chunking_service import ChunkingService
 from backend.services.knowledge_service import KnowledgeService
@@ -48,11 +49,22 @@ class KnowledgeRAGWorkflow:
         *,
         file_id: uuid.UUID,
     ) -> None:
-        async with self.knowledge_service.uow:
-            file_obj = await self.knowledge_service.set_file_status(
-                file_id=file_id,
-                status=FileStatus.PARSING,
-            )
+        with trace_span("knowledge.ingest.load_file", {"rag.file_id": file_id}) as span:
+            async with self.knowledge_service.uow:
+                file_obj = await self.knowledge_service.set_file_status(
+                    file_id=file_id,
+                    status=FileStatus.PARSING,
+                )
+            if file_obj:
+                set_span_attributes(
+                    span,
+                    {
+                        "rag.kb_id": file_obj.kb_id,
+                        "file.name": file_obj.filename,
+                        "file.path": file_obj.file_path,
+                        "file.size": file_obj.file_size,
+                    },
+                )
         if not file_obj:
             raise ResourceNotFound("文件不存在")
 
@@ -66,27 +78,45 @@ class KnowledgeRAGWorkflow:
             raise ResourceNotFound("上传文件在存储路径中不存在")
 
         try:
-            chunks = await asyncio.to_thread(self._extract_chunks, file_path)
+            with trace_span(
+                "knowledge.ingest.extract_chunks",
+                {
+                    "rag.file_id": file_id,
+                    "rag.kb_id": file_obj.kb_id,
+                    "file.name": file_obj.filename,
+                    "file.extension": file_path.suffix.lower(),
+                },
+            ) as span:
+                chunks = await asyncio.to_thread(self._extract_chunks, file_path)
+                set_span_attributes(span, {"rag.chunk_count": len(chunks)})
             if not chunks:
                 raise ValidationError("文件无可用文本内容，无法构建 RAG 索引")
 
-            async with self.knowledge_service.uow:
-                await self.knowledge_service.set_file_status(
-                    file_id=file_id,
-                    status=FileStatus.CHUNKING,
-                )
-            async with self.vector_index_service.uow:
-                await self.vector_index_service.replace_file_chunks(
-                    file_id=file_id,
-                    chunks=chunks,
-                    filename=file_obj.filename,
-                    file_path=str(file_path),
-                )
-            async with self.knowledge_service.uow:
-                await self.knowledge_service.set_file_status(
-                    file_id=file_id,
-                    status=FileStatus.READY,
-                )
+            with trace_span(
+                "knowledge.ingest.index_chunks",
+                {
+                    "rag.file_id": file_id,
+                    "rag.kb_id": file_obj.kb_id,
+                    "rag.chunk_count": len(chunks),
+                },
+            ):
+                async with self.knowledge_service.uow:
+                    await self.knowledge_service.set_file_status(
+                        file_id=file_id,
+                        status=FileStatus.CHUNKING,
+                    )
+                async with self.vector_index_service.uow:
+                    await self.vector_index_service.replace_file_chunks(
+                        file_id=file_id,
+                        chunks=chunks,
+                        filename=file_obj.filename,
+                        file_path=str(file_path),
+                    )
+                async with self.knowledge_service.uow:
+                    await self.knowledge_service.set_file_status(
+                        file_id=file_id,
+                        status=FileStatus.READY,
+                    )
         except AppError:
             async with self.knowledge_service.uow:
                 await self.knowledge_service.set_file_status(

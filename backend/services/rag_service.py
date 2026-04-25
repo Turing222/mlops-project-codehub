@@ -2,6 +2,7 @@ import logging
 import uuid
 
 from backend.core.exceptions import AppError
+from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.domain.interfaces import (
     AbstractRAGEmbedder,
     AbstractRAGService,
@@ -46,11 +47,20 @@ class RAGService(AbstractRAGService):
             return []
 
         try:
-            hits = await self.vector_index_service.search_chunks_for_kb(
-                query_text=query_text,
-                kb_id=kb_id,
-                limit=limit,
-            )
+            with trace_span(
+                "rag.retrieve.vector",
+                {
+                    "rag.kb_id": kb_id,
+                    "rag.top_k": limit,
+                    "rag.query.char_count": len(query_text),
+                },
+            ) as span:
+                hits = await self.vector_index_service.search_chunks_for_kb(
+                    query_text=query_text,
+                    kb_id=kb_id,
+                    limit=limit,
+                )
+                set_span_attributes(span, {"rag.hit_count": len(hits)})
         except AppError:
             raise
         except Exception as exc:
@@ -73,11 +83,20 @@ class RAGService(AbstractRAGService):
             return []
 
         try:
-            hits = await self.vector_index_service.search_chunks_for_kb_fulltext(
-                query_text=query_text,
-                kb_id=kb_id,
-                limit=limit,
-            )
+            with trace_span(
+                "rag.retrieve.fulltext",
+                {
+                    "rag.kb_id": kb_id,
+                    "rag.top_k": limit,
+                    "rag.query.char_count": len(query_text),
+                },
+            ) as span:
+                hits = await self.vector_index_service.search_chunks_for_kb_fulltext(
+                    query_text=query_text,
+                    kb_id=kb_id,
+                    limit=limit,
+                )
+                set_span_attributes(span, {"rag.hit_count": len(hits)})
         except AppError:
             raise
         except Exception as exc:
@@ -100,11 +119,20 @@ class RAGService(AbstractRAGService):
             return []
 
         try:
-            hits = await self.vector_index_service.search_chunks_for_kb_hybrid(
-                query_text=query_text,
-                kb_id=kb_id,
-                limit=limit,
-            )
+            with trace_span(
+                "rag.retrieve.hybrid",
+                {
+                    "rag.kb_id": kb_id,
+                    "rag.top_k": limit,
+                    "rag.query.char_count": len(query_text),
+                },
+            ) as span:
+                hits = await self.vector_index_service.search_chunks_for_kb_hybrid(
+                    query_text=query_text,
+                    kb_id=kb_id,
+                    limit=limit,
+                )
+                set_span_attributes(span, {"rag.hit_count": len(hits)})
         except AppError:
             raise
         except Exception as exc:

@@ -49,6 +49,29 @@ Authorization: Bearer {{login.response.body.$.access_token}}
 Accept: application/json
 
 
+###
+# @name querySentRealLlm1
+POST {{baseUrl}}/api/v1/chat/query_sent
+Authorization: Bearer {{login.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "query": "手动真实 LLM 检查 1：请只回复一句自然中文，并包含标记 REAL_LLM_MANUAL_CHECK_1。不要说自己是 MockLLMService。"
+}
+
+
+###
+# @name querySentRealLlm2
+POST {{baseUrl}}/api/v1/chat/query_sent
+Authorization: Bearer {{login.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "query": "手动真实 LLM 检查 2：请基于上一轮对话，回复一个很短的 JSON，字段包含 marker 和 summary，其中 marker 必须是 REAL_LLM_MANUAL_CHECK_2。",
+  "session_id": "{{querySentRealLlm1.response.body.$.session_id}}"
+}
+
+
 ### Knowledge - upload stream
 ### Note: replace `@kbId` with a real knowledge base ID before running.
 ### If you do not have one yet, create/seed one first, or use the smoke pytest

@@ -9,6 +9,7 @@ from backend.ai.core.prompt_templates import RAG_SYSTEM_TEMPLATE
 from backend.core.config import settings
 from backend.core.exceptions import AppError, ServiceError, ValidationError
 from backend.core.redis import redis_client
+from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.domain.interfaces import (
     AbstractLLMService,
     AbstractRAGService,
@@ -254,91 +255,131 @@ class ChatNonStreamWorkflow:
 
         redis = None
         lock_key: str | None = None
+        trace_attrs = {
+            "chat.user_id": user_id,
+            "chat.session_id": session_id,
+            "chat.kb_id": kb_id,
+            "chat.client_request_id.present": client_request_id is not None,
+            "chat.query.char_count": len(query_text),
+            "chat.stream": False,
+        }
 
-        if client_request_id:
-            redis = await redis_client.init()
-            lock_key = f"idempotency:chat:{user_id}:{client_request_id}"
-            is_new = await redis.set(lock_key, "PROCESSING", nx=True, ex=300)
-            if not is_new:
-                val = await redis.get(lock_key)
-                if val == "PROCESSING":
-                    raise ServiceError(
-                        "正在加速计算中...",
-                        details={"client_request_id": client_request_id},
-                    )
+        with trace_span("chat.nonstream.idempotency_check", trace_attrs) as span:
+            if client_request_id:
+                redis = await redis_client.init()
+                lock_key = f"idempotency:chat:{user_id}:{client_request_id}"
+                is_new = await redis.set(lock_key, "PROCESSING", nx=True, ex=300)
+                set_span_attributes(span, {"chat.idempotency.is_new": bool(is_new)})
+                if not is_new:
+                    val = await redis.get(lock_key)
+                    set_span_attributes(span, {"chat.idempotency.value": val})
+                    if val == "PROCESSING":
+                        raise ServiceError(
+                            "正在加速计算中...",
+                            details={"client_request_id": client_request_id},
+                        )
+                    async with self.uow:
+                        msg = await self.uow.chat_repo.get_message_by_client_request_id(
+                            client_request_id,
+                            user_id,
+                        )
+                        if msg and msg.status == MessageStatus.SUCCESS:
+                            session = await self.uow.chat_repo.get_session(msg.session_id)
+                            if session is None:
+                                raise ServiceError("会话不存在")
+                            set_span_attributes(
+                                span,
+                                {"chat.idempotency.cached_message": True},
+                            )
+                            return ChatQueryResponse(
+                                session_id=session.id,
+                                session_title=session.title,
+                                answer=MessageResponse.model_validate(msg),
+                            )
+
+        with trace_span("chat.nonstream.create_session_and_messages", trace_attrs) as span:
+            async with self._get_db_semaphore():
                 async with self.uow:
-                    msg = await self.uow.chat_repo.get_message_by_client_request_id(
-                        client_request_id,
-                        user_id,
-                    )
-                    if msg and msg.status == MessageStatus.SUCCESS:
-                        session = await self.uow.chat_repo.get_session(msg.session_id)
-                        if session is None:
-                            raise ServiceError("会话不存在")
-                        return ChatQueryResponse(
-                            session_id=session.id,
-                            session_title=session.title,
-                            answer=MessageResponse.model_validate(msg),
+                    user = await self.uow.user_repo.get(user_id)
+                    if user and user.used_tokens >= user.max_tokens:
+                        if redis is not None and lock_key is not None:
+                            await redis.delete(lock_key)
+                        raise ValidationError(
+                            "Token 余额不足",
+                            details={"used": user.used_tokens, "max": user.max_tokens},
                         )
 
-        async with self._get_db_semaphore():
-            async with self.uow:
-                user = await self.uow.user_repo.get(user_id)
-                if user and user.used_tokens >= user.max_tokens:
-                    if redis is not None and lock_key is not None:
-                        await redis.delete(lock_key)
-                    raise ValidationError(
-                        "Token 余额不足",
-                        details={"used": user.used_tokens, "max": user.max_tokens},
+                    session_manager = SessionManager(self.uow)
+                    session = await session_manager.ensure_session(
+                        user_id=user_id,
+                        query_text=query_text,
+                        session_id=session_id,
+                        kb_id=kb_id,
                     )
-
-                session_manager = SessionManager(self.uow)
-                session = await session_manager.ensure_session(
-                    user_id=user_id,
-                    query_text=query_text,
-                    session_id=session_id,
-                    kb_id=kb_id,
-                )
-                await session_manager.create_user_message(
-                    session_id=session.id,
-                    content=query_text,
-                )
-                assistant_msg = await session_manager.create_assistant_message(
-                    session_id=session.id,
-                    client_request_id=client_request_id,
-                )
-
-        async with self._get_db_semaphore():
-            async with self.uow:
-                session_manager = SessionManager(self.uow)
-                history_messages = await session_manager.get_session_messages(
-                    session_id=session.id,
-                    limit=settings.CHAT_MEMORY_FETCH_LIMIT,
-                )
-
-        history_dicts = self._history_to_dicts(history_messages)
-        memory_history, memory_summary = self._prepare_memory_context(
-            history_dicts,
-            query_text,
-        )
-        rag_chunks = await self._retrieve_rag_chunks(query_text=query_text, kb_id=kb_id)
-        search_context = self._build_search_context(kb_id=kb_id, rag_chunks=rag_chunks)
-        if rag_chunks:
-            assembled = self.rag_prompt_manager.assemble(
-                memory_history,
-                query_text,
-                extra_vars={
-                    "context_chunks": [chunk["content"] for chunk in rag_chunks],
-                    "conversation_summary": memory_summary,
+                    await session_manager.create_user_message(
+                        session_id=session.id,
+                        content=query_text,
+                    )
+                    assistant_msg = await session_manager.create_assistant_message(
+                        session_id=session.id,
+                        client_request_id=client_request_id,
+                    )
+            set_span_attributes(
+                span,
+                {
+                    "chat.session_id": session.id,
+                    "chat.assistant_message_id": assistant_msg.id,
                 },
             )
-        else:
-            assembled = self.prompt_manager.assemble(
-                memory_history,
+            trace_attrs["chat.session_id"] = session.id
+            trace_attrs["chat.assistant_message_id"] = assistant_msg.id
+
+        with trace_span("chat.nonstream.fetch_history", trace_attrs) as span:
+            async with self._get_db_semaphore():
+                async with self.uow:
+                    session_manager = SessionManager(self.uow)
+                    history_messages = await session_manager.get_session_messages(
+                        session_id=session.id,
+                        limit=settings.CHAT_MEMORY_FETCH_LIMIT,
+                    )
+            set_span_attributes(span, {"chat.history.message_count": len(history_messages)})
+
+        with trace_span("chat.nonstream.prepare_context", trace_attrs) as span:
+            history_dicts = self._history_to_dicts(history_messages)
+            memory_history, memory_summary = self._prepare_memory_context(
+                history_dicts,
                 query_text,
-                extra_vars={"conversation_summary": memory_summary},
             )
-        tokens_input = assembled.total_tokens
+            rag_chunks = await self._retrieve_rag_chunks(query_text=query_text, kb_id=kb_id)
+            search_context = self._build_search_context(kb_id=kb_id, rag_chunks=rag_chunks)
+            if rag_chunks:
+                assembled = self.rag_prompt_manager.assemble(
+                    memory_history,
+                    query_text,
+                    extra_vars={
+                        "context_chunks": [chunk["content"] for chunk in rag_chunks],
+                        "conversation_summary": memory_summary,
+                    },
+                )
+            else:
+                assembled = self.prompt_manager.assemble(
+                    memory_history,
+                    query_text,
+                    extra_vars={"conversation_summary": memory_summary},
+                )
+            tokens_input = assembled.total_tokens
+            set_span_attributes(
+                span,
+                {
+                    "chat.history.message_count": len(history_dicts),
+                    "chat.memory.message_count": len(memory_history),
+                    "chat.memory.summary_char_count": len(memory_summary),
+                    "chat.prompt.tokens_input": tokens_input,
+                    "chat.prompt.message_count": len(assembled.messages),
+                    "chat.prompt.uses_rag": bool(rag_chunks),
+                    "rag.hit_count": len(rag_chunks),
+                },
+            )
 
         llm_query = LLMQueryDTO(
             session_id=session.id,
@@ -347,8 +388,18 @@ class ChatNonStreamWorkflow:
         )
 
         try:
-            async with self._get_llm_semaphore():
-                result = await self.llm_service.generate_response(llm_query)
+            with trace_span("chat.nonstream.call_llm", trace_attrs) as span:
+                async with self._get_llm_semaphore():
+                    result = await self.llm_service.generate_response(llm_query)
+                set_span_attributes(
+                    span,
+                    {
+                        "llm.success": result.success,
+                        "llm.latency_ms": result.latency_ms,
+                        "llm.response.completion_tokens": result.completion_tokens,
+                        "llm.response.char_count": len(result.content),
+                    },
+                )
         except AppError:
             if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
@@ -381,20 +432,28 @@ class ChatNonStreamWorkflow:
                 details={"error": result.error_message},
             )
 
-        async with self._get_db_semaphore():
-            async with self.uow:
-                updater = ChatMessageUpdater(self.uow)
-                updated_msg = await updater.update_as_success(
-                    message_id=assistant_msg.id,
-                    content=result.content,
-                    tokens_input=tokens_input,
-                    tokens_output=result.completion_tokens,
-                    search_context=search_context,
-                )
-                await self.uow.user_repo.increment_used_tokens(
-                    user_id,
-                    tokens_input + (result.completion_tokens or 0),
-                )
+        with trace_span("chat.nonstream.persist_answer", trace_attrs) as span:
+            async with self._get_db_semaphore():
+                async with self.uow:
+                    updater = ChatMessageUpdater(self.uow)
+                    updated_msg = await updater.update_as_success(
+                        message_id=assistant_msg.id,
+                        content=result.content,
+                        tokens_input=tokens_input,
+                        tokens_output=result.completion_tokens,
+                        search_context=search_context,
+                    )
+                    await self.uow.user_repo.increment_used_tokens(
+                        user_id,
+                        tokens_input + (result.completion_tokens or 0),
+                    )
+            set_span_attributes(
+                span,
+                {
+                    "chat.tokens_input": tokens_input,
+                    "chat.tokens_output": result.completion_tokens,
+                },
+            )
 
         if redis is not None and lock_key is not None:
             await redis.set(lock_key, str(updated_msg.id), ex=3600)

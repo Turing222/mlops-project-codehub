@@ -1,0 +1,81 @@
+sources:
+  docker_socket:
+    type: docker_logs
+
+transforms:
+  parse_and_label:
+    type: remap
+    inputs: ["docker_socket"]
+    source: |
+      .service = replace(string!(.container_name), "/", "")
+      if exists(.label."com.docker.compose.service") {
+        .service = string!(.label."com.docker.compose.service")
+      }
+
+      allowed_services = [
+        "api",
+        "task_worker",
+        "db_migrator",
+        "postgres",
+        "redis",
+        "jaeger",
+        "otel-collector",
+        "tempo",
+        "prometheus",
+        "grafana",
+        "loki",
+        "vector",
+        "postgres_exporter",
+        "redis_exporter",
+        "cadvisor",
+      ]
+      if !includes(allowed_services, .service) {
+        abort
+      }
+
+      parsed, err = parse_json(.message)
+      if err == null {
+        . = merge!(., parsed)
+        if .status != null {
+          status_str = to_string(.status) ?? "0"
+          if starts_with(status_str, "5") {
+            .level = "error"
+          } else if starts_with(status_str, "4") {
+            .level = "warn"
+          } else if .level == null {
+            .level = "info"
+          }
+        }
+      } else {
+        msg_str = string!(.message)
+        if match(msg_str, r'\b(?:ERROR|CRITICAL|FATAL)\b(?: - |:\s*|\]|\s+)') {
+          .level = "error"
+        } else if match(msg_str, r'\b(?:WARN|WARNING)\b(?: - |:\s*|\]|\s+)') {
+          .level = "warn"
+        } else if match(msg_str, r'\b(?:DEBUG)\b(?: - |:\s*|\]|\s+)') {
+          .level = "debug"
+        } else {
+          .level = "info"
+        }
+      }
+
+      .level = downcase(to_string(.level) ?? "info")
+      del(.label)
+      del(.container_id)
+      del(.container_created_at)
+      del(.container_name)
+      del(.host)
+      del(.image)
+      del(.source_type)
+      del(.stream)
+
+sinks:
+  loki_sink:
+    type: loki
+    inputs: ["parse_and_label"]
+    endpoint: "http://loki:3100"
+    encoding: { codec: "json" }
+    labels:
+      service: "{{ service }}"
+      level: "{{ level }}"
+      env: "smoke"
