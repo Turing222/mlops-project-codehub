@@ -4,6 +4,7 @@ import pytest
 
 from backend.ai.providers.embedding.rag_embedding import (
     GoogleGenAIEmbedder,
+    MockRAGEmbedder,
     OpenAICompatibleEmbedder,
     RAGEmbedderFactory,
 )
@@ -31,6 +32,22 @@ def test_factory_returns_google_embedder():
     )
 
     assert isinstance(embedder, GoogleGenAIEmbedder)
+
+
+def test_factory_returns_mock_embedder():
+    embedder = RAGEmbedderFactory.create(
+        provider="mock",
+        model_name="unused",
+        dimensions=4,
+    )
+
+    assert isinstance(embedder, MockRAGEmbedder)
+    assert embedder.encode_query("hello") == [1.0, 0.0, 0.0, 0.0]
+    assert embedder.encode_document("doc") == [1.0, 0.0, 0.0, 0.0]
+    assert embedder.encode_documents(["a", "b"]) == [
+        [1.0, 0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+    ]
 
 
 def test_factory_rejects_local_embedding_provider():
@@ -62,6 +79,38 @@ def test_openai_embedder_encode_query_success(monkeypatch):
 
     vector = embedder.encode_query("hello")
     assert vector == [0.1, 0.2, 0.3]
+
+
+def test_openai_embedder_encode_documents_batches_inputs(monkeypatch):
+    calls = []
+    fake_response = SimpleNamespace(
+        data=[
+            SimpleNamespace(index=0, embedding=[0.1, 0.2, 0.3]),
+            SimpleNamespace(index=1, embedding=[0.4, 0.5, 0.6]),
+        ]
+    )
+
+    def fake_create(**kwargs):
+        calls.append(kwargs)
+        return fake_response
+
+    fake_client = SimpleNamespace(embeddings=SimpleNamespace(create=fake_create))
+    monkeypatch.setattr(
+        "backend.ai.providers.embedding.rag_embedding.openai.OpenAI",
+        lambda **_: fake_client,
+    )
+
+    embedder = OpenAICompatibleEmbedder(
+        model_name="text-embedding-3-small",
+        base_url="http://example.com/v1",
+        api_key="test-key",
+        dimensions=3,
+    )
+
+    vectors = embedder.encode_documents([" first ", "second"])
+
+    assert vectors == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+    assert calls[0]["input"] == ["first", "second"]
 
 
 def test_openai_embedder_encode_query_dim_mismatch(monkeypatch):

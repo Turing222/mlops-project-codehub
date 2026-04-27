@@ -27,6 +27,7 @@ def repo(mock_session):
 async def test_create_session_maps_input_into_llm_config(repo):
     user_id = uuid.uuid4()
     kb_id = uuid.uuid4()
+    workspace_id = uuid.uuid4()
     expected = MagicMock()
     repo.session_crud.create.return_value = expected
 
@@ -34,6 +35,7 @@ async def test_create_session_maps_input_into_llm_config(repo):
         user_id=user_id,
         title="Test Session",
         kb_id=kb_id,
+        workspace_id=workspace_id,
         llm_config={"temperature": 0.7},
     )
 
@@ -42,12 +44,14 @@ async def test_create_session_maps_input_into_llm_config(repo):
     assert kwargs["user_id"] == user_id
     assert kwargs["title"] == "Test Session"
     assert kwargs["kb_id"] == kb_id
+    assert kwargs["workspace_id"] == workspace_id
     assert kwargs["llm_config"] == {"temperature": 0.7}
 
 
 @pytest.mark.asyncio
 async def test_create_message_passes_extended_fields(repo):
     session_id = uuid.uuid4()
+    user_id = uuid.uuid4()
     expected = MagicMock()
     repo.message_crud.create.return_value = expected
 
@@ -61,6 +65,8 @@ async def test_create_message_passes_extended_fields(repo):
         tokens_output=22,
         client_request_id="req-1",
         search_context={"chunks": []},
+        user_id=user_id,
+        message_metadata={"source": "test"},
     )
 
     assert result == expected
@@ -71,6 +77,8 @@ async def test_create_message_passes_extended_fields(repo):
     assert kwargs["client_request_id"] == "req-1"
     assert kwargs["tokens_input"] == 11
     assert kwargs["tokens_output"] == 22
+    assert kwargs["user_id"] == user_id
+    assert kwargs["message_metadata"] == {"source": "test"}
 
 
 @pytest.mark.asyncio

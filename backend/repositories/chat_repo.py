@@ -32,6 +32,7 @@ class ChatRepository:
         user_id: uuid.UUID,
         title: str = "新对话",
         kb_id: uuid.UUID | None = None,
+        workspace_id: uuid.UUID | None = None,
         llm_config: dict | None = None,
     ) -> ChatSession:
         """创建新会话"""
@@ -39,6 +40,7 @@ class ChatRepository:
             "user_id": user_id,
             "title": title[:50] if title else "新对话",  # 限制长度
             "kb_id": kb_id,
+            "workspace_id": workspace_id,
             "llm_config": llm_config or {},
         }
         return await self.session_crud.create(obj_in=data)
@@ -129,6 +131,8 @@ class ChatRepository:
         tokens_output: int = 0,
         client_request_id: str | None = None,
         search_context: dict | None = None,
+        user_id: uuid.UUID | None = None,
+        message_metadata: dict | None = None,
     ) -> ChatMessage:
         """创建新消息"""
         data = {
@@ -141,6 +145,8 @@ class ChatRepository:
             "tokens_output": tokens_output,
             "client_request_id": client_request_id,
             "search_context": search_context,
+            "user_id": user_id,
+            "message_metadata": message_metadata or {},
         }
         return await self.message_crud.create(obj_in=data)
 
@@ -170,6 +176,7 @@ class ChatRepository:
         tokens_input: int | None = None,
         tokens_output: int | None = None,
         search_context: dict | None = None,
+        message_metadata: dict | None = None,
     ) -> ChatMessage | None:
         """更新消息状态和内容"""
         message = await self.get_message(message_id)
@@ -187,6 +194,8 @@ class ChatRepository:
             update_data["tokens_output"] = tokens_output
         if search_context is not None:
             update_data["search_context"] = search_context
+        if message_metadata is not None:
+            update_data["message_metadata"] = message_metadata
 
         return await self.message_crud.update(db_obj=message, obj_in=update_data)
 
@@ -195,6 +204,7 @@ class ChatRepository:
         session_id: uuid.UUID,
         role: str,
         content: str = "",
+        user_id: uuid.UUID | None = None,
     ) -> ChatMessage:
         """创建正在思考中的消息（用于流式输出）"""
         return await self.create_message(
@@ -202,6 +212,7 @@ class ChatRepository:
             role=role,
             content=content,
             status=MessageStatus.THINKING,
+            user_id=user_id,
         )
 
     async def get_message_by_client_request_id(

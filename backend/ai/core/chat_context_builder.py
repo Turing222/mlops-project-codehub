@@ -3,7 +3,6 @@ import uuid
 from dataclasses import dataclass
 
 from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
-from backend.ai.core.prompt_templates import RAG_SYSTEM_TEMPLATE
 from backend.core.config import settings
 from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.domain.interfaces import AbstractRAGService
@@ -29,7 +28,7 @@ class ChatContextBuilder:
     ):
         self.prompt_manager = prompt_manager or PromptManager()
         self.rag_prompt_manager = rag_prompt_manager or PromptManager(
-            system_template=RAG_SYSTEM_TEMPLATE
+            template_name="rag_system"
         )
         self.rag_service = rag_service
 

@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
+from backend.repositories.access_repo import AccessRepository
 from backend.repositories.chat_repo import ChatRepository
 from backend.repositories.knowledge_repo import KnowledgeRepository
 from backend.repositories.task_repo import TaskRepository
@@ -10,6 +11,7 @@ from backend.repositories.user_repo import UserRepository
 
 
 class AbstractUnitOfWork(ABC):
+    access_repo: AccessRepository
     user_repo: UserRepository
     chat_repo: ChatRepository
     knowledge_repo: KnowledgeRepository
@@ -99,3 +101,7 @@ class AbstractRAGEmbedder(ABC):
     def encode_document(self, text: str) -> list[float]:
         """将文档片段编码为向量；默认复用查询编码。"""
         return self.encode_query(text)
+
+    def encode_documents(self, texts: list[str]) -> list[list[float]]:
+        """将文档片段批量编码为向量；默认逐条编码。"""
+        return [self.encode_document(text) for text in texts]

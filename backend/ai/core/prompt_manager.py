@@ -13,11 +13,12 @@ from dataclasses import dataclass, field
 
 from jinja2 import Template
 
+from backend.ai.core.prompt_resolver import get_prompt_resolver
 from backend.ai.core.prompt_templates import (
-    DEFAULT_SYSTEM_TEMPLATE,
     render_system_prompt,
 )
 from backend.ai.core.token_counter import count_messages_tokens
+from backend.config.llm import get_llm_model_config
 from backend.core.config import settings
 from backend.core.exceptions import TokenLimitExceeded
 from backend.models.schemas.chat_schema import ConversationMessage
@@ -60,20 +61,24 @@ class PromptManager:
     def __init__(
         self,
         system_template: Template | None = None,
+        template_name: str = "default_system",
         template_vars: dict | None = None,
         max_context_tokens: int | None = None,
         max_history_rounds: int | None = None,
         reserved_response_tokens: int | None = None,
         model_name: str | None = None,
     ):
-        self.system_template = system_template or DEFAULT_SYSTEM_TEMPLATE
+        self.system_template = system_template
+        self.template_name = template_name
         self.template_vars = template_vars or {}
         self.max_context_tokens = max_context_tokens or settings.LLM_MAX_CONTEXT_TOKENS
         self.max_history_rounds = max_history_rounds or settings.LLM_MAX_HISTORY_ROUNDS
         self.reserved_response_tokens = (
             reserved_response_tokens or settings.LLM_RESERVED_RESPONSE_TOKENS
         )
-        self.model_name = model_name or settings.LLM_MODEL_NAME
+        self.model_name = (
+            model_name or get_llm_model_config().resolve_profile().model
+        )
 
     def assemble(
         self,
@@ -100,8 +105,11 @@ class PromptManager:
 
         # 1. 使用 Jinja2 渲染 System Prompt
         merged_vars = {**self.template_vars, **(extra_vars or {})}
+        system_template = self.system_template or get_prompt_resolver().get_template(
+            self.template_name
+        )
         system_content = render_system_prompt(
-            template=self.system_template, **merged_vars
+            template=system_template, **merged_vars
         )
 
         # 2. 构建基础消息（System + 当前 Query）

@@ -2,11 +2,14 @@
 from fastapi import APIRouter
 
 from backend.api.v1.endpoint import (
+    audit_api,
     auth_api,
     chat_api,
     health_check,
     knowledge_api,
+    permission_api,
     user_api,
+    workspace_api,
 )
 
 api_router = APIRouter()
@@ -16,6 +19,9 @@ api_router.include_router(auth_api.router, prefix="/auth", tags=["auth"])
 api_router.include_router(user_api.router, prefix="/users", tags=["users"])
 api_router.include_router(chat_api.router, prefix="/chat", tags=["chat"])
 api_router.include_router(knowledge_api.router, prefix="/knowledge", tags=["knowledge"])
+api_router.include_router(audit_api.router, prefix="/audit", tags=["audit"])
+api_router.include_router(workspace_api.router, prefix="/workspaces", tags=["workspaces"])
+api_router.include_router(permission_api.router, prefix="/permissions", tags=["permissions"])
 api_router.include_router(
     health_check.router, prefix="/health_check", tags=["health_check"]
 )

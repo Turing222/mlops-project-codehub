@@ -11,6 +11,7 @@ from backend.ai.core.prompt_templates import RAG_SYSTEM_TEMPLATE
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.ai.providers.llm.llm_service import LLMService
 from backend.ai.providers.llm.mock_provider import MockLLMService
+from backend.config.llm import get_llm_model_config
 from backend.core.config import settings
 from backend.core.database import create_db_assets
 from backend.models.schemas.chat_schema import LLMQueryDTO
@@ -75,6 +76,8 @@ def parse_args() -> argparse.Namespace:
         help="Output report path",
     )
     return parser.parse_args()
+
+
 def _char_f1(pred: str, ref: str) -> float:
     pred_chars = [c for c in pred if not c.isspace()]
     ref_chars = [c for c in ref if not c.isspace()]
@@ -124,9 +127,15 @@ async def run(
     engine, session_factory = create_db_assets()
     try:
         uow = SQLAlchemyUnitOfWork(session_factory)
+        embedding_profile = get_llm_model_config().resolve_embedding_profile(
+            settings.RAG_EMBED_PROVIDER
+        )
         embedder = RAGEmbedderFactory.create(
-            provider=settings.RAG_EMBED_PROVIDER,
-            model_name=settings.RAG_EMBED_MODEL_NAME,
+            provider=embedding_profile.provider,
+            model_name=embedding_profile.model,
+            base_url=embedding_profile.resolve_base_url(),
+            api_key=embedding_profile.resolve_api_key(),
+            dimensions=embedding_profile.dimensions,
         )
         rag_service = RAGService(uow=uow, embedder=embedder, top_k=top_k)
         llm = MockLLMService() if llm_mode == "mock" else LLMService()
@@ -216,7 +225,9 @@ async def run(
             if sample.expected_chunk_ids:
                 retrieved_ids = {chunk["id"] for chunk in chunks}
                 retrieval_hit = (
-                    1.0 if retrieved_ids.intersection(sample.expected_chunk_ids) else 0.0
+                    1.0
+                    if retrieved_ids.intersection(sample.expected_chunk_ids)
+                    else 0.0
                 )
 
             refusal_score: float | None = None
@@ -308,7 +319,9 @@ async def run(
         report = {"summary": summary, "details": rows}
 
         ensure_parent_dir(output)
-        output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        output.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
         print("Answer Eval Done")
         print(json.dumps(summary, ensure_ascii=False, indent=2))

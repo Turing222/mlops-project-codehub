@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
 
 if TYPE_CHECKING:
+    from backend.models.orm.access import Workspace
     from backend.models.orm.chunk import DocumentChunk
     from backend.models.orm.user import User
 
@@ -22,6 +23,11 @@ class FileStatus(StrEnum):
     FAILED = "failed"  # 处理失败
 
 
+class FileVisibility(StrEnum):
+    PRIVATE = "private"
+    WORKSPACE = "workspace"
+
+
 class KnowledgeBase(Base, BaseIdModel, AuditMixin):
     """知识库：文件的逻辑集合"""
 
@@ -32,9 +38,15 @@ class KnowledgeBase(Base, BaseIdModel, AuditMixin):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
 
     # 关联
     user: Mapped[User] = relationship(back_populates="knowledge_bases")
+    workspace: Mapped[Workspace | None] = relationship(back_populates="knowledge_bases")
     files: Mapped[list[File]] = relationship(
         back_populates="kb",
         cascade="all, delete-orphan",
@@ -56,8 +68,26 @@ class File(Base, BaseIdModel, AuditMixin):
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[FileStatus] = mapped_column(String(20), default=FileStatus.UPLOADED)
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    visibility: Mapped[FileVisibility] = mapped_column(
+        String(20),
+        default=FileVisibility.WORKSPACE,
+        server_default=FileVisibility.WORKSPACE,
+        nullable=False,
+    )
 
     kb: Mapped[KnowledgeBase] = relationship(back_populates="files")
+    owner: Mapped[User | None] = relationship()
+    workspace: Mapped[Workspace | None] = relationship(back_populates="files")
     chunks: Mapped[list[DocumentChunk]] = relationship(
         back_populates="file",
         cascade="all, delete-orphan",

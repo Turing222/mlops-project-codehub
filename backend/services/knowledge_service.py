@@ -11,7 +11,11 @@ from backend.core.exceptions import (
     ValidationError,
 )
 from backend.domain.interfaces import AbstractUnitOfWork
-from backend.models.orm.knowledge import File, FileStatus
+from backend.models.orm.knowledge import File, FileStatus, KnowledgeBase
+from backend.services.permission_service import Permission, PermissionService
+
+DEFAULT_KNOWLEDGE_BASE_NAME = "默认知识库"
+DEFAULT_KNOWLEDGE_BASE_DESCRIPTION = "系统自动创建的默认知识库"
 
 
 class KnowledgeService:
@@ -38,7 +42,11 @@ class KnowledgeService:
         if not content:
             raise ValidationError("上传文件为空")
 
-        await self._ensure_kb_access(kb_id=kb_id, user_id=user_id)
+        kb = await self._ensure_kb_access(
+            kb_id=kb_id,
+            user_id=user_id,
+            permission=Permission.FILE_WRITE,
+        )
 
         target_path = self._build_storage_path(kb_id=kb_id, filename=safe_filename)
         await asyncio.to_thread(self._write_file, target_path, content)
@@ -48,6 +56,8 @@ class KnowledgeService:
             filename=safe_filename,
             file_path=target_path,
             file_size=len(content),
+            owner_id=user_id,
+            workspace_id=getattr(kb, "workspace_id", None),
         )
 
     async def save_upload_file_streaming(
@@ -58,7 +68,11 @@ class KnowledgeService:
         upload_file: UploadFile,
     ) -> File:
         safe_filename = self._validate_upload_file(upload_file)
-        await self._ensure_kb_access(kb_id=kb_id, user_id=user_id)
+        kb = await self._ensure_kb_access(
+            kb_id=kb_id,
+            user_id=user_id,
+            permission=Permission.FILE_WRITE,
+        )
 
         target_path = self._build_storage_path(kb_id=kb_id, filename=safe_filename)
         temp_path = self._build_temp_storage_path(kb_id=kb_id, filename=safe_filename)
@@ -77,6 +91,8 @@ class KnowledgeService:
                 filename=safe_filename,
                 file_path=target_path,
                 file_size=file_size,
+                owner_id=user_id,
+                workspace_id=getattr(kb, "workspace_id", None),
             )
         except AppError:
             self._cleanup_file(target_path if moved_to_target else temp_path)
@@ -88,10 +104,37 @@ class KnowledgeService:
     async def get_file(self, file_id: uuid.UUID) -> File | None:
         return await self.uow.knowledge_repo.get_file(file_id)
 
+    async def get_default_kb_for_user(
+        self,
+        *,
+        user_id: uuid.UUID,
+    ) -> KnowledgeBase | None:
+        return await self.uow.knowledge_repo.get_kb_by_name_for_user(
+            name=DEFAULT_KNOWLEDGE_BASE_NAME,
+            user_id=user_id,
+        )
+
+    async def get_or_create_default_kb(
+        self,
+        *,
+        user_id: uuid.UUID,
+    ) -> KnowledgeBase:
+        kb = await self.get_default_kb_for_user(user_id=user_id)
+        if kb:
+            return kb
+
+        return await self.uow.knowledge_repo.create_kb(
+            name=DEFAULT_KNOWLEDGE_BASE_NAME,
+            description=DEFAULT_KNOWLEDGE_BASE_DESCRIPTION,
+            user_id=user_id,
+        )
+
     async def ensure_kb_access(self, *, kb_id: uuid.UUID, user_id: uuid.UUID) -> None:
-        kb = await self.uow.knowledge_repo.get_kb_for_user(kb_id=kb_id, user_id=user_id)
-        if not kb:
-            raise ResourceNotFound("知识库不存在或无访问权限")
+        await self._ensure_kb_access(
+            kb_id=kb_id,
+            user_id=user_id,
+            permission=Permission.FILE_READ,
+        )
 
     async def set_file_status(
         self,
@@ -99,7 +142,9 @@ class KnowledgeService:
         file_id: uuid.UUID,
         status: FileStatus,
     ) -> File | None:
-        return await self.uow.knowledge_repo.update_file_status(file_id=file_id, status=status)
+        return await self.uow.knowledge_repo.update_file_status(
+            file_id=file_id, status=status
+        )
 
     def _build_storage_path(self, *, kb_id: uuid.UUID, filename: str) -> Path:
         kb_dir = self.storage_root / str(kb_id)
@@ -147,10 +192,41 @@ class KnowledgeService:
             )
         return safe_filename
 
-    async def _ensure_kb_access(self, *, kb_id: uuid.UUID, user_id: uuid.UUID) -> None:
-        kb = await self.uow.knowledge_repo.get_kb_for_user(kb_id=kb_id, user_id=user_id)
+    async def _ensure_kb_access(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        user_id: uuid.UUID,
+        permission: Permission,
+    ) -> KnowledgeBase:
+        kb = await self.uow.knowledge_repo.get_kb_for_user(
+            kb_id=kb_id,
+            user_id=user_id,
+        )
+        if kb:
+            return kb
+
+        get_kb = getattr(self.uow.knowledge_repo, "get_kb", None)
+        if get_kb is None:
+            raise ResourceNotFound("知识库不存在或无访问权限")
+
+        kb = await get_kb(kb_id)
         if not kb:
             raise ResourceNotFound("知识库不存在或无访问权限")
+
+        if kb.user_id == user_id:
+            return kb
+
+        if kb.workspace_id and await PermissionService(
+            self.uow
+        ).has_permission_for_user_id(
+            user_id=user_id,
+            workspace_id=kb.workspace_id,
+            permission=permission,
+        ):
+            return kb
+
+        raise ResourceNotFound("知识库不存在或无访问权限")
 
     async def _create_file_record(
         self,
@@ -159,6 +235,8 @@ class KnowledgeService:
         filename: str,
         file_path: Path,
         file_size: int,
+        owner_id: uuid.UUID,
+        workspace_id: uuid.UUID | None,
     ) -> File:
         try:
             return await self.uow.knowledge_repo.create_file(
@@ -167,6 +245,8 @@ class KnowledgeService:
                 file_path=str(file_path),
                 file_size=file_size,
                 status=FileStatus.UPLOADED,
+                owner_id=owner_id,
+                workspace_id=workspace_id,
             )
         except AppError:
             self._cleanup_file(file_path)

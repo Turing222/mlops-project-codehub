@@ -8,6 +8,7 @@ from backend.services.session_query_service import SessionQueryService
 from backend.services.task_service import TaskService
 from backend.services.user_import_service import UserImportService
 from backend.services.user_service import UserService
+from backend.services.workspace_service import WorkspaceService
 
 
 def get_knowledge_service(
@@ -42,3 +43,9 @@ def get_user_import_service(
     uow: AbstractUnitOfWork = Depends(get_uow),
 ) -> UserImportService:
     return UserImportService(uow=uow)
+
+
+def get_workspace_service(
+    uow: AbstractUnitOfWork = Depends(get_uow),
+) -> WorkspaceService:
+    return WorkspaceService(uow=uow)

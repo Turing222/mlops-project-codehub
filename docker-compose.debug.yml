@@ -1,0 +1,19 @@
+# Debug override for running dependencies in Docker while launching the API in VS Code.
+#
+# Usage:
+#   docker compose --env-file .env.smoke -f docker-compose.db.yml -f docker-compose.debug.yml up -d
+#
+# API and TaskIQ worker are put behind profiles so they can be launched locally
+# from VS Code when you want breakpoints.
+services:
+  api:
+    profiles:
+      - smoke-api
+
+  task_worker:
+    profiles:
+      - smoke-worker
+
+  redis:
+    ports:
+      - "${DEBUG_REDIS_PORT:-6380}:6379"

@@ -5,6 +5,7 @@ from backend.api.deps.ai import (
     get_rag_service,
     get_vector_index_service,
 )
+from backend.api.deps.audit import get_audit_service
 from backend.api.deps.auth import (
     get_current_active_user,
     get_current_superuser,
@@ -12,6 +13,7 @@ from backend.api.deps.auth import (
     get_login_data,
     reusable_oauth2,
 )
+from backend.api.deps.permissions import get_permission_service
 from backend.api.deps.services import (
     get_knowledge_service,
     get_task_service,
@@ -33,12 +35,14 @@ __all__ = [
     "get_current_active_user",
     "get_current_superuser",
     "get_login_data",
+    "get_audit_service",
     "get_llm_service",
     "get_rag_embedder",
     "get_rag_service",
     "get_chunking_service",
     "get_vector_index_service",
     "get_knowledge_service",
+    "get_permission_service",
     "get_task_service",
     "get_user_service",
     "get_user_import_service",

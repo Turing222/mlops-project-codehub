@@ -1,0 +1,126 @@
+version: 1
+default_profile: mock
+
+profiles:
+  mock:
+    provider: mock
+    model: mock
+    aliases:
+      - mock
+      - mock-llm
+      - fake
+
+  openai_compatible:
+    provider: openai-compatible
+    model: gpt-4o-mini
+    base_url: https://api.openai.com/v1
+    api_key_envs:
+      - LLM_API_KEY
+      - OPENAI_API_KEY
+    aliases:
+      - openai
+      - openai-compatible
+      - external-api
+
+  deepseek:
+    provider: deepseek
+    model: deepseek-chat
+    base_url: https://api.deepseek.com
+    api_key_envs:
+      - DEEPSEEK_API_KEY
+      - LLM_API_KEY
+    aliases:
+      - deepseek
+
+  deepseek_reasoner:
+    provider: deepseek
+    model: deepseek-reasoner
+    base_url: https://api.deepseek.com
+    api_key_envs:
+      - DEEPSEEK_API_KEY
+      - LLM_API_KEY
+    aliases:
+      - deepseek-reasoner
+
+  deepseek_v4_flash:
+    provider: deepseek
+    model: deepseek-v4-flash
+    base_url: https://api.deepseek.com
+    api_key_envs:
+      - DEEPSEEK_API_KEY
+      - LLM_API_KEY
+    aliases:
+      - deepseek-v4-flash
+
+  deepseek_v4_pro:
+    provider: deepseek
+    model: deepseek-v4-pro
+    base_url: https://api.deepseek.com
+    api_key_envs:
+      - DEEPSEEK_API_KEY
+      - LLM_API_KEY
+    aliases:
+      - deepseek-v4-pro
+
+  gemini:
+    provider: gemini
+    model: gemini-2.5-flash
+    api_key_envs:
+      - GEMINI_API_KEY
+      - GOOGLE_API_KEY
+    aliases:
+      - gemini
+      - google
+      - google-gla
+      - pydantic-ai
+      - pydantic_ai
+
+routes:
+  resilient:
+    profiles:
+      - deepseek
+      - deepseek_v4_flash
+      - gemini
+    aliases:
+      - auto
+      - failover
+      - resilient
+
+embeddings:
+  default_profile: google
+
+  profiles:
+    mock:
+      provider: mock
+      model: mock
+      dimensions: 768
+      aliases:
+        - mock
+        - fake
+        - deterministic
+
+    google:
+      provider: google
+      model: gemini-embedding-001
+      dimensions: 768
+      api_key_envs:
+        - RAG_EMBED_API_KEY
+        - GEMINI_API_KEY
+        - GOOGLE_API_KEY
+      aliases:
+        - google
+        - gemini
+        - google-genai
+
+    openai_compatible:
+      provider: openai-compatible
+      model: text-embedding-3-small
+      dimensions: 1536
+      api_key_envs:
+        - RAG_EMBED_API_KEY
+        - LLM_API_KEY
+        - OPENAI_API_KEY
+      aliases:
+        - openai
+        - openai-compatible
+        - external-api

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
 
 if TYPE_CHECKING:
+    from backend.models.orm.access import AuditEvent, UserWorkspaceRole, Workspace
     from backend.models.orm.chat import ChatSession
     from backend.models.orm.knowledge import KnowledgeBase
 
@@ -43,3 +44,12 @@ class User(Base, BaseIdModel, AuditMixin):
     # 反向关联
     sessions: Mapped[list[ChatSession]] = relationship(back_populates="user")
     knowledge_bases: Mapped[list[KnowledgeBase]] = relationship(back_populates="user")
+    owned_workspaces: Mapped[list[Workspace]] = relationship(
+        back_populates="owner",
+        foreign_keys="Workspace.owner_id",
+    )
+    workspace_roles: Mapped[list[UserWorkspaceRole]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    audit_events: Mapped[list[AuditEvent]] = relationship(back_populates="actor")

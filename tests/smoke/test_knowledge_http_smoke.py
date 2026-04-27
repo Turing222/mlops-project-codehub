@@ -4,9 +4,11 @@ import asyncio
 import os
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 
 import httpx
 import pytest
+from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend.models.orm.knowledge import KnowledgeBase
@@ -23,22 +25,73 @@ TASK_STATUS_PATH_TEMPLATE = "/api/v1/knowledge/tasks/{task_id}"
 FILE_STATUS_PATH_TEMPLATE = "/api/v1/knowledge/files/{file_id}"
 
 
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _smoke_env_file() -> Path:
+    configured = os.getenv("SMOKE_ENV_FILE", ".env.smoke")
+    path = Path(configured)
+    if not path.is_absolute():
+        path = _project_root() / path
+    return path
+
+
+def _read_smoke_env_value(name: str) -> str | None:
+    if value := os.getenv(name):
+        return value
+
+    env_file = _smoke_env_file()
+    if not env_file.is_file():
+        return None
+
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key == name:
+            return value.strip().strip("\"'")
+    return None
+
+
+def _read_secret_value(path: str) -> str | None:
+    secret_path = Path(path)
+    if not secret_path.is_absolute():
+        secret_path = _project_root() / secret_path
+    if not secret_path.is_file():
+        return None
+    return secret_path.read_text(encoding="utf-8").strip()
+
+
 def _smoke_database_url() -> str | None:
     explicit_url = os.getenv("SMOKE_DATABASE_URL")
     if explicit_url:
         return explicit_url
 
-    pg_host = os.getenv("POSTGRES_SERVER")
     pg_password = os.getenv("POSTGRES_PASSWORD")
-    if not pg_host or not pg_password:
+    if not pg_password:
+        secret_file = (
+            _read_smoke_env_value("SMOKE_POSTGRES_PASSWORD_FILE")
+            or "./secrets/smoke/postgres_password.txt"
+        )
+        pg_password = _read_secret_value(secret_file)
+
+    if not pg_password:
         return None
 
-    pg_user = os.getenv("POSTGRES_USER", "postgres")
-    pg_port = os.getenv("POSTGRES_PORT", "5432")
-    pg_db = os.getenv("POSTGRES_DB", "mentor_ai")
-    return (
-        f"postgresql+asyncpg://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_db}"
-    )
+    pg_host = os.getenv("SMOKE_POSTGRES_HOST", "localhost")
+    pg_user = _read_smoke_env_value("POSTGRES_USER") or "postgres"
+    pg_port = int(_read_smoke_env_value("POSTGRES_PORT") or "5432")
+    pg_db = _read_smoke_env_value("POSTGRES_DB") or "mentor_ai"
+    return URL.create(
+        "postgresql+asyncpg",
+        username=pg_user,
+        password=pg_password,
+        host=pg_host,
+        port=pg_port,
+        database=pg_db,
+    ).render_as_string(hide_password=False)
 
 
 async def _resolve_or_create_kb_id(

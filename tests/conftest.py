@@ -10,5 +10,3 @@ import os
 def pytest_configure():
     """Normalize env before test collection imports backend settings."""
     os.environ.setdefault("SECRET_KEY", "test-secret")
-    # backend.core.config uses Literal[768]; env vars are strings and can break import.
-    os.environ.pop("RAG_EMBED_DIM", None)

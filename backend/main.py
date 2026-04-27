@@ -7,6 +7,8 @@ from starlette.responses import PlainTextResponse
 
 import backend.core.secret_env  # noqa: F401
 from backend.api.v1.api import api_router
+from backend.config.llm import validate_llm_configs
+from backend.config.permissions import get_permission_policy
 from backend.core.config import settings
 from backend.core.database import init_db
 from backend.core.exceptions import setup_exception_handlers
@@ -30,6 +32,9 @@ logger.info("系统初始化完成")
 async def lifespan(app: FastAPI):
     # 顺序组合不同的初始化逻辑
     # 启动时：可以在这里打印连接池状态
+    get_permission_policy()
+    validate_llm_configs()
+    logger.info("权限与 LLM 配置加载完成")
 
     async with init_db(app):
         # 初始化 Redis

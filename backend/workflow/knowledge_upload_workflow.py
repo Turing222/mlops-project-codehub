@@ -99,6 +99,82 @@ class KnowledgeUploadWorkflow:
             file_obj=file_obj,
         )
 
+    async def submit_default_stream_ingestion(
+        self,
+        *,
+        user_id: uuid.UUID,
+        upload_file: UploadFile,
+    ) -> KnowledgeUploadResponse:
+        with trace_span(
+            "knowledge.upload.save_file",
+            {
+                "user.id": user_id,
+                "file.name": getattr(upload_file, "filename", None),
+                "knowledge.upload.default_kb": True,
+                "knowledge.upload.streaming": True,
+            },
+        ) as span:
+            async with self.knowledge_service.uow:
+                kb = await self.knowledge_service.get_or_create_default_kb(
+                    user_id=user_id,
+                )
+                file_obj = await self.knowledge_service.save_upload_file_streaming(
+                    kb_id=kb.id,
+                    user_id=user_id,
+                    upload_file=upload_file,
+                )
+            set_span_attributes(
+                span,
+                {
+                    "rag.kb_id": file_obj.kb_id,
+                    "rag.file_id": file_obj.id,
+                    "file.size": getattr(file_obj, "file_size", None),
+                },
+            )
+        return await self._create_and_dispatch_ingestion(
+            kb_id=file_obj.kb_id,
+            user_id=user_id,
+            file_obj=file_obj,
+        )
+
+    async def submit_default_ingestion(
+        self,
+        *,
+        user_id: uuid.UUID,
+        upload_file: UploadFile,
+    ) -> KnowledgeUploadResponse:
+        with trace_span(
+            "knowledge.upload.save_file",
+            {
+                "user.id": user_id,
+                "file.name": getattr(upload_file, "filename", None),
+                "knowledge.upload.default_kb": True,
+                "knowledge.upload.streaming": False,
+            },
+        ) as span:
+            async with self.knowledge_service.uow:
+                kb = await self.knowledge_service.get_or_create_default_kb(
+                    user_id=user_id,
+                )
+                file_obj = await self.knowledge_service.save_upload_file(
+                    kb_id=kb.id,
+                    user_id=user_id,
+                    upload_file=upload_file,
+                )
+            set_span_attributes(
+                span,
+                {
+                    "rag.kb_id": file_obj.kb_id,
+                    "rag.file_id": file_obj.id,
+                    "file.size": getattr(file_obj, "file_size", None),
+                },
+            )
+        return await self._create_and_dispatch_ingestion(
+            kb_id=file_obj.kb_id,
+            user_id=user_id,
+            file_obj=file_obj,
+        )
+
     async def _create_and_dispatch_ingestion(
         self,
         *,
@@ -124,7 +200,9 @@ class KnowledgeUploadWorkflow:
                         filename=file_obj.filename,
                         user_id=user_id,
                     )
-                set_span_attributes(span, {"task.id": task.id, "task.status": task.status})
+                set_span_attributes(
+                    span, {"task.id": task.id, "task.status": task.status}
+                )
         except AppError as exc:
             await self._handle_task_creation_failure(
                 kb_id=kb_id,
@@ -174,6 +252,7 @@ class KnowledgeUploadWorkflow:
         return KnowledgeUploadResponse(
             task_id=task.id,
             file_id=file_obj.id,
+            kb_id=kb_id,
             file_status=file_obj.status,
             task_status=task.status,
         )

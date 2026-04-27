@@ -4,6 +4,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
+from backend.config.llm import get_llm_model_config
 from backend.core.config import settings
 from backend.core.database import create_db_assets
 from backend.core.exceptions import AppError, ServiceError, ValidationError
@@ -33,12 +34,15 @@ def _get_session_factory() -> async_sessionmaker:
 def _get_embedder():
     global _embedder
     if _embedder is None:
+        profile = get_llm_model_config().resolve_embedding_profile(
+            settings.RAG_EMBED_PROVIDER
+        )
         _embedder = RAGEmbedderFactory.create(
-            provider=settings.RAG_EMBED_PROVIDER,
-            model_name=settings.RAG_EMBED_MODEL_NAME,
-            base_url=settings.RAG_EMBED_BASE_URL,
-            api_key=settings.RAG_EMBED_API_KEY,
-            dimensions=settings.RAG_EMBED_DIM,
+            provider=profile.provider,
+            model_name=profile.model,
+            base_url=profile.resolve_base_url(),
+            api_key=profile.resolve_api_key(),
+            dimensions=profile.dimensions,
         )
     return _embedder
 
@@ -71,14 +75,18 @@ async def ingest_knowledge_file_task(
 
 async def _ingest_knowledge_file_task(file_id: str, task_id: str | None = None):
     logger.info("TaskIQ 开始处理知识库文件: file_id=%s task_id=%s", file_id, task_id)
+    embedding_profile = get_llm_model_config().resolve_embedding_profile(
+        settings.RAG_EMBED_PROVIDER
+    )
 
     with trace_span(
         "taskiq.knowledge.ingest.setup",
         {
             "rag.file_id": file_id,
             "task.id": task_id,
-            "rag.embed.provider": settings.RAG_EMBED_PROVIDER,
-            "rag.embed.model": settings.RAG_EMBED_MODEL_NAME,
+            "rag.embed.profile": embedding_profile.name,
+            "rag.embed.provider": embedding_profile.provider,
+            "rag.embed.model": embedding_profile.model,
         },
     ):
         uow = SQLAlchemyUnitOfWork(_get_session_factory())
@@ -87,7 +95,11 @@ async def _ingest_knowledge_file_task(file_id: str, task_id: str | None = None):
             chunk_size=settings.KNOWLEDGE_CHUNK_SIZE,
             chunk_overlap=settings.KNOWLEDGE_CHUNK_OVERLAP,
         )
-        vector_index_service = VectorIndexService(uow=uow, embedder=_get_embedder())
+        vector_index_service = VectorIndexService(
+            uow=uow,
+            embedder=_get_embedder(),
+            embed_batch_size=settings.RAG_EMBED_BATCH_SIZE,
+        )
         knowledge_service = KnowledgeService(
             uow=uow,
             storage_root=settings.KNOWLEDGE_STORAGE_ROOT,

@@ -69,6 +69,12 @@ class ResourceNotFound(AppError):
     status_code = 404
 
 
+class PermissionDenied(AppError):
+    """权限不足"""
+
+    status_code = 403
+
+
 class FileParseException(AppError):
     """文件读取操作失败"""
 

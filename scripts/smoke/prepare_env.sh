@@ -23,6 +23,7 @@ log_section "Preparing smoke environment file"
 
 cp "$template_path" "$smoke_env_path"
 printf '\nCURRENT_UID=%s\nCURRENT_GID=%s\n' "$(id -u)" "$(id -g)" >> "$smoke_env_path"
+ensure_smoke_required_secrets
 
 log_info "Smoke env written to $smoke_env_path"
 log_info "Source template: $template_path"

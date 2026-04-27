@@ -49,7 +49,7 @@ def user_service():
         get_by_username=AsyncMock(),
         get_by_email=AsyncMock(),
         user_update=AsyncMock(),
-        user_register=AsyncMock(),
+        user_register_with_personal_workspace=AsyncMock(),
     )
     return service
 
@@ -165,7 +165,7 @@ async def test_create_user_success(user_service):
         confirm_password="Password123",
     )
     created = make_user(username="new_user", email="new_user@example.com")
-    user_service.user_register.return_value = created
+    user_service.user_register_with_personal_workspace.return_value = created
 
     result = await user_api.create_user(
         user_in=user_in,
@@ -174,12 +174,12 @@ async def test_create_user_success(user_service):
     )
 
     assert result.username == "new_user"
-    user_service.user_register.assert_awaited_once_with(user_in)
+    user_service.user_register_with_personal_workspace.assert_awaited_once_with(user_in)
 
 
 @pytest.mark.asyncio
 async def test_create_user_returns_400_when_service_returns_none(user_service):
-    user_service.user_register.return_value = None
+    user_service.user_register_with_personal_workspace.return_value = None
 
     with pytest.raises(HTTPException) as exc_info:
         await user_api.create_user(

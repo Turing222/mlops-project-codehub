@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import uuid
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy.exc import IntegrityError
 
 from backend.core.exceptions import ResourceNotFound, ValidationError
+from backend.domain.interfaces import AbstractUnitOfWork
+from backend.models.orm.access import WorkspaceRole
 from backend.models.schemas.user_schema import UserCreate, UserLogin, UserUpdate
 from backend.services.user_service import UserService
 
@@ -23,9 +26,13 @@ def service_ctx():
         get_multi=AsyncMock(),
         remove=AsyncMock(),
     )
-    uow = SimpleNamespace(user_repo=repo)
+    access_repo = SimpleNamespace(
+        create_workspace=AsyncMock(),
+        add_workspace_role=AsyncMock(),
+    )
+    uow = cast(AbstractUnitOfWork, SimpleNamespace(user_repo=repo, access_repo=access_repo))
     service = UserService(uow=uow)
-    return SimpleNamespace(service=service, repo=repo)
+    return SimpleNamespace(service=service, repo=repo, access_repo=access_repo)
 
 
 def _build_user_create() -> UserCreate:
@@ -60,6 +67,52 @@ async def test_user_register_success(service_ctx, monkeypatch):
     assert create_call["hashed_password"] == "hashed-password"
     assert "password" not in create_call
     assert "confirm_password" not in create_call
+
+
+@pytest.mark.asyncio
+async def test_user_register_with_personal_workspace_creates_owner_workspace(
+    service_ctx, monkeypatch
+):
+    user_in = _build_user_create()
+    user_id = uuid.uuid4()
+    created_user = SimpleNamespace(id=user_id, username=user_in.username)
+    workspace = SimpleNamespace(id=uuid.uuid4())
+    service_ctx.repo.get_by_email.return_value = None
+    service_ctx.repo.get_by_username.return_value = None
+    service_ctx.repo.create.return_value = created_user
+    service_ctx.access_repo.create_workspace.return_value = workspace
+
+    async def fake_hash(_: str) -> str:
+        return "hashed-password"
+
+    monkeypatch.setattr("backend.services.user_service.get_password_hash", fake_hash)
+
+    result = await service_ctx.service.user_register_with_personal_workspace(user_in)
+
+    assert result is created_user
+    service_ctx.access_repo.create_workspace.assert_awaited_once_with(
+        name="new_user's Workspace",
+        slug=f"new_user-{user_id.hex[:8]}",
+        owner_id=user_id,
+    )
+    service_ctx.access_repo.add_workspace_role.assert_awaited_once_with(
+        user_id=user_id,
+        workspace_id=workspace.id,
+        role=WorkspaceRole.OWNER,
+    )
+
+
+def test_user_create_forbids_role_and_workspace_fields():
+    with pytest.raises(ValueError):
+        UserCreate.model_validate(
+            {
+                "username": "new_user",
+                "email": "new_user@example.com",
+                "password": "Password123",
+                "confirm_password": "Password123",
+                "role": "owner",
+            }
+        )
 
 
 @pytest.mark.asyncio

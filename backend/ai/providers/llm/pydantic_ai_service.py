@@ -3,6 +3,7 @@ import time
 from collections.abc import AsyncGenerator
 
 from backend.ai.core.token_counter import count_tokens
+from backend.config.llm import get_llm_model_config
 from backend.core.config import settings
 from backend.core.exceptions import ServiceError
 from backend.core.trace_utils import set_span_attributes, trace_span
@@ -30,8 +31,15 @@ class PydanticAILLMService(AbstractLLMService):
         api_key: str | None = None,
         model_name: str | None = None,
     ):
-        self.api_key = api_key or settings.GEMINI_API_KEY or settings.GOOGLE_API_KEY
-        self.model_name = model_name or settings.GEMINI_MODEL_NAME
+        profile = get_llm_model_config().resolve_profile("gemini")
+        self.api_key = (
+            api_key
+            if api_key is not None
+            else profile.resolve_api_key()
+            or settings.GEMINI_API_KEY
+            or settings.GOOGLE_API_KEY
+        )
+        self.model_name = model_name or profile.model
 
     async def stream_response(
         self,

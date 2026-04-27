@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from backend.api.v1.endpoint import user_api
+from backend.models.schemas.user_schema import UserImportResponse
 
 
 class DummyUoW:
@@ -26,7 +27,7 @@ class StubUserService:
         self.get_by_username = AsyncMock()
         self.get_by_email = AsyncMock()
         self.user_update = AsyncMock()
-        self.user_register = AsyncMock()
+        self.user_register_with_personal_workspace = AsyncMock()
 
 
 class StubUserImportService:
@@ -66,6 +67,8 @@ def api_context():
     app.dependency_overrides[user_api.get_current_superuser] = lambda: super_user
     app.dependency_overrides[user_api.get_user_service] = lambda: user_service
     app.dependency_overrides[user_api.get_user_import_service] = lambda: import_service
+    app.dependency_overrides[user_api.get_permission_service] = lambda: SimpleNamespace()
+    app.dependency_overrides[user_api.get_audit_service] = lambda: SimpleNamespace()
 
     ctx = SimpleNamespace(
         app=app,
@@ -173,7 +176,7 @@ async def test_update_user_not_found_returns_404(client, api_context):
 @pytest.mark.asyncio
 async def test_create_user_success(client, api_context):
     created = make_user(username="fresh_user", email="fresh@example.com")
-    api_context.user_service.user_register.return_value = created
+    api_context.user_service.user_register_with_personal_workspace.return_value = created
 
     payload = {
         "username": "fresh_user",
@@ -188,12 +191,12 @@ async def test_create_user_success(client, api_context):
     body = response.json()
     assert body["username"] == "fresh_user"
     assert body["email"] == "fresh@example.com"
-    api_context.user_service.user_register.assert_awaited_once()
+    api_context.user_service.user_register_with_personal_workspace.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_create_user_returns_400_when_service_returns_none(client, api_context):
-    api_context.user_service.user_register.return_value = None
+    api_context.user_service.user_register_with_personal_workspace.return_value = None
     payload = {
         "username": "fresh_user",
         "email": "fresh@example.com",
@@ -223,12 +226,12 @@ async def test_create_user_invalid_payload_returns_422(client):
 
 @pytest.mark.asyncio
 async def test_csv_upload_success(client, api_context):
-    api_context.import_service.import_from_upload.return_value = {
-        "filename": "users.csv",
-        "total_rows": 2,
-        "imported_rows": 2,
-        "message": "成功导入 2 条用户数据",
-    }
+    api_context.import_service.import_from_upload.return_value = UserImportResponse(
+        filename="users.csv",
+        total_rows=2,
+        imported_rows=2,
+        message="成功导入 2 条用户数据",
+    )
 
     response = await client.post(
         "/api/v1/users/csv_upload",

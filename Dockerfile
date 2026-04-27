@@ -29,6 +29,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # 1. 复制 Alembic 配置文件
 COPY alembic.ini .
 COPY alembic/ ./alembic/
+COPY configs/ ./configs/
 
 # 3. 复制后端源码
 COPY backend/ ./backend/
@@ -64,6 +65,7 @@ ENV PYTHONUNBUFFERED=1
 COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
 COPY --from=builder --chown=appuser:appgroup /app/alembic.ini .
 COPY --from=builder --chown=appuser:appgroup /app/alembic ./alembic
+COPY --from=builder --chown=appuser:appgroup /app/configs ./configs
 COPY --from=builder --chown=appuser:appgroup /app/backend ./backend
 
 USER appuser
@@ -92,7 +94,6 @@ CMD ["uvicorn", "backend.main:app", \
     "--host", "0.0.0.0", "--port", "8000",\
     "--proxy-headers", "--forwarded-allow-ips",\
     "*"]
-
 
 
 

@@ -316,9 +316,9 @@ qa-test-unit
 
 本项目当前应遵循以下落地方式：
 
-- 文档说明使用 [dev-test-flow.md](/home/tongying/workspace/mlops-project/docs/dev-test-flow.md)
+- 文档说明使用 [dev-test-flow.md](./dev-test-flow.md)
 - 自动化标准使用本文档
-- 实际入口统一通过 [Makefile](/home/tongying/workspace/mlops-project/Makefile)
+- 实际入口统一通过 [Makefile](../Makefile)
 - 复杂逻辑放在 `scripts/`
 - 后续 CI 复用同一套入口
 

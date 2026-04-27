@@ -3,6 +3,7 @@ from fastapi import Depends
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.ai.providers.llm.factory import LLMProviderFactory
 from backend.api.deps.uow import get_uow
+from backend.config.llm import get_llm_model_config
 from backend.core.config import settings
 from backend.domain.interfaces import (
     AbstractLLMService,
@@ -16,16 +17,19 @@ from backend.services.vector_index_service import VectorIndexService
 
 
 def get_llm_service() -> AbstractLLMService:
-    return LLMProviderFactory.create(provider=settings.LLM_PROVIDER)
+    return LLMProviderFactory.create()
 
 
 def get_rag_embedder() -> AbstractRAGEmbedder:
+    profile = get_llm_model_config().resolve_embedding_profile(
+        settings.RAG_EMBED_PROVIDER
+    )
     return RAGEmbedderFactory.create(
-        provider=settings.RAG_EMBED_PROVIDER,
-        model_name=settings.RAG_EMBED_MODEL_NAME,
-        base_url=settings.RAG_EMBED_BASE_URL,
-        api_key=settings.RAG_EMBED_API_KEY,
-        dimensions=settings.RAG_EMBED_DIM,
+        provider=profile.provider,
+        model_name=profile.model,
+        base_url=profile.resolve_base_url(),
+        api_key=profile.resolve_api_key(),
+        dimensions=profile.dimensions,
     )
 
 
@@ -47,4 +51,8 @@ def get_vector_index_service(
     uow: AbstractUnitOfWork = Depends(get_uow),
     embedder: AbstractRAGEmbedder = Depends(get_rag_embedder),
 ) -> VectorIndexService:
-    return VectorIndexService(uow=uow, embedder=embedder)
+    return VectorIndexService(
+        uow=uow,
+        embedder=embedder,
+        embed_batch_size=settings.RAG_EMBED_BATCH_SIZE,
+    )

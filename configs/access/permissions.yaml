@@ -1,0 +1,57 @@
+version: 1
+
+permissions:
+  workspace:read:
+    description: View workspace metadata and workspace-scoped resources.
+  workspace:manage:
+    description: Manage workspace settings.
+  role:manage:
+    description: Manage workspace member roles.
+  file:read:
+    description: View knowledge files.
+  file:write:
+    description: Upload and update knowledge files.
+  file:delete:
+    description: Delete knowledge files.
+  chat:read:
+    description: View chat sessions.
+  chat:write:
+    description: Create and continue chat sessions.
+  audit:read:
+    description: View audit events.
+
+roles:
+  owner:
+    permissions:
+      - "*"
+
+  admin:
+    permissions:
+      - workspace:read
+      - workspace:manage
+      - role:manage
+      - file:read
+      - file:write
+      - file:delete
+      - chat:read
+      - chat:write
+      - audit:read
+
+  member:
+    permissions:
+      - workspace:read
+      - file:read
+      - file:write
+      - chat:read
+      - chat:write
+
+  viewer:
+    permissions:
+      - workspace:read
+      - file:read
+      - chat:read
+
+defaults:
+  superuser_bypass: true
+  missing_workspace: deny
+  missing_role: deny

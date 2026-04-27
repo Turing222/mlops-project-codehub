@@ -12,6 +12,7 @@ from backend.core.exceptions import (
 )
 from backend.core.security import get_password_hash, verify_password
 from backend.domain.interfaces import AbstractUnitOfWork
+from backend.models.orm.access import WorkspaceRole
 from backend.models.orm.user import User
 from backend.models.schemas.user_schema import (
     UserCreate,
@@ -83,6 +84,27 @@ class UserService(BaseService[AbstractUnitOfWork]):
         # await email_service.send_welcome_email(users.email)
 
         return user
+
+    async def user_register_with_personal_workspace(self, user_in: UserCreate) -> User | None:
+        user = await self.user_register(user_in)
+        if not user:
+            return None
+
+        await self._create_personal_workspace_for_user(user)
+        return user
+
+    async def _create_personal_workspace_for_user(self, user: User) -> None:
+        workspace_slug = f"{user.username}-{user.id.hex[:8]}"
+        workspace = await self.uow.access_repo.create_workspace(
+            name=f"{user.username}'s Workspace",
+            slug=workspace_slug,
+            owner_id=user.id,
+        )
+        await self.uow.access_repo.add_workspace_role(
+            user_id=user.id,
+            workspace_id=workspace.id,
+            role=WorkspaceRole.OWNER,
+        )
 
     async def user_update(self, user_id: uuid.UUID, user_in: UserUpdate) -> User | None:
         """

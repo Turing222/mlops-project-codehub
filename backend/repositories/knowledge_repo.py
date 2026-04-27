@@ -4,7 +4,7 @@ from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.orm.chunk import DocumentChunk
-from backend.models.orm.knowledge import File, FileStatus, KnowledgeBase
+from backend.models.orm.knowledge import File, FileStatus, FileVisibility, KnowledgeBase
 
 
 class KnowledgeRepository:
@@ -28,6 +28,38 @@ class KnowledgeRepository:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def get_kb_by_name_for_user(
+        self,
+        *,
+        name: str,
+        user_id: uuid.UUID,
+    ) -> KnowledgeBase | None:
+        stmt = select(KnowledgeBase).where(
+            KnowledgeBase.name == name,
+            KnowledgeBase.user_id == user_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def create_kb(
+        self,
+        *,
+        name: str,
+        description: str | None,
+        user_id: uuid.UUID,
+        workspace_id: uuid.UUID | None = None,
+    ) -> KnowledgeBase:
+        kb = KnowledgeBase(
+            name=name,
+            description=description,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
+        self.session.add(kb)
+        await self.session.flush()
+        await self.session.refresh(kb)
+        return kb
+
     async def create_file(
         self,
         kb_id: uuid.UUID,
@@ -35,6 +67,9 @@ class KnowledgeRepository:
         file_path: str,
         file_size: int,
         status: FileStatus = FileStatus.UPLOADED,
+        owner_id: uuid.UUID | None = None,
+        workspace_id: uuid.UUID | None = None,
+        visibility: FileVisibility = FileVisibility.WORKSPACE,
     ) -> File:
         file_obj = File(
             kb_id=kb_id,
@@ -42,6 +77,9 @@ class KnowledgeRepository:
             file_path=file_path,
             file_size=file_size,
             status=status,
+            owner_id=owner_id,
+            workspace_id=workspace_id,
+            visibility=visibility,
         )
         self.session.add(file_obj)
         await self.session.flush()

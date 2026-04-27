@@ -140,11 +140,11 @@ So 30+ diagnostics does not necessarily mean 30+ unrelated bugs.
 
 Most diagnostics were concentrated in these files:
 
-- [`backend/ai/providers/llm/llm_service.py`](/home/tongying/workspace/mlops-project/backend/ai/providers/llm/llm_service.py)
-- [`backend/services/vector_index_service.py`](/home/tongying/workspace/mlops-project/backend/services/vector_index_service.py)
-- [`backend/workflow/chat_nonstream_workflow.py`](/home/tongying/workspace/mlops-project/backend/workflow/chat_nonstream_workflow.py)
-- [`backend/workflow/chat_workflow.py`](/home/tongying/workspace/mlops-project/backend/workflow/chat_workflow.py)
-- [`backend/workflow/knowledge_rag_workflow.py`](/home/tongying/workspace/mlops-project/backend/workflow/knowledge_rag_workflow.py)
+- [`backend/ai/providers/llm/llm_service.py`](../backend/ai/providers/llm/llm_service.py)
+- [`backend/services/vector_index_service.py`](../backend/services/vector_index_service.py)
+- [`backend/workflow/chat_nonstream_workflow.py`](../backend/workflow/chat_nonstream_workflow.py)
+- [`backend/workflow/chat_workflow.py`](../backend/workflow/chat_workflow.py)
+- [`backend/workflow/knowledge_rag_workflow.py`](../backend/workflow/knowledge_rag_workflow.py)
 
 ## Pattern 1: Variables Defined Only Inside a Branch
 
@@ -158,8 +158,8 @@ Warnings like:
 
 This happened in:
 
-- [`backend/workflow/chat_nonstream_workflow.py`](/home/tongying/workspace/mlops-project/backend/workflow/chat_nonstream_workflow.py)
-- [`backend/workflow/chat_workflow.py`](/home/tongying/workspace/mlops-project/backend/workflow/chat_workflow.py)
+- [`backend/workflow/chat_nonstream_workflow.py`](../backend/workflow/chat_nonstream_workflow.py)
+- [`backend/workflow/chat_workflow.py`](../backend/workflow/chat_workflow.py)
 
 ### Original Problem
 
@@ -231,7 +231,7 @@ Warnings like:
 
 This happened in:
 
-- [`backend/workflow/chat_nonstream_workflow.py`](/home/tongying/workspace/mlops-project/backend/workflow/chat_nonstream_workflow.py)
+- [`backend/workflow/chat_nonstream_workflow.py`](../backend/workflow/chat_nonstream_workflow.py)
 
 ### Original Problem
 
@@ -287,7 +287,7 @@ Warnings like:
 
 This happened in:
 
-- [`backend/services/vector_index_service.py`](/home/tongying/workspace/mlops-project/backend/services/vector_index_service.py)
+- [`backend/services/vector_index_service.py`](../backend/services/vector_index_service.py)
 
 ### Original Problem
 
@@ -356,7 +356,7 @@ Warnings like:
 
 This happened in:
 
-- [`backend/workflow/knowledge_rag_workflow.py`](/home/tongying/workspace/mlops-project/backend/workflow/knowledge_rag_workflow.py)
+- [`backend/workflow/knowledge_rag_workflow.py`](../backend/workflow/knowledge_rag_workflow.py)
 
 ### Original Problem
 
@@ -418,7 +418,7 @@ Warnings like:
 
 This happened in:
 
-- [`backend/ai/providers/llm/llm_service.py`](/home/tongying/workspace/mlops-project/backend/ai/providers/llm/llm_service.py)
+- [`backend/ai/providers/llm/llm_service.py`](../backend/ai/providers/llm/llm_service.py)
 
 ### Original Problem
 

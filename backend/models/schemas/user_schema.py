@@ -86,7 +86,7 @@ class UserCreate(UserBase):
             raise ValueError("两次输入的密码不一致")
         return self
 
-    model_config = ConfigDict(str_strip_whitespace=True)  # 自动去除字符串前后空格
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
 
 class UserUpdate(BaseModel):

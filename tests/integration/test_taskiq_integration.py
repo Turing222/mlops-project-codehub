@@ -52,7 +52,6 @@ def taskiq_worker():
 
     env = os.environ.copy()
     env.setdefault("SECRET_KEY", "test-secret")
-    env.pop("RAG_EMBED_DIM", None)
 
     proc = subprocess.Popen(
         [

@@ -11,6 +11,7 @@ LLM Service — 大语言模型调用封装
 import logging
 import time
 from collections.abc import AsyncGenerator
+from typing import Any
 
 import openai
 from openai.types.chat import (
@@ -21,6 +22,7 @@ from openai.types.chat import (
 )
 
 from backend.ai.core.token_counter import count_tokens
+from backend.config.llm import get_llm_model_config
 from backend.core.config import settings
 from backend.core.exceptions import ServiceError
 from backend.core.trace_utils import set_span_attributes, trace_span
@@ -44,11 +46,16 @@ class LLMService(AbstractLLMService):
         base_url: str | None = None,
         api_key: str | None = None,
         model_name: str | None = None,
+        max_retries: int | None = None,
     ):
+        profile = get_llm_model_config().resolve_profile(provider_name)
         self.provider_name = provider_name
-        self.base_url = base_url or settings.LLM_BASE_URL
-        self.api_key = api_key if api_key is not None else settings.LLM_API_KEY
-        self.model_name = model_name or settings.LLM_MODEL_NAME
+        self.base_url = base_url or profile.resolve_base_url() or settings.LLM_BASE_URL
+        self.api_key = (
+            api_key if api_key is not None else profile.resolve_api_key() or settings.LLM_API_KEY
+        )
+        self.model_name = model_name or profile.model
+        self.max_retries = max_retries
         self._client: openai.AsyncOpenAI | None = None
 
     @staticmethod
@@ -92,10 +99,13 @@ class LLMService(AbstractLLMService):
                 details={"provider": self.provider_name},
             )
         if self._client is None:
-            self._client = openai.AsyncOpenAI(
-                base_url=self.base_url,
-                api_key=self.api_key,
-            )
+            client_kwargs: dict[str, Any] = {
+                "base_url": self.base_url,
+                "api_key": self.api_key,
+            }
+            if self.max_retries is not None:
+                client_kwargs["max_retries"] = self.max_retries
+            self._client = openai.AsyncOpenAI(**client_kwargs)
         return self._client
 
     async def stream_response(

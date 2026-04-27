@@ -17,6 +17,76 @@ sys.path.insert(0, BASE_DIR)
 
 # --- [重点 2] 引入你的逻辑 ---
 
+
+def _read_env_file(path: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not os.path.exists(path):
+        return values
+
+    with open(path, encoding="utf-8") as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export ") :].strip()
+            if "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip("\"'")
+            if key:
+                values[key] = value
+
+    return values
+
+
+def _project_path(path: str) -> str:
+    if os.path.isabs(path):
+        return path
+    return os.path.join(BASE_DIR, path)
+
+
+def _prepare_local_alembic_environment() -> None:
+    if os.getenv("ALEMBIC_SKIP_LOCAL_ENV_DEFAULTS", "").lower() == "true":
+        return
+    if os.path.exists("/.dockerenv"):
+        return
+
+    original_env_keys = set(os.environ)
+    env_values = _read_env_file(os.path.join(BASE_DIR, ".env"))
+    smoke_env_values = _read_env_file(os.path.join(BASE_DIR, ".env.smoke"))
+
+    for key, value in env_values.items():
+        os.environ.setdefault(key, value)
+    for key, value in smoke_env_values.items():
+        os.environ.setdefault(key, value)
+
+    secret_file_defaults = {
+        "SECRET_KEY_FILE": smoke_env_values.get("SMOKE_SECRET_KEY_FILE", "./secrets/smoke/secret_key.txt"),
+        "POSTGRES_PASSWORD_FILE": smoke_env_values.get(
+            "SMOKE_POSTGRES_PASSWORD_FILE",
+            "./secrets/smoke/postgres_password.txt",
+        ),
+        "REDIS_PASSWORD_FILE": smoke_env_values.get("SMOKE_REDIS_PASSWORD_FILE", "./secrets/smoke/redis_password.txt"),
+    }
+    for env_name, default_path in secret_file_defaults.items():
+        if env_name in os.environ:
+            continue
+        secret_path = _project_path(default_path)
+        if os.path.exists(secret_path):
+            os.environ[env_name] = secret_path
+
+    if "POSTGRES_SERVER" not in original_env_keys and os.getenv("POSTGRES_SERVER") == "postgres":
+        os.environ["POSTGRES_SERVER"] = "localhost"
+
+    if "SECRET_KEY" not in os.environ and "SECRET_KEY_FILE" not in os.environ:
+        os.environ["SECRET_KEY"] = "alembic-local-secret"
+
+
+_prepare_local_alembic_environment()
+
 from backend.core.config import settings  # noqa: E402
 from backend.models.orm import Base  # noqa: E402
 
@@ -116,7 +186,7 @@ async def run_migrations_online() -> None:
     # 从配置节加载字典
     section = config.get_section(config.config_ini_section, {})
     section["sqlalchemy.url"] = str(settings.database_url)
-    print(f"DEBUG: Connecting to {settings.database_url}")
+    print(f"DEBUG: Connecting to {settings.database_url_safe}")
     # 创建异步引擎
     connectable = async_engine_from_config(
         section,

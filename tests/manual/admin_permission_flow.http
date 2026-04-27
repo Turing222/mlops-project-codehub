@@ -1,0 +1,163 @@
+### Admin / permission / audit manual flow
+### Usage:
+### 1. LLM_PROVIDER=mock make env-smoke-up
+### 2. make env-smoke-wait
+### 3. make seed-dev
+### 4. Run these requests top-to-bottom with VS Code REST Client or IntelliJ HTTP Client.
+###
+### Trace tip:
+### Copy any response X-Trace-ID into Grafana/Tempo when observability is enabled:
+### docker compose --env-file .env.smoke --env-file deploy/monitoring/observability.env.template --profile observability -f docker-compose.db.yml up -d
+
+@baseUrl = http://localhost:8000
+@seedPassword = SeedPass123!
+@adminUsername = seed_admin
+@memberUsername = seed_member
+@viewerUsername = seed_viewer
+@inactiveUsername = seed_inactive
+
+
+### Health - live
+GET {{baseUrl}}/api/v1/health_check/live
+Accept: application/json
+X-Request-ID: manual-health-live-001
+
+
+### Health - DB ready
+GET {{baseUrl}}/api/v1/health_check/db_ready
+Accept: application/json
+X-Request-ID: manual-health-ready-001
+
+
+### Auth - admin login
+# @name adminLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/x-www-form-urlencoded
+X-Request-ID: manual-admin-login-001
+
+username={{adminUsername}}&password={{seedPassword}}
+
+
+### Users - admin current user
+# @name adminMe
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+X-Request-ID: manual-admin-me-001
+
+
+### Users - admin can query a seeded member
+# @name memberLookup
+GET {{baseUrl}}/api/v1/users?username={{memberUsername}}
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+X-Request-ID: manual-admin-query-member-001
+
+
+### Users - admin patches the seeded member, safe to run repeatedly
+PATCH {{baseUrl}}/api/v1/users/{{memberLookup.response.body.$.id}}
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Content-Type: application/json
+X-Request-ID: manual-admin-update-member-001
+
+{
+  "max_tokens": 80000
+}
+
+
+### Auth - member login
+# @name memberLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/x-www-form-urlencoded
+X-Request-ID: manual-member-login-001
+
+username={{memberUsername}}&password={{seedPassword}}
+
+
+### Users - member current user
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Accept: application/json
+X-Request-ID: manual-member-me-001
+
+
+### Users - member tries admin-only user query, should return 403
+GET {{baseUrl}}/api/v1/users?username={{adminUsername}}
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Accept: application/json
+X-Request-ID: manual-member-forbidden-user-query-001
+
+
+### Auth - inactive login, should return 400
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/x-www-form-urlencoded
+X-Request-ID: manual-inactive-login-001
+
+username={{inactiveUsername}}&password={{seedPassword}}
+
+
+### Chat - member sends a non-stream query
+# @name chatQuery
+POST {{baseUrl}}/api/v1/chat/query_sent
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Content-Type: application/json
+X-Request-ID: manual-chat-query-001
+
+{
+  "query": "请回复一句话，说明后台权限测试链路正常。",
+  "client_request_id": "manual-chat-client-001"
+}
+
+
+### Chat - idempotency repeat, should return the same logical answer for the same client_request_id
+POST {{baseUrl}}/api/v1/chat/query_sent
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Content-Type: application/json
+X-Request-ID: manual-chat-query-repeat-001
+
+{
+  "query": "请回复一句话，说明后台权限测试链路正常。",
+  "client_request_id": "manual-chat-client-001"
+}
+
+
+### Chat - member sessions
+GET {{baseUrl}}/api/v1/chat/sessions?skip=0&limit=20
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Accept: application/json
+X-Request-ID: manual-chat-sessions-001
+
+
+### Chat - member session detail
+GET {{baseUrl}}/api/v1/chat/sessions/{{chatQuery.response.body.$.session_id}}?skip=0&limit=20
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Accept: application/json
+X-Request-ID: manual-chat-session-detail-001
+
+
+### Audit - latest events, admin only
+GET {{baseUrl}}/api/v1/audit/events?skip=0&limit=20
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+X-Request-ID: manual-audit-list-001
+
+
+### Audit - find admin user update audit
+GET {{baseUrl}}/api/v1/audit/events?request_id=manual-admin-update-member-001
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+X-Request-ID: manual-audit-find-update-user-001
+
+
+### Audit - find chat audit
+GET {{baseUrl}}/api/v1/audit/events?request_id=manual-chat-query-001
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+X-Request-ID: manual-audit-find-chat-001
+
+
+### Audit - member should not read audit events, should return 403
+GET {{baseUrl}}/api/v1/audit/events?skip=0&limit=5
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Accept: application/json
+X-Request-ID: manual-member-forbidden-audit-001

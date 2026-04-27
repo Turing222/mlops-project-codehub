@@ -18,9 +18,11 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
         self,
         uow: AbstractUnitOfWork,
         embedder: AbstractRAGEmbedder,
+        embed_batch_size: int = 32,
     ):
         super().__init__(uow)
         self.embedder = embedder
+        self.embed_batch_size = max(1, embed_batch_size)
 
     async def replace_file_chunks(
         self,
@@ -36,28 +38,37 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 "rag.file_id": file_id,
                 "rag.filename": filename,
                 "rag.chunk_count": len(chunks),
+                "embedding.batch_size": self.embed_batch_size,
             },
         ) as span:
             chunk_records: list[dict] = []
-            for idx, chunk_text in enumerate(chunks):
-                embedding = await asyncio.to_thread(
-                    self.embedder.encode_document,
-                    chunk_text,
+            for start in range(0, len(chunks), self.embed_batch_size):
+                batch = chunks[start : start + self.embed_batch_size]
+                embeddings = await asyncio.to_thread(
+                    self.embedder.encode_documents,
+                    batch,
                 )
-                chunk_records.append(
-                    {
-                        "source_type": ChunkSourceType.FILE,
-                        "file_id": file_id,
-                        "content": chunk_text,
-                        "token_count": len(chunk_text),
-                        "chunk_index": idx,
-                        "meta_info": {
-                            "filename": filename,
-                            "path": file_path,
-                        },
-                        "embedding": embedding,
-                    }
-                )
+                if len(embeddings) != len(batch):
+                    raise ValueError("RAG embedding 批量返回数量与输入切片数量不一致")
+
+                for offset, (chunk_text, embedding) in enumerate(
+                    zip(batch, embeddings, strict=True)
+                ):
+                    idx = start + offset
+                    chunk_records.append(
+                        {
+                            "source_type": ChunkSourceType.FILE,
+                            "file_id": file_id,
+                            "content": chunk_text,
+                            "token_count": len(chunk_text),
+                            "chunk_index": idx,
+                            "meta_info": {
+                                "filename": filename,
+                                "path": file_path,
+                            },
+                            "embedding": embedding,
+                        }
+                    )
 
             await self.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
             await self.uow.knowledge_repo.add_chunks(chunk_records)
@@ -89,7 +100,9 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 "rag.query.char_count": len(query_text),
             },
         ) as span:
-            query_vector = await asyncio.to_thread(self.embedder.encode_query, query_text)
+            query_vector = await asyncio.to_thread(
+                self.embedder.encode_query, query_text
+            )
             hits = await self.uow.knowledge_repo.search_chunks_for_kb(
                 query_vector=query_vector,
                 kb_id=kb_id,
@@ -153,7 +166,9 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 "rag.fulltext_weight": fulltext_weight,
             },
         ) as span:
-            query_vector = await asyncio.to_thread(self.embedder.encode_query, query_text)
+            query_vector = await asyncio.to_thread(
+                self.embedder.encode_query, query_text
+            )
             candidate_limit = max(limit, limit * max(1, candidate_multiplier))
 
             vector_hits = await self.uow.knowledge_repo.search_chunks_for_kb(

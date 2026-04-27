@@ -5,7 +5,6 @@ import uuid
 from langfuse import get_client, observe
 
 from backend.ai.core import PromptManager
-from backend.ai.core.prompt_templates import RAG_SYSTEM_TEMPLATE
 from backend.core.config import settings
 from backend.core.exceptions import AppError, ServiceError, ValidationError
 from backend.core.redis import redis_client
@@ -23,6 +22,7 @@ from backend.models.schemas.chat_schema import (
     MessageResponse,
 )
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
+from backend.services.knowledge_service import DEFAULT_KNOWLEDGE_BASE_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class ChatNonStreamWorkflow:
         self.uow = uow
         self.llm_service = llm_service
         self.prompt_manager = prompt_manager or PromptManager()
-        self.rag_prompt_manager = PromptManager(system_template=RAG_SYSTEM_TEMPLATE)
+        self.rag_prompt_manager = PromptManager(template_name="rag_system")
         self.rag_service = rag_service
 
     def _history_to_dicts(self, messages) -> list[ConversationMessage]:
@@ -127,24 +127,20 @@ class ChatNonStreamWorkflow:
 
         for round_msgs in rounds:
             user_text = cls._normalize_text(
-                " ".join(
-                    msg["content"]
-                    for msg in round_msgs
-                    if msg["role"] == "user"
-                )
+                " ".join(msg["content"] for msg in round_msgs if msg["role"] == "user")
             )
             assistant_text = cls._normalize_text(
                 " ".join(
-                    msg["content"]
-                    for msg in round_msgs
-                    if msg["role"] == "assistant"
+                    msg["content"] for msg in round_msgs if msg["role"] == "assistant"
                 )
             )
             if not user_text and not assistant_text:
                 continue
 
             user_excerpt = cls._truncate_text(user_text, snippet_limit) or "(空)"
-            assistant_excerpt = cls._truncate_text(assistant_text, snippet_limit) or "(空)"
+            assistant_excerpt = (
+                cls._truncate_text(assistant_text, snippet_limit) or "(空)"
+            )
             lines.append(f"- 用户: {user_excerpt} | 助手: {assistant_excerpt}")
 
         if not lines:
@@ -196,7 +192,9 @@ class ChatNonStreamWorkflow:
         try:
             rag_uow = getattr(self.rag_service, "uow", None)
             if rag_uow is None or getattr(rag_uow, "_session", None) is not None:
-                return await self.rag_service.retrieve(query_text=query_text, kb_id=kb_id)
+                return await self.rag_service.retrieve(
+                    query_text=query_text, kb_id=kb_id
+                )
 
             async with self._get_db_semaphore():
                 async with rag_uow:
@@ -284,7 +282,9 @@ class ChatNonStreamWorkflow:
                             user_id,
                         )
                         if msg and msg.status == MessageStatus.SUCCESS:
-                            session = await self.uow.chat_repo.get_session(msg.session_id)
+                            session = await self.uow.chat_repo.get_session(
+                                msg.session_id
+                            )
                             if session is None:
                                 raise ServiceError("会话不存在")
                             set_span_attributes(
@@ -297,7 +297,9 @@ class ChatNonStreamWorkflow:
                                 answer=MessageResponse.model_validate(msg),
                             )
 
-        with trace_span("chat.nonstream.create_session_and_messages", trace_attrs) as span:
+        with trace_span(
+            "chat.nonstream.create_session_and_messages", trace_attrs
+        ) as span:
             async with self._get_db_semaphore():
                 async with self.uow:
                     user = await self.uow.user_repo.get(user_id)
@@ -310,19 +312,33 @@ class ChatNonStreamWorkflow:
                         )
 
                     session_manager = SessionManager(self.uow)
+                    resolved_kb_id = kb_id
+                    if session_id is None and resolved_kb_id is None:
+                        default_kb = (
+                            await self.uow.knowledge_repo.get_kb_by_name_for_user(
+                                name=DEFAULT_KNOWLEDGE_BASE_NAME,
+                                user_id=user_id,
+                            )
+                        )
+                        if default_kb is not None:
+                            resolved_kb_id = default_kb.id
+
                     session = await session_manager.ensure_session(
                         user_id=user_id,
                         query_text=query_text,
                         session_id=session_id,
-                        kb_id=kb_id,
+                        kb_id=resolved_kb_id,
                     )
+                    effective_kb_id = kb_id or session.kb_id
                     await session_manager.create_user_message(
                         session_id=session.id,
                         content=query_text,
+                        user_id=user_id,
                     )
                     assistant_msg = await session_manager.create_assistant_message(
                         session_id=session.id,
                         client_request_id=client_request_id,
+                        user_id=user_id,
                     )
             set_span_attributes(
                 span,
@@ -342,7 +358,9 @@ class ChatNonStreamWorkflow:
                         session_id=session.id,
                         limit=settings.CHAT_MEMORY_FETCH_LIMIT,
                     )
-            set_span_attributes(span, {"chat.history.message_count": len(history_messages)})
+            set_span_attributes(
+                span, {"chat.history.message_count": len(history_messages)}
+            )
 
         with trace_span("chat.nonstream.prepare_context", trace_attrs) as span:
             history_dicts = self._history_to_dicts(history_messages)
@@ -350,8 +368,14 @@ class ChatNonStreamWorkflow:
                 history_dicts,
                 query_text,
             )
-            rag_chunks = await self._retrieve_rag_chunks(query_text=query_text, kb_id=kb_id)
-            search_context = self._build_search_context(kb_id=kb_id, rag_chunks=rag_chunks)
+            rag_chunks = await self._retrieve_rag_chunks(
+                query_text=query_text,
+                kb_id=effective_kb_id,
+            )
+            search_context = self._build_search_context(
+                kb_id=effective_kb_id,
+                rag_chunks=rag_chunks,
+            )
             if rag_chunks:
                 assembled = self.rag_prompt_manager.assemble(
                     memory_history,

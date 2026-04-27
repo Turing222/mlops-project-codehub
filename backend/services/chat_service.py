@@ -14,6 +14,7 @@ from backend.core.exceptions import ResourceNotFound, ValidationError
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
 from backend.services.base import BaseService
+from backend.services.permission_service import Permission, PermissionService
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         query_text: str,
         session_id: uuid.UUID | None = None,
         kb_id: uuid.UUID | None = None,
+        workspace_id: uuid.UUID | None = None,
     ) -> ChatSession:
         """
         确认或创建会话
@@ -58,26 +60,41 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
                     details={"session_id": str(session_id)},
                 )
             if session.user_id != user_id:
-                logger.warning(
-                    "用户无权访问会话: session_id=%s, owner=%s, requester=%s",
-                    session_id,
-                    session.user_id,
-                    user_id,
+                allowed = await self._has_workspace_permission(
+                    user_id=user_id,
+                    workspace_id=session.workspace_id,
+                    permission=Permission.CHAT_WRITE,
                 )
-                raise ValidationError(
-                    "无权访问该会话",
-                    details={"session_id": str(session_id)},
-                )
+                if not allowed:
+                    logger.warning(
+                        "用户无权访问会话: session_id=%s, owner=%s, requester=%s",
+                        session_id,
+                        session.user_id,
+                        user_id,
+                    )
+                    raise ValidationError(
+                        "无权访问该会话",
+                        details={"session_id": str(session_id)},
+                    )
             logger.debug("继续已有会话: session_id=%s", session_id)
             return session
 
+        workspace_id = await self._resolve_workspace_for_new_session(
+            user_id=user_id,
+            kb_id=kb_id,
+            workspace_id=workspace_id,
+        )
+
         # 创建新会话，标题取问题前 50 字符
         title = query_text.strip()[:50] if query_text else "新对话"
-        session = await self.uow.chat_repo.create_session(
-            user_id=user_id,
-            title=title,
-            kb_id=kb_id,
-        )
+        create_session_kwargs = {
+            "user_id": user_id,
+            "title": title,
+            "kb_id": kb_id,
+        }
+        if workspace_id is not None:
+            create_session_kwargs["workspace_id"] = workspace_id
+        session = await self.uow.chat_repo.create_session(**create_session_kwargs)
         logger.info(
             "创建新会话: session_id=%s, title=%s, user_id=%s",
             session.id,
@@ -86,10 +103,71 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         )
         return session
 
+    async def _resolve_workspace_for_new_session(
+        self,
+        *,
+        user_id: uuid.UUID,
+        kb_id: uuid.UUID | None,
+        workspace_id: uuid.UUID | None,
+    ) -> uuid.UUID | None:
+        if kb_id is not None:
+            knowledge_repo = getattr(self.uow, "knowledge_repo", None)
+            get_kb = getattr(knowledge_repo, "get_kb", None)
+            if get_kb is None:
+                return workspace_id
+
+            kb = await get_kb(kb_id)
+            if not kb:
+                raise ResourceNotFound(
+                    f"知识库不存在: {kb_id}",
+                    details={"kb_id": str(kb_id)},
+                )
+            if kb.user_id == user_id:
+                return kb.workspace_id
+
+            if not await self._has_workspace_permission(
+                user_id=user_id,
+                workspace_id=kb.workspace_id,
+                permission=Permission.CHAT_WRITE,
+            ):
+                raise ValidationError(
+                    "无权访问该知识库",
+                    details={"kb_id": str(kb_id)},
+                )
+            return kb.workspace_id
+
+        if workspace_id and not await self._has_workspace_permission(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            permission=Permission.CHAT_WRITE,
+        ):
+            raise ValidationError(
+                "无权访问该工作区",
+                details={"workspace_id": str(workspace_id)},
+            )
+        return workspace_id
+
+    async def _has_workspace_permission(
+        self,
+        *,
+        user_id: uuid.UUID,
+        workspace_id: uuid.UUID | None,
+        permission: Permission,
+    ) -> bool:
+        if not isinstance(workspace_id, uuid.UUID):
+            return False
+        return await PermissionService(self.uow).has_permission_for_user_id(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            permission=permission,
+        )
+
     async def create_user_message(
         self,
         session_id: uuid.UUID,
         content: str,
+        user_id: uuid.UUID | None = None,
+        message_metadata: dict | None = None,
     ) -> ChatMessage:
         """
         创建用户消息
@@ -101,12 +179,17 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         Returns:
             ChatMessage 对象
         """
-        message = await self.uow.chat_repo.create_message(
-            session_id=session_id,
-            role="user",
-            content=content.strip(),
-            status=MessageStatus.SUCCESS,
-        )
+        create_message_kwargs = {
+            "session_id": session_id,
+            "role": "user",
+            "content": content.strip(),
+            "status": MessageStatus.SUCCESS,
+        }
+        if user_id is not None:
+            create_message_kwargs["user_id"] = user_id
+        if message_metadata is not None:
+            create_message_kwargs["message_metadata"] = message_metadata
+        message = await self.uow.chat_repo.create_message(**create_message_kwargs)
         logger.debug(
             "创建用户消息: message_id=%s, session_id=%s", message.id, session_id
         )
@@ -118,6 +201,8 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         status: MessageStatus = MessageStatus.THINKING,
         client_request_id: str | None = None,
         search_context: dict | None = None,
+        user_id: uuid.UUID | None = None,
+        message_metadata: dict | None = None,
     ) -> ChatMessage:
         """
         创建助手消息（初始状态为思考中）
@@ -129,14 +214,19 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         Returns:
             ChatMessage 对象
         """
-        message = await self.uow.chat_repo.create_message(
-            session_id=session_id,
-            role="assistant",
-            content="",
-            status=status,
-            client_request_id=client_request_id,
-            search_context=search_context,
-        )
+        create_message_kwargs = {
+            "session_id": session_id,
+            "role": "assistant",
+            "content": "",
+            "status": status,
+            "client_request_id": client_request_id,
+            "search_context": search_context,
+        }
+        if user_id is not None:
+            create_message_kwargs["user_id"] = user_id
+        if message_metadata is not None:
+            create_message_kwargs["message_metadata"] = message_metadata
+        message = await self.uow.chat_repo.create_message(**create_message_kwargs)
         logger.debug(
             "创建助手消息: message_id=%s, session_id=%s", message.id, session_id
         )

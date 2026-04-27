@@ -18,6 +18,7 @@ dependencies = [
     "pydantic-settings~=2.12.0",
     "pydantic-ai-slim[google]>=1.30.0",
     "pydantic[email]~=2.12.0",
+    "pyyaml~=6.0",
     "pyjwt[crypto]~=2.10.0",
     "opentelemetry-api~=1.40.0",
     "opentelemetry-sdk~=1.40.0",
@@ -103,7 +104,8 @@ markers = [
 
 
 [tool.ty.environment]
-# 1. 核心：指定 Python 版本（建议只写版本号，uv 会自动关联虚拟环境）
+# 1. 核心：ty 这里需要的是一个已存在的 Python 可执行文件或虚拟环境目录
+#    新 worktree / 新目录首次使用前，需要先创建本地 .venv
 python = ".venv"
 
 [tool.ty.rules]

@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
+from backend.config.llm import get_llm_model_config
 from backend.core.config import settings
 from backend.core.database import create_db_assets
 from backend.services.rag_service import RAGService
@@ -47,6 +48,8 @@ def parse_args() -> argparse.Namespace:
         help="Output report path",
     )
     return parser.parse_args()
+
+
 async def run(
     dataset: Path,
     top_k: int,
@@ -58,9 +61,15 @@ async def run(
     engine, session_factory = create_db_assets()
     try:
         uow = SQLAlchemyUnitOfWork(session_factory)
+        embedding_profile = get_llm_model_config().resolve_embedding_profile(
+            settings.RAG_EMBED_PROVIDER
+        )
         embedder = RAGEmbedderFactory.create(
-            provider=settings.RAG_EMBED_PROVIDER,
-            model_name=settings.RAG_EMBED_MODEL_NAME,
+            provider=embedding_profile.provider,
+            model_name=embedding_profile.model,
+            base_url=embedding_profile.resolve_base_url(),
+            api_key=embedding_profile.resolve_api_key(),
+            dimensions=embedding_profile.dimensions,
         )
         rag_service = RAGService(uow=uow, embedder=embedder, top_k=top_k)
 
@@ -102,7 +111,11 @@ async def run(
                 hit_at_k = 1.0 if found else 0.0
                 recall_at_k = safe_div(len(set(found)), len(expected))
                 first_rank = next(
-                    (idx + 1 for idx, cid in enumerate(retrieved_ids) if cid in expected),
+                    (
+                        idx + 1
+                        for idx, cid in enumerate(retrieved_ids)
+                        if cid in expected
+                    ),
                     None,
                 )
                 mrr = safe_div(1.0, first_rank) if first_rank else 0.0
@@ -115,7 +128,9 @@ async def run(
                 recall_at_k = safe_div(keyword_hits, len(sample.expected_keywords))
                 mrr = hit_at_k
 
-            top_score = max((float(chunk.get("score") or 0.0) for chunk in chunks), default=0.0)
+            top_score = max(
+                (float(chunk.get("score") or 0.0) for chunk in chunks), default=0.0
+            )
             retrieved_count_total += len(chunks)
             top_score_total += top_score
             hit_total += hit_at_k
@@ -171,7 +186,9 @@ async def run(
         report = {"summary": summary, "details": rows}
 
         ensure_parent_dir(output)
-        output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        output.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
         print("Retrieval Eval Done")
         print(json.dumps(summary, ensure_ascii=False, indent=2))

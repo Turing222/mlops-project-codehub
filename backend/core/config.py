@@ -60,12 +60,9 @@ class Settings(BaseSettings):
 
     # --- LLM 对话配置 ---
     LLM_PROVIDER: str = "mock"
-    LLM_MODEL_NAME: str = "gpt-4o-mini"
     LLM_BASE_URL: str = "https://api.openai.com/v1"
     LLM_API_KEY: str = ""
-    GEMINI_MODEL_NAME: str = "gemini-2.5-flash"
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
-    DEEPSEEK_MODEL_NAME: str = "deepseek-chat"
     LLM_MAX_CONTEXT_TOKENS: int = 4096
     LLM_MAX_HISTORY_ROUNDS: int = 10
     LLM_RESERVED_RESPONSE_TOKENS: int = 1024
@@ -76,10 +73,10 @@ class Settings(BaseSettings):
     CHAT_MEMORY_FETCH_LIMIT: int = 2000
     RAG_TOP_K: int = 4
     RAG_EMBED_PROVIDER: str = "google"
-    RAG_EMBED_MODEL_NAME: str = "gemini-embedding-001"
     RAG_EMBED_BASE_URL: str | None = None
     RAG_EMBED_API_KEY: str | None = None
     RAG_EMBED_DIM: int = Field(default=768, ge=1)
+    RAG_EMBED_BATCH_SIZE: int = Field(default=32, ge=1, le=256)
 
     # --- 安全配置 (SECRET_KEY 必须从 env 读取) ---
     SECRET_KEY: str = Field(..., min_length=1)
@@ -152,7 +149,9 @@ class Settings(BaseSettings):
     @staticmethod
     def _replace_redis_db(url: str, db: int) -> str:
         parsed = urlsplit(url)
-        return urlunsplit((parsed.scheme, parsed.netloc, f"/{db}", parsed.query, parsed.fragment))
+        return urlunsplit(
+            (parsed.scheme, parsed.netloc, f"/{db}", parsed.query, parsed.fragment)
+        )
 
     @field_validator("SECRET_KEY")
     @classmethod

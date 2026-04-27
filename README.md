@@ -94,13 +94,12 @@ uv sync
 - 推荐
   - `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` 或直接 `REDIS_URL`
   - `TASKIQ_REDIS_URL`（不填则自动回退到 Redis DB1）
-  - `LLM_PROVIDER`（第一版推荐 `gemini`）
-  - `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL_NAME`
-  - `GEMINI_API_KEY` / `GEMINI_MODEL_NAME`（`LLM_PROVIDER=gemini` 时使用）
-  - `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` / `DEEPSEEK_MODEL_NAME`（`LLM_PROVIDER=deepseek` 时使用）
-  - `RAG_EMBED_PROVIDER=google` / `RAG_EMBED_MODEL_NAME=gemini-embedding-001`
+  - `LLM_PROVIDER`（可选覆盖 `configs/llm/models.yaml` 的 `default_profile`，第一版推荐 `gemini`）
+  - `LLM_API_KEY` / `OPENAI_API_KEY`（`openai-compatible` profile 使用）
+  - `GEMINI_API_KEY` / `GOOGLE_API_KEY`（`gemini` profile 使用）
+  - `DEEPSEEK_API_KEY`（`deepseek` 系列 profile 使用）
+  - `RAG_EMBED_PROVIDER=google`（选择 `configs/llm/models.yaml` 中的 embedding profile）
   - `RAG_EMBED_API_KEY`（可不填，默认复用 `GEMINI_API_KEY` / `GOOGLE_API_KEY`）
-  - `RAG_EMBED_DIM=768`（保持与当前 pgvector 字段一致）
   - `KNOWLEDGE_STORAGE_ROOT`
 - 可选监控
   - `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`
@@ -110,6 +109,41 @@ uv sync
 - 代码中路由版本前缀为 `API_V1_STR=/v1`。
 - 若反向代理前缀为 `API_ROOT_PATH=/api`，对外通常表现为 `/api/v1/...`。
 - 本地直连开发常用 `/v1/...`。
+
+### 4.4 应用配置文件
+
+非敏感的 LLM 与权限策略配置放在 `configs/`：
+
+- `configs/llm/prompts.yaml`：Jinja2 system prompt、RAG prompt、summary prompt。
+- `configs/llm/models.yaml`：LLM/embedding profile、provider、model、base URL、维度、API key 环境变量名与别名。env 只负责选择 profile 和提供 secret，不再重复维护模型名。
+- `configs/access/permissions.yaml`：workspace 角色到权限的映射。
+
+默认读取项目根目录的 `configs/`，也可以通过 `CONFIG_DIR=/path/to/configs` 指向另一套配置。API 启动时会校验这些文件；缺失核心模板、未知权限、重复模型别名等都会直接启动失败。
+
+Prompt 支持 Langfuse 同步缓存模式：
+
+```bash
+uv run python scripts/prompts/pull_from_langfuse.py --label production
+```
+
+脚本会按 `configs/llm/prompts.yaml` 中的 `langfuse.templates` 映射，从 Langfuse 拉取文本 prompt，并写入 `.cache/langfuse/prompts.production.yaml`。API 运行时优先读取该本地 cache，并按 `source.ttl_seconds` 定期重新加载；cache 不存在、损坏或未同步时，会自动降级使用 `configs/llm/prompts.yaml` 中的 fallback prompt。`.cache/` 不进 Git。
+
+Docker smoke 环境会把宿主机 `.cache` 只读挂载到 API 与 TaskIQ worker 容器。更新 Langfuse prompt 后，重新运行拉取脚本即可让容器在 TTL 到期后读取新 cache。
+
+常用参数：
+
+- `--force`：忽略 TTL，强制从 Langfuse 拉取。
+- `--label staging`：拉取 `staging` label。
+- `--output .cache/langfuse/prompts.staging.yaml`：写入另一份 cache。
+
+真实 AI 配置可先用诊断脚本检查：
+
+```bash
+uv run python scripts/diagnostics/check_ai_env.py
+uv run python scripts/diagnostics/check_ai_env.py --live
+```
+
+默认只解析 profile、检查 key 和初始化客户端；`--live` 会实际请求一次 LLM、一次 embedding，并在 Langfuse 已配置时执行 `auth_check()`。
 
 ## 5. 本地启动
 
@@ -241,15 +275,15 @@ uv run pytest -m performance
 - 检查 `TASKIQ_REDIS_URL` 与 API 服务 Redis 是否一致。
 
 2. 聊天接口返回“服务暂时不可用”
-- 若使用 `openai-compatible`，检查 `LLM_BASE_URL/LLM_API_KEY/LLM_MODEL_NAME`。
-- 若使用 DeepSeek，设置 `LLM_PROVIDER=deepseek`、`DEEPSEEK_API_KEY`，可选设置 `DEEPSEEK_MODEL_NAME=deepseek-chat`、`deepseek-reasoner`、`deepseek-v4-flash` 或 `deepseek-v4-pro`。
-- 若使用 Gemini，设置 `LLM_PROVIDER=gemini`、`GEMINI_API_KEY`，可选设置 `GEMINI_MODEL_NAME`。
+- 若使用 `openai-compatible`，检查 `configs/llm/models.yaml` 中的 profile，并设置 `LLM_API_KEY` 或 `OPENAI_API_KEY`。
+- 若使用 DeepSeek，设置 `LLM_PROVIDER=deepseek`、`DEEPSEEK_API_KEY`；模型变体可直接用 `LLM_PROVIDER=deepseek-reasoner`、`deepseek-v4-flash` 或 `deepseek-v4-pro`。
+- 若使用 Gemini，设置 `LLM_PROVIDER=gemini`、`GEMINI_API_KEY` 或 `GOOGLE_API_KEY`。
 - 若只想联调链路，先把 `LLM_PROVIDER=mock`。
 
 3. RAG 检索为空
 - 检查文件是否到 `ready` 状态。
-- Google 第一版推荐 `RAG_EMBED_PROVIDER=google`、`RAG_EMBED_MODEL_NAME=gemini-embedding-001`，并设置 `GEMINI_API_KEY`。
-- 检查 `RAG_EMBED_DIM` 是否匹配库中向量维度（当前模型字段为 768 维）。
+- Google 第一版推荐 `RAG_EMBED_PROVIDER=google`，并设置 `GEMINI_API_KEY`。
+- 检查 `configs/llm/models.yaml` 中 embedding profile 的 `dimensions` 是否匹配库中向量维度（当前模型字段为 768 维）。
 
 4. Langfuse 看不到 Gemini 调用
 - 确认已设置 `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_BASE_URL`。

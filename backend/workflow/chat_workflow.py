@@ -19,6 +19,7 @@ from langfuse import get_client, observe
 from backend.ai.core import PromptManager
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.core.token_counter import count_tokens
+from backend.config.llm import get_llm_model_config
 from backend.core.config import settings
 from backend.core.exceptions import AppError, ServiceError
 from backend.core.redis import redis_client
@@ -34,6 +35,7 @@ from backend.domain.interfaces import (
 )
 from backend.models.schemas.chat_schema import LLMQueryDTO
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
+from backend.services.knowledge_service import DEFAULT_KNOWLEDGE_BASE_NAME
 from backend.tasks.llm_tasks import generate_llm_stream_task
 
 logger = logging.getLogger(__name__)
@@ -137,19 +139,33 @@ class ChatWorkflow:
                         return
 
                     session_manager = SessionManager(self.uow)
+                    resolved_kb_id = kb_id
+                    if session_id is None and resolved_kb_id is None:
+                        default_kb = (
+                            await self.uow.knowledge_repo.get_kb_by_name_for_user(
+                                name=DEFAULT_KNOWLEDGE_BASE_NAME,
+                                user_id=user_id,
+                            )
+                        )
+                        if default_kb is not None:
+                            resolved_kb_id = default_kb.id
+
                     session = await session_manager.ensure_session(
                         user_id=user_id,
                         query_text=query_text,
                         session_id=session_id,
-                        kb_id=kb_id,
+                        kb_id=resolved_kb_id,
                     )
+                    effective_kb_id = kb_id or session.kb_id
                     await session_manager.create_user_message(
                         session_id=session.id,
                         content=query_text,
+                        user_id=user_id,
                     )
                     assistant_msg = await session_manager.create_assistant_message(
                         session_id=session.id,
                         client_request_id=client_request_id,
+                        user_id=user_id,
                     )
             set_span_attributes(
                 span,
@@ -170,13 +186,15 @@ class ChatWorkflow:
                         session_id=session.id,
                         limit=settings.CHAT_MEMORY_FETCH_LIMIT,
                     )
-            set_span_attributes(span, {"chat.history.message_count": len(history_messages)})
+            set_span_attributes(
+                span, {"chat.history.message_count": len(history_messages)}
+            )
 
         with trace_span("chat.stream.prepare_context", trace_attrs) as span:
             prepared_context = await self.chat_context_builder.build(
                 history_messages=history_messages,
                 current_query=query_text,
-                kb_id=kb_id,
+                kb_id=effective_kb_id,
             )
             assembled = prepared_context.assembled_prompt
             search_context = prepared_context.search_context
@@ -272,7 +290,9 @@ class ChatWorkflow:
                 {**trace_attrs, "task.id": task_id, "redis.channel": channel},
             ) as span:
                 loop = asyncio.get_running_loop()
-                deadline = loop.time() + settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS
+                deadline = (
+                    loop.time() + settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS
+                )
                 while True:
                     remaining = deadline - loop.time()
                     if remaining <= 0:
@@ -293,10 +313,14 @@ class ChatWorkflow:
                     if first_payload == "[DONE]":
                         done_received = True
                     elif first_payload.startswith("[ERROR]"):
-                        raise ServiceError(f"Taskiq 队列执行 LLM 错误: {first_payload[7:]}")
+                        raise ServiceError(
+                            f"Taskiq 队列执行 LLM 错误: {first_payload[7:]}"
+                        )
                     else:
                         accumulated_content.append(first_payload)
-                        first_chunk = json.dumps({"type": "chunk", "content": first_payload})
+                        first_chunk = json.dumps(
+                            {"type": "chunk", "content": first_payload}
+                        )
                         yield f"data: {first_chunk}\n\n"
                     break
 
@@ -309,7 +333,9 @@ class ChatWorkflow:
                             done_received = True
                             break
                         if payload.startswith("[ERROR]"):
-                            raise ServiceError(f"Taskiq 队列执行 LLM 错误: {payload[7:]}")
+                            raise ServiceError(
+                                f"Taskiq 队列执行 LLM 错误: {payload[7:]}"
+                            )
                         accumulated_content.append(payload)
                         chunk_event = json.dumps({"type": "chunk", "content": payload})
                         yield f"data: {chunk_event}\n\n"
@@ -353,7 +379,9 @@ class ChatWorkflow:
                 try:
                     await pubsub.unsubscribe(channel)
                 except Exception:
-                    logger.debug("Redis 取消订阅失败: channel=%s", channel, exc_info=True)
+                    logger.debug(
+                        "Redis 取消订阅失败: channel=%s", channel, exc_info=True
+                    )
 
                 close_coro = getattr(pubsub, "aclose", None)
                 if close_coro is not None:
@@ -367,7 +395,11 @@ class ChatWorkflow:
 
         # 5. 更新助手消息并累加 Token
         full_content = "".join(accumulated_content)
-        model_name = getattr(self.llm_service, "model_name", settings.LLM_MODEL_NAME)
+        model_name = getattr(
+            self.llm_service,
+            "model_name",
+            get_llm_model_config().resolve_profile().model,
+        )
         tokens_output = count_tokens(full_content, model_name)
 
         with trace_span("chat.stream.finalize_message", trace_attrs) as span:

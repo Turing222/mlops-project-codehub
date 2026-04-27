@@ -37,12 +37,7 @@ x-app-environment: &app-environment
   REDIS_HOST: ${REDIS_HOST:-redis}
   REDIS_PORT: ${REDIS_PORT:-6379}
   LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
-  GEMINI_MODEL_NAME: ${GEMINI_MODEL_NAME:-gemini-2.5-flash}
-  DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
-  DEEPSEEK_MODEL_NAME: ${DEEPSEEK_MODEL_NAME:-deepseek-chat}
   RAG_EMBED_PROVIDER: ${RAG_EMBED_PROVIDER:-google}
-  RAG_EMBED_MODEL_NAME: ${RAG_EMBED_MODEL_NAME:-gemini-embedding-001}
-  RAG_EMBED_DIM: ${RAG_EMBED_DIM:-768}
   KNOWLEDGE_STORAGE_ROOT: ${KNOWLEDGE_STORAGE_ROOT:-/data/knowledge_files}
   ENABLE_OTEL_METRICS: ${ENABLE_OTEL_METRICS:-false}
   ENABLE_OTEL_TRACES: ${ENABLE_OTEL_TRACES:-false}
@@ -102,6 +97,7 @@ services:
 
   db_migrator:
     image: ai-tutor-backend:v1
+    user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     secrets: *app-secrets
     environment:
       <<: [*app-environment, *secret-file-env]
@@ -109,6 +105,7 @@ services:
       - ./backend:/app/backend
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini:ro
+      - ./configs:/app/configs:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,6 +134,8 @@ services:
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     volumes:
       - ./backend:/app/backend
+      - ./configs:/app/configs:ro
+      - ./.cache:/app/.cache:ro
       - knowledge_files_volume_test:/data/knowledge_files
     secrets: *app-secrets
     environment:
@@ -176,6 +175,8 @@ services:
     logging: *default-logging
     volumes:
       - ./backend:/app/backend
+      - ./configs:/app/configs:ro
+      - ./.cache:/app/.cache:ro
       - knowledge_files_volume_test:/data/knowledge_files
     secrets: *app-secrets
     environment:
@@ -391,8 +392,10 @@ services:
 
 volumes:
   pg_data_v17_test:
+    external: true
     name: prod_db_volume_test
   knowledge_files_volume_test:
+    external: true
     name: knowledge_files_volume_test
   tempo_data_db:
     name: tempo_data_db

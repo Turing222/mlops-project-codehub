@@ -6,8 +6,6 @@ from httpx import ASGITransport, AsyncClient
 async def client(monkeypatch):
     # Ensure test-safe settings before importing app/config.
     monkeypatch.setenv("SECRET_KEY", "test-secret")
-    # Avoid accidental env string overrides for Literal[int] fields.
-    monkeypatch.delenv("RAG_EMBED_DIM", raising=False)
 
     from backend.main import app
 

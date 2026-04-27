@@ -16,3 +16,9 @@ if [[ "${SMOKE_DOWN_VOLUMES:-false}" == "true" ]]; then
 fi
 
 compose_smoke "${args[@]}"
+
+if [[ "${SMOKE_DOWN_VOLUMES:-false}" == "true" ]]; then
+    for volume_name in "${SMOKE_REQUIRED_VOLUME_NAMES[@]}"; do
+        docker volume rm "$volume_name" >/dev/null 2>&1 || true
+    done
+fi

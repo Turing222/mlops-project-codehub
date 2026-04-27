@@ -6,6 +6,7 @@ import pytest
 from backend.ai.providers.llm.factory import LLMProviderFactory
 from backend.ai.providers.llm.llm_service import LLMService
 from backend.ai.providers.llm.pydantic_ai_service import PydanticAILLMService
+from backend.ai.providers.llm.routing_service import LLMRoutingService
 from backend.core.exceptions import ServiceError
 from backend.models.schemas.chat_schema import LLMQueryDTO
 
@@ -109,14 +110,6 @@ def test_factory_returns_openai_compatible_service_for_deepseek(monkeypatch):
         "backend.ai.providers.llm.factory.settings.DEEPSEEK_API_KEY",
         "deepseek-key",
     )
-    monkeypatch.setattr(
-        "backend.ai.providers.llm.factory.settings.DEEPSEEK_BASE_URL",
-        "https://api.deepseek.com",
-    )
-    monkeypatch.setattr(
-        "backend.ai.providers.llm.factory.settings.DEEPSEEK_MODEL_NAME",
-        "deepseek-chat",
-    )
 
     service = LLMProviderFactory.create("deepseek")
 
@@ -151,3 +144,33 @@ def test_factory_deepseek_v4_alias_sets_model(monkeypatch):
     assert isinstance(service, LLMService)
     assert service.provider_name == "deepseek"
     assert service.model_name == "deepseek-v4-flash"
+
+
+def test_factory_expands_multiple_keys_into_routing_service(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key-a,deepseek-key-b")
+
+    service = LLMProviderFactory.create("deepseek")
+
+    assert isinstance(service, LLMRoutingService)
+    assert len(service.candidates) == 2
+    first = service.candidates[0].service
+    second = service.candidates[1].service
+    assert isinstance(first, LLMService)
+    assert isinstance(second, LLMService)
+    assert first.api_key == "deepseek-key-a"
+    assert second.api_key == "deepseek-key-b"
+    assert first.max_retries == 0
+
+
+def test_factory_returns_routing_service_for_model_route(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+
+    service = LLMProviderFactory.create("auto")
+
+    assert isinstance(service, LLMRoutingService)
+    assert [candidate.label for candidate in service.candidates] == [
+        "deepseek/deepseek-chat#key1",
+        "deepseek/deepseek-v4-flash#key1",
+        "gemini/gemini-2.5-flash#key1",
+    ]

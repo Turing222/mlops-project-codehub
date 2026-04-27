@@ -14,9 +14,11 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from backend.api.dependencies import (
+    get_audit_service,
     get_chat_nonstream_workflow,
     get_chat_workflow,
     get_current_active_user,
+    get_permission_service,
     get_session_query_service,
 )
 from backend.middleware.rate_limit import RateLimiter
@@ -27,6 +29,8 @@ from backend.models.schemas.chat_schema import (
     SessionDetailResponse,
     SessionListResponse,
 )
+from backend.services.audit_service import AuditAction, AuditService, capture_audit
+from backend.services.permission_service import PermissionService
 from backend.services.session_query_service import SessionQueryService
 from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
 from backend.workflow.chat_workflow import ChatWorkflow
@@ -56,17 +60,33 @@ async def query_sent(
     current_user: CurrentUser,
     workflow: NonStreamWorkflowDep,
     _: ChatRateLimitDep,
+    permission_service: PermissionService = Depends(get_permission_service),
+    audit_service: AuditService = Depends(get_audit_service),
 ) -> ChatQueryResponse:
     """
     用户发送查询（非流式）。
     """
-    return await workflow.handle_query(
-        user_id=current_user.id,
-        query_text=request.query,
-        session_id=request.session_id,
-        kb_id=request.kb_id,
-        client_request_id=request.client_request_id,
-    )
+    async with capture_audit(
+        audit_service,
+        action=AuditAction.CHAT_QUERY_SENT,
+        actor_user_id=current_user.id,
+        resource_type="chat_message",
+        metadata={
+            "session_id": str(request.session_id) if request.session_id else None,
+            "kb_id": str(request.kb_id) if request.kb_id else None,
+            "client_request_id": request.client_request_id,
+        },
+    ) as audit:
+        result = await workflow.handle_query(
+            user_id=current_user.id,
+            query_text=request.query,
+            session_id=request.session_id,
+            kb_id=request.kb_id,
+            client_request_id=request.client_request_id,
+        )
+        audit.set_resource(resource_id=result.answer.id)
+        audit.add_metadata(session_id=str(result.session_id))
+        return result
 
 
 @router.post("/query_stream")
@@ -75,6 +95,8 @@ async def query_stream(
     current_user: CurrentUser,
     workflow: StreamWorkflowDep,
     _: ChatRateLimitDep,
+    permission_service: PermissionService = Depends(get_permission_service),
+    audit_service: AuditService = Depends(get_audit_service),
 ) -> StreamingResponse:
     """
     用户发送查询（SSE 流式响应）。
@@ -85,21 +107,32 @@ async def query_stream(
     - data: {"type":"error","message":"..."}
     - data: [DONE]
     """
-    return StreamingResponse(
-        workflow.handle_query_stream(
-            user_id=current_user.id,
-            query_text=request.query,
-            session_id=request.session_id,
-            kb_id=request.kb_id,
-            client_request_id=request.client_request_id,
-        ),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
+    async with capture_audit(
+        audit_service,
+        action=AuditAction.CHAT_QUERY_STREAM,
+        actor_user_id=current_user.id,
+        resource_type="chat_session",
+        resource_id=request.session_id,
+        metadata={
+            "kb_id": str(request.kb_id) if request.kb_id else None,
+            "client_request_id": request.client_request_id,
         },
-    )
+    ):
+        return StreamingResponse(
+            workflow.handle_query_stream(
+                user_id=current_user.id,
+                query_text=request.query,
+                session_id=request.session_id,
+                kb_id=request.kb_id,
+                client_request_id=request.client_request_id,
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
 
 @router.get("/sessions", response_model=SessionListResponse)
@@ -108,6 +141,7 @@ async def get_sessions(
     session_query_service: SessionQueryServiceDep,
     skip: SessionSkipParam = 0,
     limit: SessionListLimitParam = 20,
+    permission_service: PermissionService = Depends(get_permission_service),
 ) -> SessionListResponse:
     """获取当前用户的会话列表（侧边栏）"""
     async with session_query_service.uow:
@@ -125,6 +159,7 @@ async def get_session_detail(
     session_query_service: SessionQueryServiceDep,
     skip: SessionSkipParam = 0,
     limit: SessionDetailLimitParam = 100,
+    permission_service: PermissionService = Depends(get_permission_service),
 ) -> SessionDetailResponse:
     """获取会话详情及历史消息"""
     async with session_query_service.uow:

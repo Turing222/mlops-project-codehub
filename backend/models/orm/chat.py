@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
 
 if TYPE_CHECKING:
+    from backend.models.orm.access import Workspace
     from backend.models.orm.chunk import DocumentChunk
     from backend.models.orm.user import User
 
@@ -27,12 +28,18 @@ class ChatSession(Base, BaseIdModel, AuditMixin):
     kb_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("knowledge_bases.id", ondelete="SET NULL"), index=True
     )
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
 
     # 扩展配置：如温度、模型选择
     llm_config: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'"))
 
     # 双向关联
     user: Mapped[User] = relationship(back_populates="sessions")
+    workspace: Mapped[Workspace | None] = relationship(back_populates="chat_sessions")
     messages: Mapped[list[ChatMessage]] = relationship(
         back_populates="session",
         cascade="all, delete-orphan",
@@ -56,8 +63,14 @@ class ChatMessage(Base, BaseIdModel, AuditMixin):
     )
     role: Mapped[str] = mapped_column(String(20))  # user, assistant, system
     content: Mapped[str] = mapped_column(Text)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
 
     session: Mapped[ChatSession] = relationship(back_populates="messages")
+    user: Mapped[User | None] = relationship()
 
     # 状态控制
     status: Mapped[MessageStatus] = mapped_column(
@@ -69,10 +82,16 @@ class ChatMessage(Base, BaseIdModel, AuditMixin):
     search_context: Mapped[dict | None] = mapped_column(
         JSONB, comment="存储 RAG 检索到的原始分块信息"
     )
+    message_metadata: Mapped[dict] = mapped_column(
+        "metadata",
+        JSONB,
+        server_default=text("'{}'"),
+        nullable=False,
+    )
 
     # 幂等与审计
     client_request_id: Mapped[str | None] = mapped_column(
-        String(64), index=True, comment="客户端生成的唯一请求 ID"
+        String(64), comment="客户端生成的唯一请求 ID"
     )
 
     # 性能与 Token 审计
