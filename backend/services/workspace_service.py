@@ -119,7 +119,8 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
     ) -> None:
         workspace = await self._get_workspace_or_404(workspace_id)
         if current_user.is_superuser and self.permission_service.policy.superuser_bypass:
-            await self.uow.access_repo.delete_workspace(workspace)
+            # R7: 超管也走软删除，保留关联数据
+            await self.uow.access_repo.soft_delete_workspace(workspace)
             return
 
         role = await self.permission_service.get_workspace_role(
@@ -131,7 +132,8 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
                 "只有工作区 owner 可以删除工作区",
                 details={"workspace_id": str(workspace_id)},
             )
-        await self.uow.access_repo.delete_workspace(workspace)
+        # R7: 改为软删除，保持 KB/File/ChatSession workspace_id 外键不变
+        await self.uow.access_repo.soft_delete_workspace(workspace)
 
     async def list_workspace_members(
         self,

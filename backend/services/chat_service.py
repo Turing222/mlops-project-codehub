@@ -122,19 +122,29 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
                     f"知识库不存在: {kb_id}",
                     details={"kb_id": str(kb_id)},
                 )
-            if kb.user_id == user_id:
+
+            # ① workspace KB：无论是否 owner，必须验证 workspace 成员权限
+            #    防止用户被移出/降级后仍凭 KB owner 身份发起 chat
+            if kb.workspace_id is not None:
+                if not await self._has_workspace_permission(
+                    user_id=user_id,
+                    workspace_id=kb.workspace_id,
+                    permission=Permission.CHAT_WRITE,
+                ):
+                    raise ValidationError(
+                        "无权访问该知识库",
+                        details={"kb_id": str(kb_id)},
+                    )
                 return kb.workspace_id
 
-            if not await self._has_workspace_permission(
-                user_id=user_id,
-                workspace_id=kb.workspace_id,
-                permission=Permission.CHAT_WRITE,
-            ):
-                raise ValidationError(
-                    "无权访问该知识库",
-                    details={"kb_id": str(kb_id)},
-                )
-            return kb.workspace_id
+            # ② personal KB（workspace_id is None）：仅 owner 可使用
+            if kb.user_id == user_id:
+                return kb.workspace_id  # None
+
+            raise ValidationError(
+                "无权访问该知识库",
+                details={"kb_id": str(kb_id)},
+            )
 
         if workspace_id and not await self._has_workspace_permission(
             user_id=user_id,

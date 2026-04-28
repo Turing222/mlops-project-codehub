@@ -91,10 +91,26 @@ class FakeUserRepo:
             return self.user
         return None
 
+    async def get_with_lock(self, user_id: uuid.UUID):
+        """SELECT FOR UPDATE 仳制：返回同一用户对象。"""
+        return await self.get(user_id)
+
     async def increment_used_tokens(self, user_id: uuid.UUID, amount: int):
         assert user_id == self.user.id
         self.user.used_tokens += amount
         self.increment_calls.append(amount)
+
+    async def increment_used_tokens_guarded(
+        self, user_id: uuid.UUID, amount: int
+    ) -> bool:
+        """条件原子累加仳制：检查上限并返回 bool。"""
+        if self.user is None or user_id != self.user.id:
+            return False
+        if self.user.used_tokens + amount > self.user.max_tokens:
+            return False
+        self.user.used_tokens += amount
+        self.increment_calls.append(amount)
+        return True
 
 
 class FakeChatRepo:
@@ -133,6 +149,8 @@ class FakeChatRepo:
         status: MessageStatus,
         client_request_id: str | None = None,
         search_context: dict | None = None,
+        user_id: uuid.UUID | None = None,
+        message_metadata: dict | None = None,
     ):
         message = make_message(
             session_id=session_id,
@@ -181,10 +199,23 @@ class FakeChatRepo:
         return message
 
 
+class FakeKnowledgeRepo:
+    """knowledge_repo 仳制，防止 Workflow 内 getattr 失败。"""
+
+    async def get_kb_by_name_for_user(
+        self, *, name: str, user_id: uuid.UUID
+    ):
+        return None
+
+    async def get_kb(self, kb_id: uuid.UUID):
+        return None
+
+
 class FakeUnitOfWork:
     def __init__(self, user_repo: FakeUserRepo, chat_repo: FakeChatRepo):
         self.user_repo = user_repo
         self.chat_repo = chat_repo
+        self.knowledge_repo = FakeKnowledgeRepo()
         self.commits = 0
         self.rollbacks = 0
 
@@ -253,9 +284,29 @@ def api_context():
     llm_service = RecordingLLMService()
     workflow = ChatNonStreamWorkflow(uow=uow, llm_service=llm_service)
 
+    # --- 依赖覆盖 ---
+    # 1. 核心业务依赖
     app.dependency_overrides[chat_api.get_current_active_user] = lambda: current_user
     app.dependency_overrides[chat_api.get_chat_nonstream_workflow] = lambda: workflow
     app.dependency_overrides[chat_api.chat_limiter] = lambda: None
+
+    # 2. 修复存量 bug：测试用裸 FastAPI() 没走 lifespan，
+    #    get_uow / get_audit_service / get_permission_service 都依赖
+    #    request.app.state.session_factory（由 lifespan 注入），
+    #    这里用 Fake 对象覆盖，断开对 app.state 的依赖。
+    from backend.api.deps.audit import get_audit_service
+    from backend.api.deps.permissions import get_permission_service
+    from backend.api.deps.uow import get_uow
+    from backend.services.audit_service import AuditRequestContext, AuditService
+    from backend.services.permission_service import PermissionService
+
+    app.dependency_overrides[get_uow] = lambda: uow
+    app.dependency_overrides[get_audit_service] = lambda: AuditService(
+        uow=uow,  # type: ignore[arg-type]
+        session_factory=None,  # 测试不写审计库
+        request_context=AuditRequestContext(),
+    )
+    app.dependency_overrides[get_permission_service] = lambda: PermissionService(uow=uow)  # type: ignore[arg-type]
 
     ctx = SimpleNamespace(
         app=app,
@@ -268,6 +319,7 @@ def api_context():
     )
     yield ctx
     app.dependency_overrides.clear()
+
 
 
 @pytest.fixture

@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -30,10 +31,19 @@ class AccessRepository:
         return WorkspaceRole(role) if role else None
 
     async def get_workspace(self, workspace_id: uuid.UUID) -> Workspace | None:
-        return await self.session.get(Workspace, workspace_id)
+        """查询单个工作区，自动过滤软删除行。"""
+        stmt = select(Workspace).where(
+            Workspace.id == workspace_id,
+            Workspace.deleted_at.is_(None),  # R7: 过滤软删除
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
 
     async def get_workspace_by_slug(self, slug: str) -> Workspace | None:
-        stmt = select(Workspace).where(Workspace.slug == slug)
+        stmt = select(Workspace).where(
+            Workspace.slug == slug,
+            Workspace.deleted_at.is_(None),  # R7: 过滤软删除
+        )
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
@@ -63,7 +73,21 @@ class AccessRepository:
         await self.session.refresh(workspace)
         return workspace
 
+    async def soft_delete_workspace(self, workspace: Workspace) -> None:
+        """
+        R7 修复：软删除工作区（设置 deleted_at 时间戳）。
+
+        软删除的优势：
+        - KB/File/ChatSession 的 workspace_id 外键保持不变，不会被置 NULL。
+        - 尔后可以对孤立资源批量归档或迁移，数据可捕捉。
+        - 取代物理删除，避免联级删除潫陷。
+        """
+        workspace.deleted_at = datetime.now(UTC)  # type: ignore[assignment]
+        self.session.add(workspace)
+        await self.session.flush()
+
     async def delete_workspace(self, workspace: Workspace) -> None:
+        """物理删除，仅供超管强制清除使用。常规删除请使用 soft_delete_workspace。"""
         await self.session.delete(workspace)
         await self.session.flush()
 
@@ -163,7 +187,10 @@ class AccessRepository:
         stmt = (
             select(Workspace, UserWorkspaceRole.role)
             .join(UserWorkspaceRole, UserWorkspaceRole.workspace_id == Workspace.id)
-            .where(UserWorkspaceRole.user_id == user_id)
+            .where(
+                UserWorkspaceRole.user_id == user_id,
+                Workspace.deleted_at.is_(None),  # R7: 过滤软删除
+            )
             .order_by(Workspace.created_at.desc())
             .offset(skip)
             .limit(limit)
@@ -179,6 +206,9 @@ class AccessRepository:
             select(func.count())
             .select_from(Workspace)
             .join(UserWorkspaceRole, UserWorkspaceRole.workspace_id == Workspace.id)
-            .where(UserWorkspaceRole.user_id == user_id)
+            .where(
+                UserWorkspaceRole.user_id == user_id,
+                Workspace.deleted_at.is_(None),  # R7: 过滤软删除
+            )
         )
         return await self.session.scalar(stmt) or 0

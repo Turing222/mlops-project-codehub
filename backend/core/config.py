@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     LLM_MAX_CONCURRENCY: int = 5
     DB_MAX_CONCURRENCY: int = 10
     RATE_LIMIT_TRUSTED_PROXY_CIDRS: str = ""
+    # R8 修复：聊天接口速率限制参数外置到 Settings，通过环境变量控制，
+    # 压测环境可覆盖 CHAT_RATE_LIMIT_TIMES=100000，生产环境使用安全默认值。
+    CHAT_RATE_LIMIT_TIMES: int = 10
+    CHAT_RATE_LIMIT_SECONDS: int = 60
 
     # --- LLM 对话配置 ---
     LLM_PROVIDER: str = "mock"

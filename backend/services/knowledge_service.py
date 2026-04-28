@@ -199,32 +199,37 @@ class KnowledgeService:
         user_id: uuid.UUID,
         permission: Permission,
     ) -> KnowledgeBase:
+        # 先通过 owner+personal 快捷路径查询（仅返回该用户名下且无 workspace 绑定的 KB）
         kb = await self.uow.knowledge_repo.get_kb_for_user(
             kb_id=kb_id,
             user_id=user_id,
         )
-        if kb:
-            return kb
 
         get_kb = getattr(self.uow.knowledge_repo, "get_kb", None)
         if get_kb is None:
+            if kb:
+                return kb
             raise ResourceNotFound("知识库不存在或无访问权限")
 
-        kb = await get_kb(kb_id)
-        if not kb:
+        # 取完整 KB 对象（含 workspace_id）
+        full_kb = kb or await get_kb(kb_id)
+        if not full_kb:
             raise ResourceNotFound("知识库不存在或无访问权限")
 
-        if kb.user_id == user_id:
-            return kb
+        # ① workspace KB：无论是否 owner，必须验证当前 workspace 成员权限
+        #    防止用户被移出/降级后仍凭 KB owner 身份绕过权限
+        if full_kb.workspace_id is not None:
+            if await PermissionService(self.uow).has_permission_for_user_id(
+                user_id=user_id,
+                workspace_id=full_kb.workspace_id,
+                permission=permission,
+            ):
+                return full_kb
+            raise ResourceNotFound("知识库不存在或无访问权限")
 
-        if kb.workspace_id and await PermissionService(
-            self.uow
-        ).has_permission_for_user_id(
-            user_id=user_id,
-            workspace_id=kb.workspace_id,
-            permission=permission,
-        ):
-            return kb
+        # ② personal KB（workspace_id is None）：仅 owner 可访问
+        if full_kb.user_id == user_id:
+            return full_kb
 
         raise ResourceNotFound("知识库不存在或无访问权限")
 

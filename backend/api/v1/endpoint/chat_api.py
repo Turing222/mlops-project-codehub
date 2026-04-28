@@ -21,6 +21,7 @@ from backend.api.dependencies import (
     get_permission_service,
     get_session_query_service,
 )
+from backend.core.config import settings
 from backend.middleware.rate_limit import RateLimiter
 from backend.models.orm.user import User
 from backend.models.schemas.chat_schema import (
@@ -35,8 +36,12 @@ from backend.services.session_query_service import SessionQueryService
 from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
 from backend.workflow.chat_workflow import ChatWorkflow
 
-# 定义限流策略：为压测临时调高上限（原：每 60 秒 10 次）
-chat_limiter = RateLimiter(times=100000, seconds=60)
+# R8 修复：限流参数从 settings 读取，通过环境变量控制（CHAT_RATE_LIMIT_TIMES / CHAT_RATE_LIMIT_SECONDS）
+# 压测时可设 CHAT_RATE_LIMIT_TIMES=100000，生产环境保持安全默认值（10次/60秒）
+chat_limiter = RateLimiter(
+    times=settings.CHAT_RATE_LIMIT_TIMES,
+    seconds=settings.CHAT_RATE_LIMIT_SECONDS,
+)
 
 router = APIRouter()
 
@@ -106,33 +111,66 @@ async def query_stream(
     - data: {"type":"chunk","content":"..."}
     - data: {"type":"error","message":"..."}
     - data: [DONE]
+
+    audit 生命周期绑定到 generator 内部，确保 LLM 全流程执行完毕
+    （或中途异常）后才收口审计记录，避免在 StreamingResponse 返回
+    时提前标记 success。meta 事件解析后同步更新 resource_id。
     """
-    async with capture_audit(
-        audit_service,
-        action=AuditAction.CHAT_QUERY_STREAM,
-        actor_user_id=current_user.id,
-        resource_type="chat_session",
-        resource_id=request.session_id,
-        metadata={
-            "kb_id": str(request.kb_id) if request.kb_id else None,
-            "client_request_id": request.client_request_id,
-        },
-    ):
-        return StreamingResponse(
-            workflow.handle_query_stream(
+    import json as _json
+
+    async def _audited_stream():
+        async with capture_audit(
+            audit_service,
+            action=AuditAction.CHAT_QUERY_STREAM,
+            actor_user_id=current_user.id,
+            resource_type="chat_session",
+            resource_id=request.session_id,  # 新会话时为 None，meta 事件后更新
+            metadata={
+                "kb_id": str(request.kb_id) if request.kb_id else None,
+                "client_request_id": request.client_request_id,
+            },
+        ) as audit:
+            meta_captured = False
+            async for chunk in workflow.handle_query_stream(
                 user_id=current_user.id,
                 query_text=request.query,
                 session_id=request.session_id,
                 kb_id=request.kb_id,
                 client_request_id=request.client_request_id,
-            ),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            },
-        )
+            ):
+                # 仅在首个 meta 事件时更新 audit resource_id（session_id / message_id）
+                if not meta_captured and isinstance(chunk, str) and chunk.startswith("data:"):
+                    payload_str = chunk.removeprefix("data:").strip()
+                    if payload_str and payload_str != "[DONE]":
+                        try:
+                            payload = _json.loads(payload_str)
+                            if payload.get("type") == "meta":
+                                meta_captured = True
+                                _sid = payload.get("session_id")
+                                _mid = payload.get("message_id")
+                                try:
+                                    audit.set_resource(
+                                        resource_id=uuid.UUID(_mid) if _mid else (
+                                            uuid.UUID(_sid) if _sid else None
+                                        )
+                                    )
+                                    audit.add_metadata(session_id=_sid)
+                                except (ValueError, AttributeError):
+                                    pass
+                        except _json.JSONDecodeError:
+                            pass
+                yield chunk
+            # generator 正常结束 → capture_audit context 退出 → 标记 success
+
+    return StreamingResponse(
+        _audited_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/sessions", response_model=SessionListResponse)

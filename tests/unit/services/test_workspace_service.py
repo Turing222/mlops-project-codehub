@@ -73,6 +73,7 @@ def make_service(*, role: WorkspaceRole | None = WorkspaceRole.OWNER):
         add_workspace_role=AsyncMock(),
         update_workspace=AsyncMock(return_value=workspace),
         delete_workspace=AsyncMock(),
+        soft_delete_workspace=AsyncMock(),  # R7: 软删除接口
         list_workspaces_for_user=AsyncMock(return_value=[(workspace, role)] if role else []),
         count_workspaces_for_user=AsyncMock(return_value=1 if role else 0),
         get_workspace_role=AsyncMock(return_value=role),
@@ -173,7 +174,7 @@ async def test_superuser_can_delete_workspace_without_owner_role():
         workspace_id=workspace.id,
     )
 
-    access_repo.delete_workspace.assert_awaited_once_with(workspace)
+    access_repo.soft_delete_workspace.assert_awaited_once_with(workspace)
 
 
 def test_workspace_member_create_defaults_to_member_role():

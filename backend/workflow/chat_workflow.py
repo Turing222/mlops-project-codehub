@@ -20,6 +20,7 @@ from backend.ai.core import PromptManager
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.core.token_counter import count_tokens
 from backend.config.llm import get_llm_model_config
+from backend.core.concurrency import get_db_semaphore, get_llm_semaphore
 from backend.core.config import settings
 from backend.core.exceptions import AppError, ServiceError
 from backend.core.redis import redis_client
@@ -42,21 +43,17 @@ logger = logging.getLogger(__name__)
 
 
 class ChatWorkflow:
-    # 类级别信号量，通过 Property 延迟初始化，解决 asyncio 在不同线程/无 Loop 环境下的初始化问题
-    _llm_semaphore: asyncio.Semaphore | None = None
-    _db_semaphore: asyncio.Semaphore | None = None
+    # R2/R4 修复：Semaphore 改为全局共享实例（见 core/concurrency.py），
+    # 使用 threading.Lock 双重检查保护初始化，消除类级别竞态，
+    # 并确保 ChatWorkflow 与 ChatNonStreamWorkflow 共享同一并发上限。
 
-    @classmethod
-    def _get_llm_semaphore(cls) -> asyncio.Semaphore:
-        if cls._llm_semaphore is None:
-            cls._llm_semaphore = asyncio.Semaphore(settings.LLM_MAX_CONCURRENCY)
-        return cls._llm_semaphore
+    @staticmethod
+    def _get_llm_semaphore() -> asyncio.Semaphore:
+        return get_llm_semaphore()
 
-    @classmethod
-    def _get_db_semaphore(cls) -> asyncio.Semaphore:
-        if cls._db_semaphore is None:
-            cls._db_semaphore = asyncio.Semaphore(settings.DB_MAX_CONCURRENCY)
-        return cls._db_semaphore
+    @staticmethod
+    def _get_db_semaphore() -> asyncio.Semaphore:
+        return get_db_semaphore()
 
     def __init__(
         self,
@@ -130,8 +127,9 @@ class ChatWorkflow:
         with trace_span("chat.stream.create_session_and_messages", trace_attrs) as span:
             async with self._get_db_semaphore():
                 async with self.uow:
-                    # 校验 Token 余额
-                    user = await self.uow.user_repo.get(user_id)
+                    # R1/R5 修复：用 SELECT FOR UPDATE 悲观锁读取用户行，
+                    # 防止多个并发请求同时通过余额检查（TOCTOU 竞态）
+                    user = await self.uow.user_repo.get_with_lock(user_id)
                     if user and user.used_tokens >= user.max_tokens:
                         if redis is not None and lock_key is not None:
                             await redis.delete(lock_key)
@@ -413,9 +411,17 @@ class ChatWorkflow:
                         tokens_output=tokens_output,
                         search_context=search_context,
                     )
-                    await self.uow.user_repo.increment_used_tokens(
-                        user_id, tokens_input + tokens_output
+                    # R1/R5 修复：条件原子累加，超出上限时返回 False
+                    total_tokens = tokens_input + tokens_output
+                    ok = await self.uow.user_repo.increment_used_tokens_guarded(
+                        user_id, total_tokens
                     )
+                    if not ok:
+                        logger.warning(
+                            "Token 累加后超出上限，本次消耗未记录: user_id=%s, delta=%d",
+                            user_id,
+                            total_tokens,
+                        )
             set_span_attributes(
                 span,
                 {

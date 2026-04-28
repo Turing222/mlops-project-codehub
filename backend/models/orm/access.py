@@ -4,7 +4,15 @@ import uuid
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,6 +48,15 @@ class Workspace(Base, BaseIdModel, AuditMixin):
         ForeignKey("users.id", ondelete="SET NULL"),
         index=True,
         nullable=True,
+    )
+    # R7 修复：软删除字段。NULL 表示活跃，非 NULL 表示已删除。
+    # 使用软删除保留 KB/File/ChatSession 等关联数据，
+    # 防止删除 Workspace 导致子资源孤立（workspace_id 被置 NULL）。
+    deleted_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="软删除时间，NULL 表示活跃",
     )
 
     owner: Mapped[User | None] = relationship(

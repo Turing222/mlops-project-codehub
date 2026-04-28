@@ -106,8 +106,15 @@ class ChatMessage(Base, BaseIdModel, AuditMixin):
     # 核心索引：确保按会话查询消息时，顺序是直接从索引读取的，无需内存排序
     __table_args__ = (
         Index("idx_msgs_session_created", "session_id", "created_at"),
-        # 增加 client_request_id 的唯一索引
-        Index("idx_msgs_client_req_id", "client_request_id", unique=True),
+        # R6 修复：部分唯一索引，只对非 NULL 的 client_request_id 做唯一约束。
+        # PostgreSQL 中 NULL != NULL，普通唯一索引允许多条 NULL 记录，
+        # 使用 postgresql_where 确保唯一性只在确实提供幂等键时生效。
+        Index(
+            "idx_msgs_client_req_id",
+            "client_request_id",
+            unique=True,
+            postgresql_where=text("client_request_id IS NOT NULL"),
+        ),
     )
 
     chunks: Mapped[list[DocumentChunk]] = relationship(
