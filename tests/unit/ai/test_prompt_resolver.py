@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from backend.ai.core.prompt_resolver import PromptResolver
-from backend.config.llm import (
+from backend.config.prompts import (
     LangfusePromptRef,
     PromptConfig,
     PromptSourceConfig,

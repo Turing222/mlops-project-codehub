@@ -12,8 +12,8 @@ from jinja2 import BaseLoader, Environment
 from jinja2.environment import Template
 from pydantic import ValidationError
 
-from backend.config.llm import PromptConfig, load_prompt_config
 from backend.config.loader import ConfigurationError
+from backend.config.prompts import PromptConfig, load_prompt_config
 from backend.config.schemas import PromptsConfig
 from backend.core.config import settings
 
@@ -128,7 +128,7 @@ class PromptResolver:
 
 
 def _to_prompt_config(config: PromptsConfig) -> PromptConfig:
-    from backend.config.llm import (
+    from backend.config.prompts import (
         LangfusePromptRef,
         PromptSourceConfig,
         PromptTemplateConfig,

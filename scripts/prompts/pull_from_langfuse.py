@@ -15,7 +15,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import backend.core.secret_env  # noqa: E402,F401
-from backend.config.llm import PromptConfig, load_prompt_config  # noqa: E402
+from backend.config.prompts import PromptConfig, load_prompt_config  # noqa: E402
 
 
 def main() -> None:
