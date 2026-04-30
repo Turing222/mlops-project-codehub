@@ -2,9 +2,10 @@ import ipaddress
 import time
 import uuid
 
-from fastapi import HTTPException, Request, status
+from fastapi import Request
 
 from backend.core.config import settings
+from backend.core.exceptions import app_too_many_requests
 from backend.core.redis import redis_client
 
 # Lua 脚本：实现滑动窗口算法
@@ -81,13 +82,12 @@ class RateLimiter:
         is_passed, current_count = res[0], res[1]
         
         if not is_passed:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={
-                    "error": "访问太频繁了（动态窗口）",
+            raise app_too_many_requests(
+                "访问太频繁了（动态窗口）",
+                details={
                     "limit_count": self.times,
-                    "current_count": current_count
-                }
+                    "current_count": current_count,
+                },
             )
 
     def _get_client_ip(self, request: Request) -> str:

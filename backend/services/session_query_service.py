@@ -1,7 +1,7 @@
 import logging
 import uuid
 
-from backend.core.exceptions import ResourceNotFound, ValidationError
+from backend.core.exceptions import app_forbidden, app_not_found
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.schemas.chat_schema import (
     MessageResponse,
@@ -53,13 +53,15 @@ class SessionQueryService(BaseService[AbstractUnitOfWork]):
 
         session = await self.uow.chat_repo.get_session(session_id)
         if not session:
-            raise ResourceNotFound(
+            raise app_not_found(
                 f"会话不存在: {session_id}",
+                code="CHAT_SESSION_NOT_FOUND",
                 details={"session_id": str(session_id)},
             )
         if session.user_id != user_id:
-            raise ValidationError(
+            raise app_forbidden(
                 "无权访问该会话",
+                code="CHAT_SESSION_FORBIDDEN",
                 details={"session_id": str(session_id)},
             )
 

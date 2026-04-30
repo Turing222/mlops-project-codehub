@@ -6,9 +6,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 
 from backend.api.v1.endpoint import user_api
+from backend.core.exceptions import AppException
 from backend.models.schemas.user_schema import (
     UserCreate,
     UserImportResponse,
@@ -110,7 +111,7 @@ async def test_read_user_uses_email_branch(user_service):
 async def test_read_user_returns_404_when_not_found(user_service):
     user_service.get_by_username.return_value = None
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(AppException) as exc_info:
         await user_api.read_user(
             search_params=UserSearch(username="missing"),
             _=make_user(is_superuser=True),
@@ -118,7 +119,7 @@ async def test_read_user_returns_404_when_not_found(user_service):
         )
 
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "User not found"
+    assert exc_info.value.message == "User not found"
 
 
 @pytest.mark.asyncio
@@ -144,7 +145,7 @@ async def test_update_user_success(user_service):
 async def test_update_user_returns_404_when_not_found(user_service):
     user_service.user_update.return_value = None
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(AppException) as exc_info:
         await user_api.update_user(
             user_id=uuid.uuid4(),
             user_in=UserUpdate(username="new_name"),
@@ -153,7 +154,7 @@ async def test_update_user_returns_404_when_not_found(user_service):
         )
 
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "User not found"
+    assert exc_info.value.message == "User not found"
 
 
 @pytest.mark.asyncio
@@ -181,7 +182,7 @@ async def test_create_user_success(user_service):
 async def test_create_user_returns_400_when_service_returns_none(user_service):
     user_service.user_register_with_personal_workspace.return_value = None
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(AppException) as exc_info:
         await user_api.create_user(
             user_in=UserCreate(
                 username="new_user",
@@ -194,7 +195,7 @@ async def test_create_user_returns_400_when_service_returns_none(user_service):
         )
 
     assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == "User creation failed"
+    assert exc_info.value.message == "User creation failed"
 
 
 @pytest.mark.asyncio

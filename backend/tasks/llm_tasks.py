@@ -3,7 +3,7 @@ import logging
 from langfuse import observe
 
 from backend.ai.providers.llm.factory import LLMProviderFactory
-from backend.core.exceptions import AppError
+from backend.core.exceptions import AppException
 from backend.core.redis import redis_client
 from backend.core.task_broker import broker
 from backend.core.trace_utils import set_span_attributes, trace_span, use_trace_context
@@ -61,7 +61,7 @@ async def _generate_llm_stream_task(llm_query_dict: dict, channel: str):
                 },
             )
         logger.info("Taskiq Worker 成功结束流式处理: %s", channel)
-    except AppError as exc:
+    except AppException as exc:
         logger.warning("Taskiq 调用 LLM 业务异常: %s", exc)
         # 向主程序回传业务错误，供上游统一处理
         await redis.publish(channel, f"[ERROR]{exc}")

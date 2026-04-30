@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile, status
+from fastapi import APIRouter, Depends, File, Path, UploadFile
 
 from backend.api.dependencies import (
     get_audit_service,
@@ -11,6 +11,7 @@ from backend.api.dependencies import (
     get_user_import_service,
     get_user_service,
 )
+from backend.core.exceptions import app_bad_request, app_not_found
 from backend.models.orm.user import User
 from backend.models.schemas.user_schema import (
     UserCreate,
@@ -64,13 +65,13 @@ async def read_user(
         elif search_params.email:
             user = await user_service.get_by_email(search_params.email)
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Must provide either username or email",
+            raise app_bad_request(
+                "Must provide either username or email",
+                code="USER_SEARCH_PARAM_REQUIRED",
             )
 
         if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise app_not_found("User not found", code="USER_NOT_FOUND")
     return UserResponse.model_validate(user)
 
 
@@ -99,7 +100,7 @@ async def update_user(
         async with user_service.uow:
             updated_user = await user_service.user_update(user_id=user_id, user_in=user_in)
             if not updated_user:
-                raise HTTPException(status_code=404, detail="User not found")
+                raise app_not_found("User not found", code="USER_NOT_FOUND")
         return UserResponse.model_validate(updated_user)
 
 
@@ -122,7 +123,7 @@ async def create_user(
         async with user_service.uow:
             user = await user_service.user_register_with_personal_workspace(user_in)
             if not user:
-                raise HTTPException(status_code=400, detail="User creation failed")
+                raise app_bad_request("User creation failed", code="USER_CREATION_FAILED")
             audit.set_resource(resource_id=user.id)
             return UserResponse.model_validate(user)
 

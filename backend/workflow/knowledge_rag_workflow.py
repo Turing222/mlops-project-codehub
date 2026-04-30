@@ -5,10 +5,10 @@ from pathlib import Path
 import pypdfium2 as pdfium
 
 from backend.core.exceptions import (
-    AppError,
-    ResourceNotFound,
-    ServiceError,
-    ValidationError,
+    AppException,
+    app_not_found,
+    app_service_error,
+    app_validation_error,
 )
 from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.models.orm.knowledge import FileStatus
@@ -68,7 +68,7 @@ class KnowledgeRAGWorkflow:
                     },
                 )
         if not file_obj:
-            raise ResourceNotFound("文件不存在")
+            raise app_not_found("文件不存在", code="KNOWLEDGE_FILE_NOT_FOUND")
 
         try:
             async with self.knowledge_service.storage.download_to_temp(
@@ -87,7 +87,10 @@ class KnowledgeRAGWorkflow:
                     chunks = await asyncio.to_thread(self._extract_chunks, file_path)
                     set_span_attributes(span, {"rag.chunk_count": len(chunks)})
             if not chunks:
-                raise ValidationError("文件无可用文本内容，无法构建 RAG 索引")
+                raise app_validation_error(
+                    "文件无可用文本内容，无法构建 RAG 索引",
+                    code="KNOWLEDGE_FILE_NO_TEXT",
+                )
 
             with trace_span(
                 "knowledge.ingest.index_chunks",
@@ -120,8 +123,11 @@ class KnowledgeRAGWorkflow:
                     file_id=file_id,
                     status=FileStatus.FAILED,
                 )
-            raise ResourceNotFound("上传文件在存储路径中不存在") from exc
-        except AppError:
+            raise app_not_found(
+                "上传文件在存储路径中不存在",
+                code="KNOWLEDGE_FILE_OBJECT_NOT_FOUND",
+            ) from exc
+        except AppException:
             async with self.knowledge_service.uow:
                 await self.knowledge_service.set_file_status(
                     file_id=file_id,
@@ -134,7 +140,10 @@ class KnowledgeRAGWorkflow:
                     file_id=file_id,
                     status=FileStatus.FAILED,
                 )
-            raise ServiceError("知识文件处理失败，请稍后重试") from exc
+            raise app_service_error(
+                "知识文件处理失败，请稍后重试",
+                code="KNOWLEDGE_FILE_INGEST_FAILED",
+            ) from exc
 
     def _extract_chunks(self, file_path: Path) -> list[str]:
         suffix = file_path.suffix.lower()
@@ -143,8 +152,9 @@ class KnowledgeRAGWorkflow:
         if suffix in PDF_FILE_SUFFIXES:
             return self._extract_pdf_chunks(file_path)
 
-        raise ValidationError(
-            f"暂不支持的文件类型: {suffix or '(无扩展名)'}，建议使用 txt/md/pdf"
+        raise app_validation_error(
+            f"暂不支持的文件类型: {suffix or '(无扩展名)'}，建议使用 txt/md/pdf",
+            code="KNOWLEDGE_FILE_UNSUPPORTED_TYPE",
         )
 
     def _extract_text_chunks(self, file_path: Path) -> list[str]:
@@ -155,10 +165,13 @@ class KnowledgeRAGWorkflow:
         try:
             text = self._extract_pdf_text(file_path)
             return self.chunking_service.split_text(text)
-        except AppError:
+        except AppException:
             raise
         except Exception as exc:
-            raise ValidationError(f"文件解析失败: {file_path.name}") from exc
+            raise app_validation_error(
+                f"文件解析失败: {file_path.name}",
+                code="KNOWLEDGE_FILE_PARSE_FAILED",
+            ) from exc
 
     @staticmethod
     def _extract_pdf_text(file_path: Path) -> str:

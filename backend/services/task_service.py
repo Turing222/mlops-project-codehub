@@ -1,6 +1,6 @@
 import uuid
 
-from backend.core.exceptions import ResourceNotFound
+from backend.core.exceptions import app_not_found
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.task import TaskJob, TaskStatus
 from backend.services.base import BaseService
@@ -70,6 +70,6 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         payload = task.payload or {}
         payload_user_id = payload.get("user_id")
         if payload_user_id is None:
-            raise ResourceNotFound("任务关联用户不存在")
+            raise app_not_found("任务关联用户不存在", code="TASK_USER_NOT_FOUND")
         if str(user_id) != str(payload_user_id):
-            raise ResourceNotFound("任务不存在或无访问权限")
+            raise app_not_found("任务不存在或无访问权限", code="TASK_NOT_FOUND")

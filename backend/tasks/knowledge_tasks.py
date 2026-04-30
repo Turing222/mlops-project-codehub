@@ -7,7 +7,11 @@ from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.config.llm import get_llm_model_config
 from backend.core.config import settings
 from backend.core.database import create_db_assets
-from backend.core.exceptions import AppError, ServiceError, ValidationError
+from backend.core.exceptions import (
+    AppException,
+    app_service_error,
+    app_validation_error,
+)
 from backend.core.task_broker import broker
 from backend.core.trace_utils import set_span_attributes, trace_span, use_trace_context
 from backend.services.chunking_service import ChunkingService
@@ -150,8 +154,11 @@ async def _ingest_knowledge_file_task(file_id: str, task_id: str | None = None):
             task_id=task_uuid,
             error_log="任务参数非法: file_id/task_id 必须为 UUID",
         )
-        raise ValidationError("任务参数非法: file_id/task_id 必须为 UUID") from exc
-    except AppError as exc:
+        raise app_validation_error(
+            "任务参数非法: file_id/task_id 必须为 UUID",
+            code="KNOWLEDGE_TASK_INVALID_ARGUMENT",
+        ) from exc
+    except AppException as exc:
         await _safe_mark_failed(
             uow=uow,
             task_service=task_service,
@@ -177,6 +184,9 @@ async def _ingest_knowledge_file_task(file_id: str, task_id: str | None = None):
             file_id,
             task_id,
         )
-        raise ServiceError("知识文件处理失败，请稍后重试") from exc
+        raise app_service_error(
+            "知识文件处理失败，请稍后重试",
+            code="KNOWLEDGE_FILE_INGEST_FAILED",
+        ) from exc
 
     logger.info("TaskIQ 完成知识库文件处理: file_id=%s task_id=%s", file_id, task_id)

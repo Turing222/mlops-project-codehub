@@ -10,10 +10,12 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from fastapi import UploadFile
 
-from backend.core.exceptions import UploadSizeLimitExceeded
-
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+
+class UploadSizeLimitExceeded(Exception):
+    """Internal storage signal for uploads that exceed configured byte limits."""
 
 
 @dataclass(frozen=True, slots=True)

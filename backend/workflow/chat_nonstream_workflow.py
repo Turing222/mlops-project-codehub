@@ -8,7 +8,11 @@ from backend.ai.core import PromptManager
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.core.concurrency import get_db_semaphore, get_llm_semaphore
 from backend.core.config import settings
-from backend.core.exceptions import AppError, ServiceError, ValidationError
+from backend.core.exceptions import (
+    AppException,
+    app_service_error,
+    app_validation_error,
+)
 from backend.core.redis import redis_client
 from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.domain.interfaces import (
@@ -201,7 +205,7 @@ class ChatNonStreamWorkflow:
                         query_text=query_text,
                         kb_id=kb_id,
                     )
-        except AppError:
+        except AppException:
             raise
         except Exception as exc:
             logger.warning("RAG 检索失败，降级为普通对话: %s", exc)
@@ -249,8 +253,9 @@ class ChatNonStreamWorkflow:
                     val = await redis.get(lock_key)
                     set_span_attributes(span, {"chat.idempotency.value": val})
                     if val == "PROCESSING":
-                        raise ServiceError(
+                        raise app_service_error(
                             "正在加速计算中...",
+                            code="CHAT_REQUEST_PROCESSING",
                             details={"client_request_id": client_request_id},
                         )
                     async with self.uow:
@@ -263,7 +268,10 @@ class ChatNonStreamWorkflow:
                                 msg.session_id
                             )
                             if session is None:
-                                raise ServiceError("会话不存在")
+                                raise app_service_error(
+                                    "会话不存在",
+                                    code="CHAT_SESSION_NOT_FOUND",
+                                )
                             set_span_attributes(
                                 span,
                                 {"chat.idempotency.cached_message": True},
@@ -285,8 +293,9 @@ class ChatNonStreamWorkflow:
                     if user and user.used_tokens >= user.max_tokens:
                         if redis is not None and lock_key is not None:
                             await redis.delete(lock_key)
-                        raise ValidationError(
+                        raise app_validation_error(
                             "Token 余额不足",
+                            code="TOKEN_QUOTA_EXCEEDED",
                             details={"used": user.used_tokens, "max": user.max_tokens},
                         )
 
@@ -406,7 +415,7 @@ class ChatNonStreamWorkflow:
                         "llm.response.char_count": len(result.content),
                     },
                 )
-        except AppError:
+        except AppException:
             if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
             async with self._get_db_semaphore():
@@ -421,7 +430,10 @@ class ChatNonStreamWorkflow:
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(assistant_msg.id)
-            raise ServiceError("LLM 服务调用失败，请稍后重试") from exc
+            raise app_service_error(
+                "LLM 服务调用失败，请稍后重试",
+                code="LLM_SERVICE_ERROR",
+            ) from exc
 
         if not result.success:
             if redis is not None and lock_key is not None:
@@ -433,8 +445,9 @@ class ChatNonStreamWorkflow:
                         assistant_msg.id,
                         error_content=result.error_message or "LLM 服务调用失败",
                     )
-            raise ServiceError(
+            raise app_service_error(
                 "LLM 服务返回失败",
+                code="LLM_SERVICE_FAILED",
                 details={"error": result.error_message},
             )
 

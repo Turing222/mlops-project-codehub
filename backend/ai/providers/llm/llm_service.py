@@ -24,7 +24,7 @@ from openai.types.chat import (
 from backend.ai.core.token_counter import count_tokens
 from backend.config.llm import get_llm_model_config
 from backend.core.config import settings
-from backend.core.exceptions import ServiceError
+from backend.core.exceptions import AppException, app_service_error
 from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import (
@@ -94,8 +94,9 @@ class LLMService(AbstractLLMService):
 
     def _create_client(self) -> openai.AsyncOpenAI:
         if not self.api_key:
-            raise ServiceError(
+            raise app_service_error(
                 "LLM API Key 未配置",
+                code="LLM_API_KEY_MISSING",
                 details={"provider": self.provider_name},
             )
         if self._client is None:
@@ -155,6 +156,8 @@ class LLMService(AbstractLLMService):
                 )
 
             logger.info("LLM 流式请求完成: session_id=%s", query.session_id)
+        except AppException:
+            raise
         except Exception as e:
             logger.error(
                 "LLM 流式请求失败: session_id=%s, error=%s",
@@ -162,8 +165,9 @@ class LLMService(AbstractLLMService):
                 str(e),
                 exc_info=True,
             )
-            raise ServiceError(
+            raise app_service_error(
                 "LLM 服务调用失败",
+                code="LLM_SERVICE_ERROR",
                 details={"session_id": str(query.session_id), "error": str(e)},
             ) from e
 
@@ -191,7 +195,7 @@ class LLMService(AbstractLLMService):
             ) as span:
                 async for chunk in self.stream_response(query):
                     chunks.append(chunk)
-        except ServiceError:
+        except AppException:
             raise
         except Exception as e:
             logger.error(
@@ -200,8 +204,9 @@ class LLMService(AbstractLLMService):
                 str(e),
                 exc_info=True,
             )
-            raise ServiceError(
+            raise app_service_error(
                 "LLM 服务调用失败",
+                code="LLM_SERVICE_ERROR",
                 details={"session_id": str(query.session_id), "error": str(e)},
             ) from e
 

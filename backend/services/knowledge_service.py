@@ -4,11 +4,10 @@ from pathlib import Path
 from fastapi import UploadFile
 
 from backend.core.exceptions import (
-    AppError,
-    ResourceNotFound,
-    ServiceError,
-    UploadSizeLimitExceeded,
-    ValidationError,
+    AppException,
+    app_not_found,
+    app_service_error,
+    app_validation_error,
 )
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.knowledge import File, FileStatus, KnowledgeBase
@@ -16,6 +15,7 @@ from backend.services.object_storage import (
     LocalObjectStorage,
     ObjectStorage,
     StoredObject,
+    UploadSizeLimitExceeded,
 )
 from backend.services.permission_service import Permission, PermissionService
 
@@ -63,7 +63,7 @@ class KnowledgeService:
                 max_size_bytes=self.max_upload_size_bytes,
             )
             if stored_object.size <= 0:
-                raise ValidationError("上传文件为空")
+                raise app_validation_error("上传文件为空", code="UPLOAD_FILE_EMPTY")
 
             return await self._create_file_record(
                 kb_id=kb_id,
@@ -72,20 +72,24 @@ class KnowledgeService:
                 owner_id=user_id,
                 workspace_id=getattr(kb, "workspace_id", None),
             )
-        except AppError:
+        except AppException:
             if stored_object is not None:
                 await self.storage.delete(stored_object)
             raise
         except UploadSizeLimitExceeded as exc:
             if stored_object is not None:
                 await self.storage.delete(stored_object)
-            raise ValidationError(
-                f"上传文件超过大小限制（最大 {self.max_upload_size_mb}MB）"
+            raise app_validation_error(
+                f"上传文件超过大小限制（最大 {self.max_upload_size_mb}MB）",
+                code="UPLOAD_FILE_TOO_LARGE",
             ) from exc
         except Exception as exc:
             if stored_object is not None:
                 await self.storage.delete(stored_object)
-            raise ServiceError("上传文件保存失败，请稍后重试") from exc
+            raise app_service_error(
+                "上传文件保存失败，请稍后重试",
+                code="UPLOAD_FILE_SAVE_FAILED",
+            ) from exc
 
     async def get_file(self, file_id: uuid.UUID) -> File | None:
         return await self.uow.knowledge_repo.get_file(file_id)
@@ -142,12 +146,13 @@ class KnowledgeService:
 
     def _validate_upload_file(self, upload_file: UploadFile) -> str:
         if not upload_file.filename:
-            raise ValidationError("上传文件名不能为空")
+            raise app_validation_error("上传文件名不能为空", code="UPLOAD_FILENAME_EMPTY")
 
         safe_filename = self._sanitize_filename(upload_file.filename)
         if upload_file.size and upload_file.size > self.max_upload_size_bytes:
-            raise ValidationError(
-                f"上传文件超过大小限制（最大 {self.max_upload_size_mb}MB）"
+            raise app_validation_error(
+                f"上传文件超过大小限制（最大 {self.max_upload_size_mb}MB）",
+                code="UPLOAD_FILE_TOO_LARGE",
             )
         return safe_filename
 
@@ -168,12 +173,12 @@ class KnowledgeService:
         if get_kb is None:
             if kb:
                 return kb
-            raise ResourceNotFound("知识库不存在或无访问权限")
+            raise app_not_found("知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND")
 
         # 取完整 KB 对象（含 workspace_id）
         full_kb = kb or await get_kb(kb_id)
         if not full_kb:
-            raise ResourceNotFound("知识库不存在或无访问权限")
+            raise app_not_found("知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND")
 
         # ① workspace KB：无论是否 owner，必须验证当前 workspace 成员权限
         #    防止用户被移出/降级后仍凭 KB owner 身份绕过权限
@@ -184,13 +189,13 @@ class KnowledgeService:
                 permission=permission,
             ):
                 return full_kb
-            raise ResourceNotFound("知识库不存在或无访问权限")
+            raise app_not_found("知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND")
 
         # ② personal KB（workspace_id is None）：仅 owner 可访问
         if full_kb.user_id == user_id:
             return full_kb
 
-        raise ResourceNotFound("知识库不存在或无访问权限")
+        raise app_not_found("知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND")
 
     async def _create_file_record(
         self,
@@ -214,9 +219,12 @@ class KnowledgeService:
                 storage_bucket=stored_object.bucket,
                 storage_key=stored_object.key,
             )
-        except AppError:
+        except AppException:
             await self.storage.delete(stored_object)
             raise
         except Exception as exc:
             await self.storage.delete(stored_object)
-            raise ServiceError("上传文件保存失败，请稍后重试") from exc
+            raise app_service_error(
+                "上传文件保存失败，请稍后重试",
+                code="UPLOAD_FILE_SAVE_FAILED",
+            ) from exc

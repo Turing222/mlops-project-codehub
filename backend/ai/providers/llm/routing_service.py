@@ -3,7 +3,7 @@ import time
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 
-from backend.core.exceptions import ServiceError
+from backend.core.exceptions import app_service_error
 from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 
@@ -57,8 +57,9 @@ class LLMRoutingService(AbstractLLMService):
                     exc_info=True,
                 )
 
-        raise ServiceError(
+        raise app_service_error(
             "LLM 路由所有候选均失败",
+            code="LLM_ROUTING_FAILED",
             details={"session_id": str(query.session_id), "attempts": errors},
         )
 
@@ -85,8 +86,9 @@ class LLMRoutingService(AbstractLLMService):
                     exc_info=True,
                 )
 
-        raise ServiceError(
+        raise app_service_error(
             "LLM 路由所有候选均失败",
+            code="LLM_ROUTING_FAILED",
             details={"session_id": str(query.session_id), "attempts": errors},
         )
 

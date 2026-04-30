@@ -7,7 +7,7 @@ import pytest
 
 from backend.config.loader import ConfigurationError
 from backend.config.permissions import load_permission_policy
-from backend.core.exceptions import PermissionDenied
+from backend.core.exceptions import AppException
 from backend.models.orm.access import WorkspaceRole
 from backend.models.orm.user import User
 from backend.services.permission_service import Permission, PermissionService
@@ -74,7 +74,7 @@ async def test_member_role_allows_file_write_but_not_role_manage():
 async def test_require_permission_raises_permission_denied():
     service = make_service_with_role(WorkspaceRole.VIEWER)
 
-    with pytest.raises(PermissionDenied) as exc_info:
+    with pytest.raises(AppException) as exc_info:
         await service.require_permission(
             user=make_user(),
             workspace_id=uuid.uuid4(),

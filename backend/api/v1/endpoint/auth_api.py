@@ -1,10 +1,11 @@
 from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from backend.api.dependencies import get_audit_service, get_login_data, get_uow
 from backend.core.config import settings
+from backend.core.exceptions import app_bad_request
 from backend.core.security import create_access_token
 from backend.models.orm.access import AuditOutcome
 from backend.models.schemas.user_schema import (
@@ -48,7 +49,7 @@ async def login(
                     "reason": "bad_credentials",
                 },
             )
-            raise HTTPException(status_code=400, detail="用户名或密码错误")
+            raise app_bad_request("用户名或密码错误", code="BAD_CREDENTIALS")
 
         if not user.is_active:
             await record_audit(
@@ -61,7 +62,7 @@ async def login(
                     "reason": "inactive_user",
                 },
             )
-            raise HTTPException(status_code=400, detail="账户未激活")
+            raise app_bad_request("账户未激活", code="USER_INACTIVE")
 
     # 2. 发放 Token (Token 生成是纯 CPU 计算，无需 await)
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)

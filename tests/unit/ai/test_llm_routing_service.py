@@ -7,7 +7,7 @@ from backend.ai.providers.llm.routing_service import (
     LLMRouteCandidate,
     LLMRoutingService,
 )
-from backend.core.exceptions import ServiceError
+from backend.core.exceptions import app_service_error
 from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 
@@ -25,11 +25,11 @@ class FailingLLMService(AbstractLLMService):
         self,
         query: LLMQueryDTO,
     ) -> AsyncGenerator[str, None]:
-        raise ServiceError("rate limited", details={"status_code": 429})
+        raise app_service_error("rate limited", details={"status_code": 429})
         yield ""
 
     async def generate_response(self, query: LLMQueryDTO) -> LLMResultDTO:
-        raise ServiceError("rate limited", details={"status_code": 429})
+        raise app_service_error("rate limited", details={"status_code": 429})
 
 
 class SuccessfulLLMService(AbstractLLMService):

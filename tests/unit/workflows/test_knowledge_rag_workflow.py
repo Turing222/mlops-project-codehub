@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.core.exceptions import ValidationError
+from backend.core.exceptions import AppException
 from backend.models.orm.knowledge import FileStatus
 from backend.workflow.knowledge_rag_workflow import KnowledgeRAGWorkflow
 
@@ -100,7 +100,7 @@ def test_extract_chunks_rejects_docx_without_structured_parser(tmp_path):
     file_path = tmp_path / "demo.docx"
     file_path.write_text("fake", encoding="utf-8")
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(AppException):
         workflow._extract_chunks(file_path)
 
 
@@ -110,7 +110,7 @@ def test_extract_chunks_rejects_unsupported_file_suffix(tmp_path):
     file_path = tmp_path / "demo.bin"
     file_path.write_text("fake", encoding="utf-8")
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(AppException):
         workflow._extract_chunks(file_path)
 
 

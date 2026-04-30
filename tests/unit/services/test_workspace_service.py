@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.core.exceptions import PermissionDenied, ValidationError
+from backend.core.exceptions import AppException
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.access import WorkspaceRole
 from backend.models.schemas.workspace_schema import (
@@ -129,7 +129,7 @@ async def test_create_workspace_rejects_duplicate_slug():
     service, access_repo, _, _, _ = make_service()
     access_repo.get_workspace_by_slug.return_value = existing
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(AppException):
         await service.create_workspace(
             current_user=make_user(),
             workspace_in=WorkspaceCreate(name="Taken", slug="taken"),
@@ -142,7 +142,7 @@ async def test_create_workspace_rejects_duplicate_slug():
 async def test_update_workspace_requires_manage_permission():
     service, access_repo, workspace, _, _ = make_service(role=WorkspaceRole.MEMBER)
 
-    with pytest.raises(PermissionDenied):
+    with pytest.raises(AppException):
         await service.update_workspace(
             current_user=make_user(),
             workspace_id=workspace.id,
@@ -156,7 +156,7 @@ async def test_update_workspace_requires_manage_permission():
 async def test_delete_workspace_requires_owner_role():
     service, access_repo, workspace, _, _ = make_service(role=WorkspaceRole.ADMIN)
 
-    with pytest.raises(PermissionDenied):
+    with pytest.raises(AppException):
         await service.delete_workspace(
             current_user=make_user(),
             workspace_id=workspace.id,
@@ -208,7 +208,7 @@ async def test_admin_cannot_appoint_owner():
     service, access_repo, workspace, member_user, _ = make_service(role=WorkspaceRole.ADMIN)
     access_repo.get_workspace_member.return_value = None
 
-    with pytest.raises(PermissionDenied):
+    with pytest.raises(AppException):
         await service.add_workspace_member(
             current_user=make_user(),
             workspace_id=workspace.id,
@@ -229,7 +229,7 @@ async def test_cannot_downgrade_last_owner():
     member_role.role = WorkspaceRole.OWNER
     access_repo.count_workspace_owners.return_value = 1
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(AppException):
         await service.update_workspace_member(
             current_user=make_user(),
             workspace_id=workspace.id,
@@ -248,7 +248,7 @@ async def test_cannot_remove_last_owner():
     member_role.role = WorkspaceRole.OWNER
     access_repo.count_workspace_owners.return_value = 1
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(AppException):
         await service.remove_workspace_member(
             current_user=make_user(),
             workspace_id=workspace.id,

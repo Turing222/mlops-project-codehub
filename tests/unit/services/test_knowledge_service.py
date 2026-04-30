@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import UploadFile
 
-from backend.core.exceptions import ResourceNotFound, ValidationError
+from backend.core.exceptions import AppException
 from backend.models.orm.knowledge import FileStatus
 from backend.services.knowledge_service import KnowledgeService
 
@@ -88,7 +88,7 @@ class TestKnowledgeServiceStreamingUpload:
         repo.get_kb_for_user.return_value = None
         upload_file = make_upload_file("demo.txt", b"abc", size=3)
 
-        with pytest.raises(ResourceNotFound):
+        with pytest.raises(AppException):
             await service.save_upload_file(
                 kb_id=uuid.uuid4(),
                 user_id=uuid.uuid4(),
@@ -111,7 +111,7 @@ class TestKnowledgeServiceStreamingUpload:
         oversize_content = b"a" * (service.max_upload_size_bytes + 128)
         upload_file = make_upload_file("too-large.txt", oversize_content)
 
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(AppException) as exc_info:
             await service.save_upload_file(
                 kb_id=kb_id,
                 user_id=user_id,

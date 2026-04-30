@@ -8,10 +8,9 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from backend.core.config import settings
 from backend.core.exceptions import (
-    AppError,
-    DatabaseOperationError,
-    ServiceError,
-    ValidationError,
+    AppException,
+    app_service_error,
+    app_validation_error,
 )
 from backend.core.security import get_password_hash
 from backend.domain.interfaces import AbstractUnitOfWork
@@ -34,11 +33,11 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
 
     async def import_from_upload(self, upload_file: UploadFile) -> UserImportResponse:
         if not upload_file.filename:
-            raise ValidationError("文件名不能为空")
+            raise app_validation_error("文件名不能为空", code="UPLOAD_FILENAME_EMPTY")
 
         content = await upload_file.read()
         if not content:
-            raise ValidationError("上传文件为空")
+            raise app_validation_error("上传文件为空", code="UPLOAD_FILE_EMPTY")
 
         raw_data = await asyncio.to_thread(parse_file, upload_file.filename, content)
         total_rows = len(raw_data)
@@ -57,7 +56,7 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
         """批量导入用户，返回成功导入数量。"""
         if not user_maps:
             logger.info("No valid users data found in file")
-            raise ValidationError("有效客户为0")
+            raise app_validation_error("有效客户为0", code="USER_IMPORT_EMPTY")
 
         incoming_usernames = [str(u["username"]) for u in user_maps]
 
@@ -66,7 +65,10 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
                 incoming_usernames
             )
             if existing_names:
-                raise ValidationError(f"以下用户名已被占用，无法注册: {existing_names}")
+                raise app_validation_error(
+                    f"以下用户名已被占用，无法注册: {existing_names}",
+                    code="USERNAME_ALREADY_REGISTERED",
+                )
 
             size = settings.BATCH_SIZE
             batches = [user_maps[i : i + size] for i in range(0, len(user_maps), size)]
@@ -83,15 +85,21 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
 
             logger.info("批量处理成功, 成功提交 %d 用户", total_records)
             return total_records
-        except AppError:
+        except AppException:
             raise
         except IntegrityError as exc:
-            raise DatabaseOperationError("数据违反了唯一性约束或其他限制") from exc
+            raise app_service_error(
+                "数据违反了唯一性约束或其他限制",
+                code="DATABASE_OPERATION_ERROR",
+            ) from exc
         except SQLAlchemyError as exc:
-            raise DatabaseOperationError("数据库操作执行失败") from exc
+            raise app_service_error("数据库操作执行失败", code="DATABASE_OPERATION_ERROR") from exc
         except Exception as exc:
             logger.exception("导入过程发生未知错误")
-            raise ServiceError("Internal server error during import") from exc
+            raise app_service_error(
+                "Internal server error during import",
+                code="USER_IMPORT_FAILED",
+            ) from exc
 
     @classmethod
     async def transform_and_validate(
@@ -109,9 +117,15 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
                 errors.append(f"Row {index}: {mapped_row}")
 
         if not cleaned_schemas:
-            raise ValidationError(f"No valid data found. Errors: {errors}")
+            raise app_validation_error(
+                f"No valid data found. Errors: {errors}",
+                code="USER_IMPORT_INVALID_DATA",
+            )
         if errors:
-            raise ValidationError(f"No valid data found. Errors: {errors}")
+            raise app_validation_error(
+                f"No valid data found. Errors: {errors}",
+                code="USER_IMPORT_INVALID_DATA",
+            )
         return cleaned_schemas
 
     async def _build_import_rows(self, user_maps: list[dict[str, Any]]) -> list[dict[str, str]]:

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.core.exceptions import PermissionDenied
+from backend.core.exceptions import AppException, app_forbidden
 from backend.models.orm.access import AuditOutcome
 from backend.services.audit_service import (
     AuditAction,
@@ -80,13 +80,13 @@ async def test_capture_records_success_event():
 async def test_capture_records_denied_event_and_reraises():
     service, session_factory = make_audit_service()
 
-    with pytest.raises(PermissionDenied):
+    with pytest.raises(AppException):
         async with service.capture(action=AuditAction.PERMISSION_DENIED):
-            raise PermissionDenied("nope")
+            raise app_forbidden("nope")
 
     event = session_factory.session.events[0]
     assert event.outcome == AuditOutcome.DENIED
-    assert event.event_metadata["error_type"] == "PermissionDenied"
+    assert event.event_metadata["error_type"] == "AppException"
 
 
 @pytest.mark.asyncio

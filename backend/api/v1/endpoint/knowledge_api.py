@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 
 from backend.api.dependencies import (
     get_audit_service,
@@ -11,6 +11,7 @@ from backend.api.dependencies import (
     get_permission_service,
     get_task_service,
 )
+from backend.core.exceptions import app_not_found
 from backend.models.orm.user import User
 from backend.models.schemas.knowledge_schema import (
     KnowledgeFileResponse,
@@ -110,9 +111,7 @@ async def get_task_status(
     async with task_service.uow:
         task = await task_service.get_by_id(task_id=task_id)
         if not task:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="任务不存在"
-            )
+            raise app_not_found("任务不存在", code="TASK_NOT_FOUND")
 
         await task_service.ensure_user_access(task=task, user_id=current_user.id)
     return TaskResponse.model_validate(task)
@@ -128,9 +127,7 @@ async def get_file_status(
     async with service.uow:
         file_obj = await service.get_file(file_id=file_id)
         if not file_obj:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="文件不存在"
-            )
+            raise app_not_found("文件不存在", code="KNOWLEDGE_FILE_NOT_FOUND")
 
         await service.ensure_kb_access(kb_id=file_obj.kb_id, user_id=current_user.id)
     return KnowledgeFileResponse.model_validate(file_obj)

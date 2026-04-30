@@ -9,7 +9,7 @@ from backend.api.dependencies import (
     get_permission_service,
     get_uow,
 )
-from backend.core.exceptions import PermissionDenied
+from backend.core.exceptions import app_forbidden
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.access import AuditEvent, AuditOutcome
 from backend.models.orm.user import User
@@ -59,7 +59,7 @@ async def _ensure_audit_access(
     if current_user.is_superuser and permission_service.policy.superuser_bypass:
         return
     if workspace_id is None:
-        raise PermissionDenied(
+        raise app_forbidden(
             "权限不足",
             details={"scope": "global", "permission": Permission.AUDIT_READ},
         )

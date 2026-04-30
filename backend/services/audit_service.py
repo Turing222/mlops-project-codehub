@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from backend.core.exceptions import PermissionDenied
+from backend.core.exceptions import AppException
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.access import AuditEvent, AuditOutcome
 
@@ -176,7 +176,7 @@ class _AuditCaptureContext(AbstractAsyncContextManager[AuditCapture]):
         metadata = self.capture_state.metadata.copy()
 
         if exc is not None:
-            if isinstance(exc, PermissionDenied):
+            if isinstance(exc, AppException) and exc.status_code == 403:
                 outcome = AuditOutcome.DENIED
             else:
                 outcome = AuditOutcome.FAILED

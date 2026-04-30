@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator
 from backend.ai.core.token_counter import count_tokens
 from backend.config.llm import get_llm_model_config
 from backend.core.config import settings
-from backend.core.exceptions import ServiceError
+from backend.core.exceptions import AppException, app_service_error
 from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import (
@@ -79,7 +79,7 @@ class PydanticAILLMService(AbstractLLMService):
                 )
 
             logger.info("Pydantic AI Gemini 流式请求完成: session_id=%s", query.session_id)
-        except ServiceError:
+        except AppException:
             raise
         except Exception as exc:
             logger.error(
@@ -88,8 +88,9 @@ class PydanticAILLMService(AbstractLLMService):
                 str(exc),
                 exc_info=True,
             )
-            raise ServiceError(
+            raise app_service_error(
                 "Gemini 服务调用失败",
+                code="GEMINI_SERVICE_ERROR",
                 details={"session_id": str(query.session_id), "error": str(exc)},
             ) from exc
 
@@ -116,7 +117,7 @@ class PydanticAILLMService(AbstractLLMService):
             ) as span:
                 agent = self._create_agent(instructions)
                 result = await agent.run(prompt)
-        except ServiceError:
+        except AppException:
             raise
         except Exception as exc:
             logger.error(
@@ -125,8 +126,9 @@ class PydanticAILLMService(AbstractLLMService):
                 str(exc),
                 exc_info=True,
             )
-            raise ServiceError(
+            raise app_service_error(
                 "Gemini 服务调用失败",
+                code="GEMINI_SERVICE_ERROR",
                 details={"session_id": str(query.session_id), "error": str(exc)},
             ) from exc
 
@@ -153,8 +155,9 @@ class PydanticAILLMService(AbstractLLMService):
 
     def _create_agent(self, instructions: str | None):
         if not self.api_key:
-            raise ServiceError(
+            raise app_service_error(
                 "Gemini API Key 未配置",
+                code="GEMINI_API_KEY_MISSING",
                 details={"env": "GEMINI_API_KEY 或 GOOGLE_API_KEY"},
             )
 
@@ -163,8 +166,9 @@ class PydanticAILLMService(AbstractLLMService):
             from pydantic_ai.models.google import GoogleModel
             from pydantic_ai.providers.google import GoogleProvider
         except ImportError as exc:
-            raise ServiceError(
+            raise app_service_error(
                 "Pydantic AI Gemini provider 未安装",
+                code="GEMINI_PROVIDER_MISSING",
                 details={"install": 'uv add "pydantic-ai-slim[google]"'},
             ) from exc
 

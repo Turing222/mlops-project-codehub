@@ -4,7 +4,6 @@ import uuid
 from contextvars import ContextVar
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
 from opentelemetry import trace
 from starlette.middleware.base import RequestResponseEndpoint
 
@@ -36,6 +35,10 @@ def setup_tracing(app: FastAPI):
     - 透传 Nginx 的 X-Request-ID 或使用 OTel trace_id 作为 RID
     - 注入 X-Request-ID / X-Trace-ID 响应头（方便前端 / 日志关联）
     - 将 RID 存入 ContextVar（供业务层使用）
+
+    异常处理策略：
+    - 中间件不负责生成错误响应，仅记录日志后 re-raise
+    - 业务异常（AppException）和系统异常均由全局 exception_handler 统一处理
     """
 
     @app.middleware("http")
@@ -64,20 +67,15 @@ def setup_tracing(app: FastAPI):
 
             return response
 
-        except Exception as e:
-            logger.error("Request Failed", extra={"rid": rid, "error": str(e)})
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "message": "服务器开小差了",
-                    "request_id": rid,
-                },
-                headers={
-                    "X-Request-ID": rid,
-                    "X-Trace-ID": trace_id,
-                    "X-Process-Time": f"{(time.perf_counter() - start) * 1000:.2f}ms",
-                },
+        except Exception:
+            # 仅记录日志，不自行构造响应
+            # 异常交由全局 exception_handler 处理，确保业务异常（AppException）
+            # 能走到正确的 handler，而不是被这里的兜底吞掉
+            logger.debug(
+                "Exception propagating through tracing middleware",
+                extra={"rid": rid},
             )
+            raise
         finally:
             # 4. 清理上下文，防止内存泄露或协程间干扰
             REQUEST_ID_CTX.reset(token)

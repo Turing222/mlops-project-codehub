@@ -22,7 +22,7 @@ from backend.ai.core.token_counter import count_tokens
 from backend.config.llm import get_llm_model_config
 from backend.core.concurrency import get_db_semaphore, get_llm_semaphore
 from backend.core.config import settings
-from backend.core.exceptions import AppError, ServiceError
+from backend.core.exceptions import AppException, app_service_error
 from backend.core.redis import redis_client
 from backend.core.trace_utils import (
     inject_trace_context,
@@ -245,7 +245,7 @@ class ChatWorkflow:
                     channel,
                     inject_trace_context(),
                 )
-        except AppError as exc:
+        except AppException as exc:
             if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
             logger.warning("流式任务初始化失败: %s", exc)
@@ -294,16 +294,19 @@ class ChatWorkflow:
                 while True:
                     remaining = deadline - loop.time()
                     if remaining <= 0:
-                        raise ServiceError("LLM 响应超时，请稍后重试")
+                        raise app_service_error("LLM 响应超时，请稍后重试", code="LLM_TIMEOUT")
                     try:
                         first_message = await asyncio.wait_for(
                             anext(stream_iter),
                             timeout=remaining,
                         )
                     except TimeoutError as exc:
-                        raise ServiceError("LLM 响应超时，请稍后重试") from exc
+                        raise app_service_error("LLM 响应超时，请稍后重试", code="LLM_TIMEOUT") from exc
                     except StopAsyncIteration as exc:
-                        raise ServiceError("LLM 流式通道异常结束") from exc
+                        raise app_service_error(
+                            "LLM 流式通道异常结束",
+                            code="LLM_STREAM_CHANNEL_CLOSED",
+                        ) from exc
 
                     first_payload = _read_stream_payload(first_message)
                     if first_payload is None:
@@ -311,8 +314,9 @@ class ChatWorkflow:
                     if first_payload == "[DONE]":
                         done_received = True
                     elif first_payload.startswith("[ERROR]"):
-                        raise ServiceError(
-                            f"Taskiq 队列执行 LLM 错误: {first_payload[7:]}"
+                        raise app_service_error(
+                            f"Taskiq 队列执行 LLM 错误: {first_payload[7:]}",
+                            code="LLM_TASK_FAILED",
                         )
                     else:
                         accumulated_content.append(first_payload)
@@ -331,15 +335,19 @@ class ChatWorkflow:
                             done_received = True
                             break
                         if payload.startswith("[ERROR]"):
-                            raise ServiceError(
-                                f"Taskiq 队列执行 LLM 错误: {payload[7:]}"
+                            raise app_service_error(
+                                f"Taskiq 队列执行 LLM 错误: {payload[7:]}",
+                                code="LLM_TASK_FAILED",
                             )
                         accumulated_content.append(payload)
                         chunk_event = json.dumps({"type": "chunk", "content": payload})
                         yield f"data: {chunk_event}\n\n"
 
                 if not done_received:
-                    raise ServiceError("LLM 流式响应中断，请稍后重试")
+                    raise app_service_error(
+                        "LLM 流式响应中断，请稍后重试",
+                        code="LLM_STREAM_INTERRUPTED",
+                    )
                 set_span_attributes(
                     span,
                     {
@@ -350,7 +358,7 @@ class ChatWorkflow:
                         "llm.stream.done_received": done_received,
                     },
                 )
-        except AppError as exc:
+        except AppException as exc:
             if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
             logger.warning("流式 LLM 调用业务异常: %s", exc)

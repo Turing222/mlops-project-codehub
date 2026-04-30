@@ -7,7 +7,7 @@ from backend.ai.providers.llm.factory import LLMProviderFactory
 from backend.ai.providers.llm.llm_service import LLMService
 from backend.ai.providers.llm.pydantic_ai_service import PydanticAILLMService
 from backend.ai.providers.llm.routing_service import LLMRoutingService
-from backend.core.exceptions import ServiceError
+from backend.core.exceptions import AppException
 from backend.models.schemas.chat_schema import LLMQueryDTO
 
 
@@ -86,7 +86,7 @@ async def test_stream_response_yields_delta_chunks(monkeypatch):
 def test_create_agent_requires_gemini_api_key():
     service = PydanticAILLMService(api_key="", model_name="gemini-test")
 
-    with pytest.raises(ServiceError):
+    with pytest.raises(AppException):
         service._create_agent("instructions")
 
 

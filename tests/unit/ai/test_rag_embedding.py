@@ -8,7 +8,7 @@ from backend.ai.providers.embedding.rag_embedding import (
     OpenAICompatibleEmbedder,
     RAGEmbedderFactory,
 )
-from backend.core.exceptions import ServiceError
+from backend.core.exceptions import AppException
 
 
 def test_factory_returns_openai_compatible_embedder():
@@ -130,7 +130,7 @@ def test_openai_embedder_encode_query_dim_mismatch(monkeypatch):
         dimensions=3,
     )
 
-    with pytest.raises(ServiceError):
+    with pytest.raises(AppException):
         embedder.encode_query("hello")
 
 
@@ -142,7 +142,7 @@ def test_openai_embedder_rejects_empty_text():
         dimensions=3,
     )
 
-    with pytest.raises(ServiceError):
+    with pytest.raises(AppException):
         embedder.encode_query("   ")
 
 
@@ -194,5 +194,5 @@ def test_google_embedder_encode_query_dim_mismatch(monkeypatch):
         dimensions=3,
     )
 
-    with pytest.raises(ServiceError):
+    with pytest.raises(AppException):
         embedder.encode_query("hello")

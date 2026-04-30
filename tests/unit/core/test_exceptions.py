@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI, Request
 from httpx import ASGITransport, AsyncClient
 
-from backend.core.exceptions import ResourceNotFound, setup_exception_handlers
+from backend.core.exceptions import app_not_found, setup_exception_handlers
 
 
 @pytest.fixture
@@ -15,7 +15,7 @@ async def client():
     @app.get("/app-error")
     async def app_error(request: Request):
         request.state.request_id = "req-app"
-        raise ResourceNotFound("user missing", {"username": "alice"})
+        raise app_not_found("user missing", details={"username": "alice"})
 
     @app.get("/boom")
     async def boom(request: Request):
@@ -33,7 +33,7 @@ async def test_app_error_handler_returns_structured_payload(client):
 
     assert response.status_code == 404
     assert response.json() == {
-        "code": 404,
+        "error_code": "RESOURCE_NOT_FOUND",
         "message": "user missing",
         "details": {"username": "alice"},
         "request_id": "req-app",
@@ -46,6 +46,8 @@ async def test_global_exception_handler_includes_request_id(client):
 
     assert response.status_code == 500
     assert response.json() == {
-        "message": "服务器开小差了",
+        "error_code": "INTERNAL_SERVER_ERROR",
+        "message": "服务器内部错误",
+        "details": {},
         "request_id": "req-boom",
     }

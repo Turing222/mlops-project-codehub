@@ -7,8 +7,8 @@ from pydantic import EmailStr
 from sqlalchemy.exc import IntegrityError
 
 from backend.core.exceptions import (
-    ResourceNotFound,
-    ValidationError,
+    app_not_found,
+    app_validation_error,
 )
 from backend.core.security import get_password_hash, verify_password
 from backend.domain.interfaces import AbstractUnitOfWork
@@ -60,9 +60,12 @@ class UserService(BaseService[AbstractUnitOfWork]):
 
         # 1. 检查用户名是否存在
         if await self.uow.user_repo.get_by_email(email=user_in.email):
-            raise ValidationError("该邮箱已被注册")
+            raise app_validation_error("该邮箱已被注册", code="EMAIL_ALREADY_REGISTERED")
         if await self.uow.user_repo.get_by_username(username=user_in.username):
-            raise ValidationError("该用户名已被注册")
+            raise app_validation_error(
+                "该用户名已被注册",
+                code="USERNAME_ALREADY_REGISTERED",
+            )
 
         # 2. 密码加密 (这里是业务逻辑，不该放在 uow 里)
 
@@ -78,7 +81,10 @@ class UserService(BaseService[AbstractUnitOfWork]):
             user = await self.uow.user_repo.create(obj_in=obj_in_data)
         except IntegrityError as exc:
             # 并发注册时数据库唯一约束仍可能触发，这里统一转为业务错误
-            raise ValidationError("用户名或邮箱已被注册") from exc
+            raise app_validation_error(
+                "用户名或邮箱已被注册",
+                code="USER_ALREADY_REGISTERED",
+            ) from exc
 
         # 4. 可能还有后续动作，比如发送欢迎邮件...
         # await email_service.send_welcome_email(users.email)
@@ -112,7 +118,7 @@ class UserService(BaseService[AbstractUnitOfWork]):
         """
         db_obj = await self.uow.user_repo.get(id=user_id)
         if not db_obj:
-            raise ResourceNotFound("用户不存在")
+            raise app_not_found("用户不存在", code="USER_NOT_FOUND")
 
         user = await self.uow.user_repo.update(db_obj=db_obj, obj_in=user_in)
         return user

@@ -1,13 +1,19 @@
 import logging
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt.exceptions import InvalidTokenError
 from pydantic import ValidationError as PydanticValidationError
 
 from backend.api.deps.uow import get_uow
 from backend.core.config import settings
+from backend.core.exceptions import (
+    app_bad_request,
+    app_forbidden,
+    app_not_found,
+    app_validation_error,
+)
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.user import User
 from backend.models.schemas.user_schema import UserLogin
@@ -26,10 +32,7 @@ def get_login_data(
             password=form_data.password,
         )
     except PydanticValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=exc.errors(),
-        ) from exc
+        raise app_validation_error("请求参数校验失败", details={"errors": exc.errors()}) from exc
 
 
 async def get_current_user(
@@ -44,15 +47,9 @@ async def get_current_user(
         )
         user_id: str = payload.get("sub")
         if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Token 缺少身份标识",
-            )
+            raise app_forbidden("Token 缺少身份标识", code="TOKEN_SUBJECT_MISSING")
     except (InvalidTokenError, PydanticValidationError) as e:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Token 无效或已过期",
-        ) from e
+        raise app_forbidden("Token 无效或已过期", code="INVALID_TOKEN") from e
 
     logger.debug("Current value of x: %s, type: %s", user_id, type(user_id))
 
@@ -60,7 +57,7 @@ async def get_current_user(
         user = await UserService(uow).get_by_id(user_id)
 
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+        raise app_not_found("用户不存在", code="USER_NOT_FOUND")
     return user
 
 
@@ -68,10 +65,7 @@ def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
     if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="用户账户未激活",
-        )
+        raise app_bad_request("用户账户未激活", code="USER_INACTIVE")
     return current_user
 
 
@@ -79,5 +73,5 @@ def get_current_superuser(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
     if not current_user.is_superuser:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
+        raise app_forbidden("权限不足")
     return current_user

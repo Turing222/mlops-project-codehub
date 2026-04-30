@@ -3,7 +3,7 @@ from collections.abc import Sequence
 
 from sqlalchemy.exc import IntegrityError
 
-from backend.core.exceptions import PermissionDenied, ResourceNotFound, ValidationError
+from backend.core.exceptions import app_forbidden, app_not_found, app_validation_error
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.access import UserWorkspaceRole, Workspace, WorkspaceRole
 from backend.models.orm.user import User
@@ -41,7 +41,10 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
                 role=WorkspaceRole.OWNER,
             )
         except IntegrityError as exc:
-            raise ValidationError("工作区 slug 已存在") from exc
+            raise app_validation_error(
+                "工作区 slug 已存在",
+                code="WORKSPACE_SLUG_EXISTS",
+            ) from exc
         return workspace, WorkspaceRole.OWNER
 
     async def list_user_workspaces(
@@ -108,7 +111,10 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
                 obj_in=update_data,
             )
         except IntegrityError as exc:
-            raise ValidationError("工作区 slug 已存在") from exc
+            raise app_validation_error(
+                "工作区 slug 已存在",
+                code="WORKSPACE_SLUG_EXISTS",
+            ) from exc
         return workspace, role
 
     async def delete_workspace(
@@ -128,8 +134,9 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
             workspace_id=workspace_id,
         )
         if role != WorkspaceRole.OWNER:
-            raise PermissionDenied(
+            raise app_forbidden(
                 "只有工作区 owner 可以删除工作区",
+                code="WORKSPACE_OWNER_REQUIRED",
                 details={"workspace_id": str(workspace_id)},
             )
         # R7: 改为软删除，保持 KB/File/ChatSession workspace_id 外键不变
@@ -179,14 +186,17 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
 
         user = await self.uow.user_repo.get(member_in.user_id)
         if not user:
-            raise ResourceNotFound("用户不存在")
+            raise app_not_found("用户不存在", code="USER_NOT_FOUND")
 
         existing = await self.uow.access_repo.get_workspace_member(
             user_id=member_in.user_id,
             workspace_id=workspace_id,
         )
         if existing:
-            raise ValidationError("用户已经是该工作区成员")
+            raise app_validation_error(
+                "用户已经是该工作区成员",
+                code="WORKSPACE_MEMBER_ALREADY_EXISTS",
+            )
 
         user_role = await self.uow.access_repo.add_workspace_role(
             user_id=member_in.user_id,
@@ -229,7 +239,7 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
 
         user = await self.uow.user_repo.get(user_id)
         if not user:
-            raise ResourceNotFound("用户不存在")
+            raise app_not_found("用户不存在", code="USER_NOT_FOUND")
 
         user_role = await self.uow.access_repo.update_workspace_role(
             user_role=user_role,
@@ -270,7 +280,7 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
     async def _get_workspace_or_404(self, workspace_id: uuid.UUID) -> Workspace:
         workspace = await self.uow.access_repo.get_workspace(workspace_id)
         if not workspace:
-            raise ResourceNotFound("工作区不存在")
+            raise app_not_found("工作区不存在", code="WORKSPACE_NOT_FOUND")
         return workspace
 
     async def _ensure_slug_available(
@@ -281,7 +291,10 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
     ) -> None:
         existing = await self.uow.access_repo.get_workspace_by_slug(slug)
         if existing and existing.id != exclude_workspace_id:
-            raise ValidationError("工作区 slug 已存在")
+            raise app_validation_error(
+                "工作区 slug 已存在",
+                code="WORKSPACE_SLUG_EXISTS",
+            )
 
     async def _require_role_manage(
         self,
@@ -306,7 +319,7 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
             workspace_id=workspace_id,
         )
         if not user_role:
-            raise ResourceNotFound("工作区成员不存在")
+            raise app_not_found("工作区成员不存在", code="WORKSPACE_MEMBER_NOT_FOUND")
         return user_role
 
     async def _ensure_owner_change_allowed(
@@ -329,8 +342,9 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
         if actor_role == WorkspaceRole.OWNER:
             return
 
-        raise PermissionDenied(
+        raise app_forbidden(
             "只有工作区 owner 可以管理 owner 角色",
+            code="WORKSPACE_OWNER_REQUIRED",
             details={"workspace_id": str(workspace_id)},
         )
 
@@ -348,4 +362,7 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
             workspace_id=workspace_id,
         )
         if owner_count <= 1:
-            raise ValidationError("不能降级或移除最后一个 owner")
+            raise app_validation_error(
+                "不能降级或移除最后一个 owner",
+                code="LAST_WORKSPACE_OWNER",
+            )

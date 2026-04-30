@@ -1,9 +1,13 @@
 # app/core/exceptions.py
 
 import logging
+from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # 获取我们在 setup_logging 中配置好的 logger
 # 这里用 "uvicorn.error" 或者 __name__ 都可以，只要是根记录器的子集就能继承配置
@@ -11,120 +15,188 @@ logger = logging.getLogger(__name__)
 
 
 def setup_exception_handlers(app: FastAPI):
-
-    # --- 1. 处理业务异常 (AppError 系列) ---
-    @app.exception_handler(AppError)
-    async def app_error_handler(request: Request, exc: AppError):
+    @app.exception_handler(AppException)
+    async def app_exception_handler(request: Request, exc: AppException):
         request_id = getattr(request.state, "request_id", None)
-        # 直接从异常对象获取状态码，不再写 if-else
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={
-                "code": exc.status_code,
-                "message": exc.message,
-                "details": exc.details,
-                "request_id": request_id,  # tracing 中间件缺失时回落为 None
-            },
+
+        logger.warning(
+            "AppException: code=%s message=%s request_id=%s",
+            exc.code,
+            exc.message,
+            request_id,
         )
 
-    # --- 2. 处理意料之外的系统异常 (真正的 Bug) ---
-    @app.exception_handler(Exception)
-    async def global_exception_handler(request: Request, exc: Exception):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=jsonable_encoder(
+                {
+                    "error_code": exc.code,
+                    "message": exc.message,
+                    "details": exc.details,
+                    "request_id": request_id,
+                }
+            ),
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         request_id = getattr(request.state, "request_id", None)
-        # 如果走到这一步，说明是没捕获的 1/0, AttributeError 等
-        # 这里才需要记录 exc_info=True (堆栈)
-        logger.error(f"系统崩溃: {str(exc)}", exc_info=True)
+        detail = exc.detail
+
+        logger.warning(
+            "HTTPException: status_code=%s detail=%s request_id=%s",
+            exc.status_code,
+            detail,
+            request_id,
+        )
+
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=jsonable_encoder(
+                {
+                    "error_code": f"HTTP_{exc.status_code}",
+                    "message": detail if isinstance(detail, str) else "请求失败",
+                    "details": detail if isinstance(detail, dict) else {},
+                    "request_id": request_id,
+                }
+            ),
+            headers=getattr(exc, "headers", None),
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_handler(request: Request, exc: RequestValidationError):
+        request_id = getattr(request.state, "request_id", None)
+
+        logger.warning(
+            "RequestValidationError: request_id=%s errors=%s",
+            request_id,
+            exc.errors(),
+        )
+
+        return JSONResponse(
+            status_code=422,
+            content=jsonable_encoder(
+                {
+                    "error_code": "REQUEST_VALIDATION_ERROR",
+                    "message": "请求参数校验失败",
+                    "details": {"errors": exc.errors()},
+                    "request_id": request_id,
+                }
+            ),
+        )
+
+    @app.exception_handler(Exception)
+    async def unexpected_exception_handler(request: Request, exc: Exception):
+        request_id = getattr(request.state, "request_id", None)
+
+        logger.exception(
+            "Unexpected exception: type=%s request_id=%s",
+            exc.__class__.__name__,
+            request_id,
+        )
+
         return JSONResponse(
             status_code=500,
             content={
-                "message": "服务器开小差了",
+                "error_code": "INTERNAL_SERVER_ERROR",
+                "message": "服务器内部错误",
+                "details": {},
                 "request_id": request_id,
             },
         )
 
 
-# ---  定义异常类 (Domain Layer) ---
-
-
-class AppError(Exception):
-    """所有业务异常的基类"""
-
-    status_code = 400  # 默认 400
-
-    def __init__(self, message: str, details: dict | None = None):
-        super().__init__(message)
+class AppException(Exception):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        status_code: int = 400,
+        details: dict[str, Any] | None = None,
+    ):
+        self.code = code
         self.message = message
+        self.status_code = status_code
         self.details = details or {}
+        super().__init__(message)
 
 
-class ValidationError(AppError):
-    """参数校验失败"""
-
-    status_code = 422
-
-
-class ResourceNotFound(AppError):
-    """资源不存在"""
-
-    status_code = 404
+def app_bad_request(
+    message: str,
+    *,
+    code: str = "BAD_REQUEST",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    return AppException(code=code, message=message, status_code=400, details=details)
 
 
-class PermissionDenied(AppError):
-    """权限不足"""
-
-    status_code = 403
-
-
-class FileParseException(AppError):
-    """文件读取操作失败"""
-
-    status_code = 400
+def app_validation_error(
+    message: str,
+    *,
+    code: str = "VALIDATION_ERROR",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    return AppException(code=code, message=message, status_code=422, details=details)
 
 
-class ServiceError(AppError):
-    """服务层发生的逻辑错误"""
-
-    status_code = 500
-
-
-class DatabaseOperationError(AppError):
-    """数据库操作失败"""
-
-    status_code = 500
+def app_unauthorized(
+    message: str,
+    *,
+    code: str = "UNAUTHORIZED",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    return AppException(code=code, message=message, status_code=401, details=details)
 
 
-class DatabaseConnectionError(AppError):
-    """DBA 专属：数据库挂了"""
-
-    status_code = 503
-
-
-class DependencyUnavailable(AppError):
-    """外部依赖暂不可用（队列/缓存/第三方服务）"""
-
-    status_code = 503
+def app_forbidden(
+    message: str,
+    *,
+    code: str = "PERMISSION_DENIED",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    return AppException(code=code, message=message, status_code=403, details=details)
 
 
-class LLMError(ServiceError):
-    """LLM 相关错误的基类"""
-
-    status_code = 503
-
-
-class TokenLimitExceeded(LLMError):
-    """Token 超出模型上下文窗口限制"""
-
-    status_code = 413
+def app_not_found(
+    message: str,
+    *,
+    code: str = "RESOURCE_NOT_FOUND",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    return AppException(code=code, message=message, status_code=404, details=details)
 
 
-# --- 存储层信号异常 (Storage Layer Signals) ---
-# 这些异常不继承 AppError，属于内部信号，由上层服务翻译成具体的业务异常后再向外暴露。
+def app_payload_too_large(
+    message: str,
+    *,
+    code: str = "PAYLOAD_TOO_LARGE",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    return AppException(code=code, message=message, status_code=413, details=details)
 
 
-class UploadSizeLimitExceeded(Exception):
-    """上传文件超过允许的最大字节数。
+def app_too_many_requests(
+    message: str,
+    *,
+    code: str = "TOO_MANY_REQUESTS",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    return AppException(code=code, message=message, status_code=429, details=details)
 
-    由 object_storage 的流式写入逻辑抛出，由 KnowledgeService 捕获后
-    翻译为 ValidationError(422) 返回给调用方。
-    不直接继承 AppError，避免意外被全局异常处理器暴露为 HTTP 响应。
-    """
+
+def app_service_error(
+    message: str,
+    *,
+    code: str = "SERVICE_ERROR",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    return AppException(code=code, message=message, status_code=500, details=details)
+
+
+def app_dependency_unavailable(
+    message: str,
+    *,
+    code: str = "DEPENDENCY_UNAVAILABLE",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    return AppException(code=code, message=message, status_code=503, details=details)

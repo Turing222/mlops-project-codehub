@@ -1,7 +1,7 @@
 import logging
 import uuid
 
-from backend.core.exceptions import AppError
+from backend.core.exceptions import AppException
 from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.domain.interfaces import (
     AbstractRAGEmbedder,
@@ -61,7 +61,7 @@ class RAGService(AbstractRAGService):
                     limit=limit,
                 )
                 set_span_attributes(span, {"rag.hit_count": len(hits)})
-        except AppError:
+        except AppException:
             raise
         except Exception as exc:
             logger.warning("RAG 检索失败，降级为无检索上下文: %s", exc)
@@ -97,7 +97,7 @@ class RAGService(AbstractRAGService):
                     limit=limit,
                 )
                 set_span_attributes(span, {"rag.hit_count": len(hits)})
-        except AppError:
+        except AppException:
             raise
         except Exception as exc:
             logger.warning("RAG 全文检索失败，降级为无检索上下文: %s", exc)
@@ -133,7 +133,7 @@ class RAGService(AbstractRAGService):
                     limit=limit,
                 )
                 set_span_attributes(span, {"rag.hit_count": len(hits)})
-        except AppError:
+        except AppException:
             raise
         except Exception as exc:
             logger.warning("RAG 混合检索失败，降级为无检索上下文: %s", exc)

@@ -10,7 +10,7 @@ import logging
 import time
 import uuid
 
-from backend.core.exceptions import ResourceNotFound, ValidationError
+from backend.core.exceptions import app_forbidden, app_not_found
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
 from backend.services.base import BaseService
@@ -46,8 +46,7 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
             ChatSession 对象
 
         Raises:
-            ResourceNotFound: 会话不存在
-            ValidationError: 无权访问该会话
+            AppException: 会话不存在或无权访问
         """
         if session_id:
             session = await self.uow.chat_repo.get_session(session_id)
@@ -55,8 +54,9 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
                 logger.warning(
                     "会话不存在: session_id=%s, user_id=%s", session_id, user_id
                 )
-                raise ResourceNotFound(
+                raise app_not_found(
                     f"会话不存在: {session_id}",
+                    code="CHAT_SESSION_NOT_FOUND",
                     details={"session_id": str(session_id)},
                 )
             if session.user_id != user_id:
@@ -72,8 +72,9 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
                         session.user_id,
                         user_id,
                     )
-                    raise ValidationError(
+                    raise app_forbidden(
                         "无权访问该会话",
+                        code="CHAT_SESSION_FORBIDDEN",
                         details={"session_id": str(session_id)},
                     )
             logger.debug("继续已有会话: session_id=%s", session_id)
@@ -118,8 +119,9 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
 
             kb = await get_kb(kb_id)
             if not kb:
-                raise ResourceNotFound(
+                raise app_not_found(
                     f"知识库不存在: {kb_id}",
+                    code="KNOWLEDGE_BASE_NOT_FOUND",
                     details={"kb_id": str(kb_id)},
                 )
 
@@ -131,8 +133,9 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
                     workspace_id=kb.workspace_id,
                     permission=Permission.CHAT_WRITE,
                 ):
-                    raise ValidationError(
+                    raise app_forbidden(
                         "无权访问该知识库",
+                        code="KNOWLEDGE_BASE_FORBIDDEN",
                         details={"kb_id": str(kb_id)},
                     )
                 return kb.workspace_id
@@ -141,8 +144,9 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
             if kb.user_id == user_id:
                 return kb.workspace_id  # None
 
-            raise ValidationError(
+            raise app_forbidden(
                 "无权访问该知识库",
+                code="KNOWLEDGE_BASE_FORBIDDEN",
                 details={"kb_id": str(kb_id)},
             )
 
@@ -151,8 +155,9 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
             workspace_id=workspace_id,
             permission=Permission.CHAT_WRITE,
         ):
-            raise ValidationError(
+            raise app_forbidden(
                 "无权访问该工作区",
+                code="WORKSPACE_FORBIDDEN",
                 details={"workspace_id": str(workspace_id)},
             )
         return workspace_id
@@ -308,7 +313,7 @@ class ChatMessageUpdater(BaseService[AbstractUnitOfWork]):
             更新后的 ChatMessage 对象
 
         Raises:
-            ResourceNotFound: 消息不存在
+            AppException: 消息不存在
         """
         latency_ms = None
         if start_time:
@@ -325,8 +330,9 @@ class ChatMessageUpdater(BaseService[AbstractUnitOfWork]):
         )
         if not message:
             logger.error("更新消息失败，消息不存在: message_id=%s", message_id)
-            raise ResourceNotFound(
+            raise app_not_found(
                 f"消息不存在: {message_id}",
+                code="CHAT_MESSAGE_NOT_FOUND",
                 details={"message_id": str(message_id)},
             )
         logger.info(

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from backend.core.exceptions import ResourceNotFound, ValidationError
+from backend.core.exceptions import AppException
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.access import WorkspaceRole
 from backend.models.schemas.user_schema import UserCreate, UserLogin, UserUpdate
@@ -119,7 +119,7 @@ def test_user_create_forbids_role_and_workspace_fields():
 async def test_user_register_rejects_existing_email(service_ctx):
     service_ctx.repo.get_by_email.return_value = SimpleNamespace(id=uuid.uuid4())
 
-    with pytest.raises(ValidationError, match="该邮箱已被注册"):
+    with pytest.raises(AppException, match="该邮箱已被注册"):
         await service_ctx.service.user_register(_build_user_create())
 
 
@@ -128,7 +128,7 @@ async def test_user_register_rejects_existing_username(service_ctx):
     service_ctx.repo.get_by_email.return_value = None
     service_ctx.repo.get_by_username.return_value = SimpleNamespace(id=uuid.uuid4())
 
-    with pytest.raises(ValidationError, match="该用户名已被注册"):
+    with pytest.raises(AppException, match="该用户名已被注册"):
         await service_ctx.service.user_register(_build_user_create())
 
 
@@ -147,7 +147,7 @@ async def test_user_register_maps_integrity_error_to_validation_error(
 
     monkeypatch.setattr("backend.services.user_service.get_password_hash", fake_hash)
 
-    with pytest.raises(ValidationError, match="用户名或邮箱已被注册"):
+    with pytest.raises(AppException, match="用户名或邮箱已被注册"):
         await service_ctx.service.user_register(_build_user_create())
 
 
@@ -155,7 +155,7 @@ async def test_user_register_maps_integrity_error_to_validation_error(
 async def test_user_update_raises_not_found_when_user_missing(service_ctx):
     service_ctx.repo.get.return_value = None
 
-    with pytest.raises(ResourceNotFound, match="用户不存在"):
+    with pytest.raises(AppException, match="用户不存在"):
         await service_ctx.service.user_update(
             user_id=uuid.uuid4(),
             user_in=UserUpdate(username="new_name"),

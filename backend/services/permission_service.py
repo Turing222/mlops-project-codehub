@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config.permissions import get_permission_policy
-from backend.core.exceptions import PermissionDenied
+from backend.core.exceptions import app_forbidden
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.access import WorkspaceRole
 from backend.models.orm.user import User
@@ -82,7 +82,7 @@ class PermissionService:
         ):
             return
 
-        raise PermissionDenied(
+        raise app_forbidden(
             "权限不足",
             details={
                 "workspace_id": str(workspace_id) if workspace_id else None,

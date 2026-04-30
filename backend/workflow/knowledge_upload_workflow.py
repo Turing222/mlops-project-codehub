@@ -3,7 +3,11 @@ import uuid
 
 from fastapi import UploadFile
 
-from backend.core.exceptions import AppError, DependencyUnavailable, ServiceError
+from backend.core.exceptions import (
+    AppException,
+    app_dependency_unavailable,
+    app_service_error,
+)
 from backend.core.trace_utils import (
     inject_trace_context,
     set_span_attributes,
@@ -59,6 +63,7 @@ class KnowledgeUploadWorkflow:
                         user_id=user_id,
                     )
                     kb_id = kb.id
+                assert kb_id is not None
 
                 file_obj = await self.knowledge_service.save_upload_file(
                     kb_id=kb_id,
@@ -112,7 +117,7 @@ class KnowledgeUploadWorkflow:
                 set_span_attributes(
                     span, {"task.id": task.id, "task.status": task.status}
                 )
-        except AppError as exc:
+        except AppException as exc:
             await self._handle_ingestion_failure(
                 kb_id=kb_id, file_id=file_obj.id, exc=exc,
             )
@@ -121,7 +126,10 @@ class KnowledgeUploadWorkflow:
             await self._handle_ingestion_failure(
                 kb_id=kb_id, file_id=file_obj.id, exc=exc,
             )
-            raise ServiceError("创建知识处理任务失败，请稍后重试") from exc
+            raise app_service_error(
+                "创建知识处理任务失败，请稍后重试",
+                code="KNOWLEDGE_TASK_CREATE_FAILED",
+            ) from exc
 
         try:
             with trace_span(
@@ -137,7 +145,7 @@ class KnowledgeUploadWorkflow:
                     str(task.id),
                     inject_trace_context(),
                 )
-        except AppError as exc:
+        except AppException as exc:
             await self._handle_ingestion_failure(
                 kb_id=kb_id, file_id=file_obj.id, task_id=task.id, exc=exc,
             )
@@ -146,7 +154,10 @@ class KnowledgeUploadWorkflow:
             await self._handle_ingestion_failure(
                 kb_id=kb_id, file_id=file_obj.id, task_id=task.id, exc=exc,
             )
-            raise DependencyUnavailable("任务投递失败，请稍后重试") from exc
+            raise app_dependency_unavailable(
+                "任务投递失败，请稍后重试",
+                code="KNOWLEDGE_TASK_DISPATCH_FAILED",
+            ) from exc
 
         return KnowledgeUploadResponse(
             task_id=task.id,
@@ -191,7 +202,7 @@ class KnowledgeUploadWorkflow:
             logger.exception("文件失败状态更新异常: file_id=%s", file_id)
 
         # 统一日志
-        if isinstance(exc, AppError):
+        if isinstance(exc, AppException):
             logger.warning(
                 "知识库任务失败: kb_id=%s, file_id=%s, task_id=%s, error=%s",
                 kb_id, file_id, task_id, exc,

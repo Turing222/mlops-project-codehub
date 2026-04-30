@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from backend.api.v1.endpoint import audit_api
-from backend.core.exceptions import PermissionDenied
+from backend.core.exceptions import AppException
 from backend.services.permission_service import Permission
 
 
@@ -83,7 +83,7 @@ async def test_workspace_audit_events_require_audit_read_permission():
 async def test_non_superuser_cannot_read_global_audit_events():
     permission_service = make_permission_service()
 
-    with pytest.raises(PermissionDenied) as exc_info:
+    with pytest.raises(AppException) as exc_info:
         await audit_api.list_audit_events(
             current_user=make_user(),
             uow=DummyUoW(),

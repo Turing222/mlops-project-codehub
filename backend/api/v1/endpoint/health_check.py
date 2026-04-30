@@ -2,9 +2,11 @@ import asyncio
 import logging
 import time
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
+
+from backend.core.exceptions import app_dependency_unavailable
 
 # 建议：通过 app.state 共享 engine，避免每次都走 dependency injection 的完整生命周期
 # 或者定义一个更轻量级的 get_engine 依赖
@@ -21,7 +23,10 @@ async def readiness_check(request: Request):
     # 假设你在 app 初始化时将 engine 存入了 request.app.state
     engine: AsyncEngine | None = getattr(request.app.state, "db_engine", None)
     if engine is None:
-        raise HTTPException(status_code=503, detail="Database engine not initialized")
+        raise app_dependency_unavailable(
+            "Database engine not initialized",
+            code="DATABASE_ENGINE_NOT_INITIALIZED",
+        )
 
     start_time = time.perf_counter()
     try:
@@ -50,11 +55,17 @@ async def readiness_check(request: Request):
         }
     except TimeoutError as e:
         logger.critical("Database readiness timeout", exc_info=True)
-        raise HTTPException(status_code=503, detail="Database readiness timeout") from e
+        raise app_dependency_unavailable(
+            "Database readiness timeout",
+            code="DATABASE_READINESS_TIMEOUT",
+        ) from e
     except Exception as e:
         logger.critical("Database readiness failed: %s", e, exc_info=True)
         # RFC 7807 标准：返回 503 Service Unavailable
-        raise HTTPException(status_code=503, detail="Database connection failed") from e
+        raise app_dependency_unavailable(
+            "Database connection failed",
+            code="DATABASE_CONNECTION_FAILED",
+        ) from e
 
 
 @router.get("/live")

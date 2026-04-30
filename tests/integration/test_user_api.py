@@ -6,10 +6,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from backend.api.v1.endpoint import user_api
+from backend.core.exceptions import app_forbidden, setup_exception_handlers
 from backend.models.schemas.user_schema import UserImportResponse
 
 
@@ -56,6 +57,7 @@ def make_user(**overrides):
 @pytest.fixture
 def api_context():
     app = FastAPI()
+    setup_exception_handlers(app)
     app.include_router(user_api.router, prefix="/api/v1/users")
 
     current_user = make_user(username="me_user")
@@ -135,7 +137,7 @@ async def test_read_user_not_found_returns_404(client, api_context):
     response = await client.get("/api/v1/users", params={"username": "not_exists"})
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "User not found"
+    assert response.json()["message"] == "User not found"
 
 
 @pytest.mark.asyncio
@@ -170,7 +172,7 @@ async def test_update_user_not_found_returns_404(client, api_context):
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "User not found"
+    assert response.json()["message"] == "User not found"
 
 
 @pytest.mark.asyncio
@@ -207,7 +209,7 @@ async def test_create_user_returns_400_when_service_returns_none(client, api_con
     response = await client.post("/api/v1/users", json=payload)
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "User creation failed"
+    assert response.json()["message"] == "User creation failed"
 
 
 @pytest.mark.asyncio
@@ -256,7 +258,7 @@ async def test_csv_upload_missing_file_returns_422(client):
 @pytest.mark.asyncio
 async def test_superuser_required_on_admin_endpoint(client, api_context):
     def deny_superuser():
-        raise HTTPException(status_code=403, detail="权限不足")
+        raise app_forbidden("权限不足")
 
     api_context.app.dependency_overrides[user_api.get_current_superuser] = (
         deny_superuser
@@ -264,4 +266,4 @@ async def test_superuser_required_on_admin_endpoint(client, api_context):
     response = await client.get("/api/v1/users", params={"username": "target_user"})
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "权限不足"
+    assert response.json()["message"] == "权限不足"

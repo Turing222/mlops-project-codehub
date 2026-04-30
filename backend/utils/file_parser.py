@@ -6,7 +6,7 @@ from typing import Any
 
 from openpyxl import load_workbook
 
-from backend.core.exceptions import FileParseException
+from backend.core.exceptions import app_validation_error
 
 
 def parse_excel_to_list(file_content: bytes) -> list[dict[str, Any]]:
@@ -33,7 +33,10 @@ def parse_excel_to_list(file_content: bytes) -> list[dict[str, Any]]:
 
         return data
     except Exception as exc:
-        raise FileParseException(f"Excel 解析失败: {exc}") from exc
+        raise app_validation_error(
+            f"Excel 解析失败: {exc}",
+            code="FILE_PARSE_ERROR",
+        ) from exc
 
 
 def parse_csv_to_list(file_content: bytes) -> list[dict[str, Any]]:
@@ -44,11 +47,14 @@ def parse_csv_to_list(file_content: bytes) -> list[dict[str, Any]]:
         reader = csv.DictReader(f)
         return [row for row in reader]
     except UnicodeDecodeError as exc:
-        raise FileParseException("文件编码格式不正确，请上传 UTF-8 编码的文件") from exc
+        raise app_validation_error(
+            "文件编码格式不正确，请上传 UTF-8 编码的文件",
+            code="FILE_ENCODING_ERROR",
+        ) from exc
     except csv.Error as exc:
-        raise FileParseException(f"CSV 解析失败: {exc}") from exc
+        raise app_validation_error(f"CSV 解析失败: {exc}", code="FILE_PARSE_ERROR") from exc
     except Exception as exc:
-        raise FileParseException(f"CSV 解析失败: {exc}") from exc
+        raise app_validation_error(f"CSV 解析失败: {exc}", code="FILE_PARSE_ERROR") from exc
 
 
 def parse_file(filename: str, file_content: bytes) -> list[dict[str, Any]]:
@@ -57,7 +63,13 @@ def parse_file(filename: str, file_content: bytes) -> list[dict[str, Any]]:
     if suffix == ".xlsx":
         return parse_excel_to_list(file_content)
     if suffix == ".xls":
-        raise FileParseException("暂不支持 .xls，请转换为 .xlsx 后再上传")
+        raise app_validation_error(
+            "暂不支持 .xls，请转换为 .xlsx 后再上传",
+            code="UNSUPPORTED_FILE_TYPE",
+        )
     if suffix == ".csv":
         return parse_csv_to_list(file_content)
-    raise FileParseException("不支持的文件格式，仅支持 .xlsx, .csv")
+    raise app_validation_error(
+        "不支持的文件格式，仅支持 .xlsx, .csv",
+        code="UNSUPPORTED_FILE_TYPE",
+    )

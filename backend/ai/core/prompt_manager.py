@@ -20,7 +20,7 @@ from backend.ai.core.prompt_templates import (
 from backend.ai.core.token_counter import count_messages_tokens
 from backend.config.llm import get_llm_model_config
 from backend.core.config import settings
-from backend.core.exceptions import TokenLimitExceeded
+from backend.core.exceptions import app_payload_too_large
 from backend.models.schemas.chat_schema import ConversationMessage
 
 logger = logging.getLogger(__name__)
@@ -99,7 +99,7 @@ class PromptManager:
             AssembledPrompt 包含最终消息列表和统计信息
 
         Raises:
-            TokenLimitExceeded: 即使无历史记录，System + Query 也超过上下文限制
+            AppException: 即使无历史记录，System + Query 也超过上下文限制
         """
         token_budget = self.max_context_tokens - self.reserved_response_tokens
 
@@ -124,8 +124,9 @@ class PromptManager:
         )
 
         if base_tokens > token_budget:
-            raise TokenLimitExceeded(
+            raise app_payload_too_large(
                 "System Prompt + 当前问题已超出 Token 限制",
+                code="TOKEN_LIMIT_EXCEEDED",
                 details={
                     "base_tokens": base_tokens,
                     "token_budget": token_budget,

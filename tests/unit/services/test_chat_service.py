@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.core.exceptions import ResourceNotFound, ValidationError
+from backend.core.exceptions import AppException
 from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
 
@@ -119,12 +119,12 @@ class TestSessionManagerEnsureSession:
     async def test_raises_not_found_for_missing_session(
         self, session_manager, mock_uow
     ):
-        """session_id 不存在时应抛出 ResourceNotFound"""
+        """session_id 不存在时应抛出 AppException"""
         user_id = uuid.uuid4()
         session_id = uuid.uuid4()
         mock_uow.chat_repo.get_session.return_value = None
 
-        with pytest.raises(ResourceNotFound) as exc_info:
+        with pytest.raises(AppException) as exc_info:
             await session_manager.ensure_session(
                 user_id=user_id,
                 query_text="",
@@ -138,7 +138,7 @@ class TestSessionManagerEnsureSession:
     async def test_raises_validation_error_for_wrong_user(
         self, session_manager, mock_uow
     ):
-        """user_id 不匹配时应抛出 ValidationError"""
+        """user_id 不匹配时应抛出 AppException"""
         owner_id = uuid.uuid4()
         requester_id = uuid.uuid4()
         session_id = uuid.uuid4()
@@ -147,7 +147,7 @@ class TestSessionManagerEnsureSession:
         existing_session.user_id = owner_id
         mock_uow.chat_repo.get_session.return_value = existing_session
 
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(AppException) as exc_info:
             await session_manager.ensure_session(
                 user_id=requester_id,
                 query_text="",
@@ -301,11 +301,11 @@ class TestChatMessageUpdater:
     async def test_update_as_success_raises_when_not_found(
         self, message_updater, mock_uow
     ):
-        """消息不存在时应抛出 ResourceNotFound"""
+        """消息不存在时应抛出 AppException"""
         message_id = uuid.uuid4()
         mock_uow.chat_repo.update_message_status.return_value = None
 
-        with pytest.raises(ResourceNotFound):
+        with pytest.raises(AppException):
             await message_updater.update_as_success(
                 message_id=message_id,
                 content="内容",
