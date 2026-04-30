@@ -145,6 +145,7 @@ class RAGService(AbstractRAGService):
     def _format_hits(hits: list[tuple[DocumentChunk, float]]) -> list[dict]:
         chunks: list[dict] = []
         for chunk, distance in hits:
+            file_obj = getattr(chunk, "__dict__", {}).get("file")
             chunks.append(
                 {
                     "id": str(chunk.id),
@@ -152,6 +153,11 @@ class RAGService(AbstractRAGService):
                     "source_type": str(chunk.source_type),
                     "file_id": str(chunk.file_id) if chunk.file_id else None,
                     "message_id": str(chunk.message_id) if chunk.message_id else None,
+                    "filename": getattr(file_obj, "filename", None)
+                    if file_obj is not None
+                    else None,
+                    "chunk_index": chunk.chunk_index,
+                    "meta_info": chunk.meta_info or {},
                     "distance": distance,
                     "score": max(0.0, 1.0 - distance),
                 }

@@ -1,6 +1,7 @@
 import logging
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
 from backend.core.config import settings
@@ -14,6 +15,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PreparedChatContext:
     assembled_prompt: AssembledPrompt
+    search_context: dict | None
+
+
+@dataclass
+class PreparedRAGReferences:
+    context_chunks: list[str]
     search_context: dict | None
 
 
@@ -54,21 +61,24 @@ class ChatContextBuilder:
                 query_text=current_query,
                 kb_id=kb_id,
             )
-            search_context = self._build_search_context(
-                kb_id=kb_id,
-                rag_chunks=rag_chunks,
-            )
 
             if rag_chunks:
+                rag_references = self._build_rag_references(
+                    kb_id=kb_id,
+                    query_text=current_query,
+                    rag_chunks=rag_chunks,
+                )
                 assembled = self.rag_prompt_manager.assemble(
                     memory_history,
                     current_query,
                     extra_vars={
-                        "context_chunks": [chunk["content"] for chunk in rag_chunks],
+                        "context_chunks": rag_references.context_chunks,
                         "conversation_summary": memory_summary,
                     },
                 )
+                search_context = rag_references.search_context
             else:
+                search_context = None
                 assembled = self.prompt_manager.assemble(
                     memory_history,
                     current_query,
@@ -258,21 +268,111 @@ class ChatContextBuilder:
     @staticmethod
     def _build_search_context(
         kb_id: uuid.UUID | None,
+        query_text: str,
         rag_chunks: list[dict],
     ) -> dict | None:
+        return ChatContextBuilder._build_rag_references(
+            kb_id=kb_id,
+            query_text=query_text,
+            rag_chunks=rag_chunks,
+        ).search_context
+
+    @staticmethod
+    def _build_rag_references(
+        kb_id: uuid.UUID | None,
+        query_text: str,
+        rag_chunks: list[dict],
+    ) -> PreparedRAGReferences:
         if not rag_chunks:
-            return None
-        return {
-            "kb_id": str(kb_id) if kb_id else None,
-            "chunks": [
+            return PreparedRAGReferences(context_chunks=[], search_context=None)
+
+        groups: list[dict[str, Any]] = []
+        group_indexes: dict[tuple[str | None, str | None, str | None], int] = {}
+        context_chunks: list[str] = []
+        flat_chunks: list[dict[str, Any]] = []
+        scores = [float(chunk.get("score", 0.0) or 0.0) for chunk in rag_chunks]
+
+        for chunk in rag_chunks:
+            source_type = chunk.get("source_type")
+            file_id = chunk.get("file_id")
+            message_id = chunk.get("message_id")
+            key = (source_type, file_id, message_id)
+            group_index = group_indexes.get(key)
+            if group_index is None:
+                group_index = len(groups)
+                group_indexes[key] = group_index
+                groups.append(
+                    {
+                        "ref_id": f"R{group_index + 1}",
+                        "source_type": source_type,
+                        "file_id": file_id,
+                        "message_id": message_id,
+                        "filename": chunk.get("filename"),
+                        "chunks": [],
+                    }
+                )
+
+            group = groups[group_index]
+            chunk_ref_index = len(group["chunks"]) + 1
+            ref_id = f"{group['ref_id']}.{chunk_ref_index}"
+            chunk_index = chunk.get("chunk_index")
+            chunk_ref = {
+                "ref_id": ref_id,
+                "chunk_id": chunk["id"],
+                "chunk_index": chunk_index,
+                "score": chunk.get("score"),
+                "distance": chunk.get("distance"),
+                "meta_info": chunk.get("meta_info") or {},
+            }
+            group["chunks"].append(chunk_ref)
+            flat_chunks.append(
                 {
+                    "ref_id": ref_id,
                     "id": chunk["id"],
-                    "score": chunk["score"],
-                    "distance": chunk["distance"],
-                    "source_type": chunk["source_type"],
-                    "file_id": chunk["file_id"],
-                    "message_id": chunk["message_id"],
+                    "score": chunk.get("score"),
+                    "distance": chunk.get("distance"),
+                    "source_type": source_type,
+                    "file_id": file_id,
+                    "message_id": message_id,
+                    "chunk_index": chunk_index,
                 }
-                for chunk in rag_chunks
-            ],
+            )
+            context_chunks.append(
+                ChatContextBuilder._format_context_chunk(ref_id=ref_id, chunk=chunk)
+            )
+
+        search_context = {
+            "version": 1,
+            "kb_id": str(kb_id) if kb_id else None,
+            "query": query_text,
+            "retrieval": {
+                "hit_count": len(rag_chunks),
+                "source_count": len(groups),
+                "max_score": max(scores) if scores else 0.0,
+                "avg_score": sum(scores) / len(scores) if scores else 0.0,
+            },
+            "refs": groups,
+            "chunks": flat_chunks,
         }
+        return PreparedRAGReferences(
+            context_chunks=context_chunks,
+            search_context=search_context,
+        )
+
+    @staticmethod
+    def _format_context_chunk(ref_id: str, chunk: dict) -> str:
+        source_label = (
+            chunk.get("filename")
+            or chunk.get("file_id")
+            or chunk.get("message_id")
+            or "unknown"
+        )
+        details = [f"来源：{source_label}"]
+        chunk_index = chunk.get("chunk_index")
+        if chunk_index is not None:
+            details.append(f"chunk {chunk_index}")
+        meta_info = chunk.get("meta_info") or {}
+        page_label = meta_info.get("page_label") or meta_info.get("page")
+        if page_label:
+            details.append(f"页码：{page_label}")
+        return f"[{ref_id}] {'，'.join(details)}\n{chunk['content']}"

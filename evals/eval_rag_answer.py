@@ -7,6 +7,7 @@ from collections import Counter
 from pathlib import Path
 
 from backend.ai.core import PromptManager
+from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.core.prompt_templates import RAG_SYSTEM_TEMPLATE
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.ai.providers.llm.llm_service import LLMService
@@ -178,11 +179,15 @@ async def run(
                 error_message = str(exc)
                 error_count += 1
 
-            context_chunks = [chunk["content"] for chunk in chunks]
+            rag_references = ChatContextBuilder._build_rag_references(
+                kb_id=sample.kb_id,
+                query_text=sample.query,
+                rag_chunks=chunks,
+            )
             assembled = prompt_manager.assemble(
                 history=[],
                 current_query=sample.query,
-                extra_vars={"context_chunks": context_chunks},
+                extra_vars={"context_chunks": rag_references.context_chunks},
             )
 
             llm_query = LLMQueryDTO(

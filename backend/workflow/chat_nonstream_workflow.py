@@ -5,6 +5,7 @@ import uuid
 from langfuse import get_client, observe
 
 from backend.ai.core import PromptManager
+from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.core.concurrency import get_db_semaphore, get_llm_semaphore
 from backend.core.config import settings
 from backend.core.exceptions import AppError, ServiceError, ValidationError
@@ -206,28 +207,6 @@ class ChatNonStreamWorkflow:
             logger.warning("RAG 检索失败，降级为普通对话: %s", exc)
             return []
 
-    @staticmethod
-    def _build_search_context(
-        kb_id: uuid.UUID | None,
-        rag_chunks: list[dict],
-    ) -> dict | None:
-        if not rag_chunks:
-            return None
-        return {
-            "kb_id": str(kb_id) if kb_id else None,
-            "chunks": [
-                {
-                    "id": chunk["id"],
-                    "score": chunk["score"],
-                    "distance": chunk["distance"],
-                    "source_type": chunk["source_type"],
-                    "file_id": chunk["file_id"],
-                    "message_id": chunk["message_id"],
-                }
-                for chunk in rag_chunks
-            ],
-        }
-
     @observe()
     async def handle_query(
         self,
@@ -372,20 +351,23 @@ class ChatNonStreamWorkflow:
                 query_text=query_text,
                 kb_id=effective_kb_id,
             )
-            search_context = self._build_search_context(
-                kb_id=effective_kb_id,
-                rag_chunks=rag_chunks,
-            )
             if rag_chunks:
+                rag_references = ChatContextBuilder._build_rag_references(
+                    kb_id=effective_kb_id,
+                    query_text=query_text,
+                    rag_chunks=rag_chunks,
+                )
+                search_context = rag_references.search_context
                 assembled = self.rag_prompt_manager.assemble(
                     memory_history,
                     query_text,
                     extra_vars={
-                        "context_chunks": [chunk["content"] for chunk in rag_chunks],
+                        "context_chunks": rag_references.context_chunks,
                         "conversation_summary": memory_summary,
                     },
                 )
             else:
+                search_context = None
                 assembled = self.prompt_manager.assemble(
                     memory_history,
                     query_text,

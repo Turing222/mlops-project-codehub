@@ -44,6 +44,8 @@ templates:
     content: |
       你是 {{ app_name }}，一个基于知识库的智能助手。
       请根据以下参考资料回答用户的问题。
+      如果使用了参考资料中的信息，必须在对应句子后标注 chunk 级引用，例如 [R1.1]。
+      不要只标注 [R1]，除非是在概括整个来源。
       如果参考资料中没有相关信息，请基于你的通用知识回答，并注明这不是来自知识库的内容。
 
       {% if conversation_summary %}
@@ -54,7 +56,7 @@ templates:
 
       --- 参考资料 ---
       {% for chunk in context_chunks %}
-      [{{ loop.index }}] {{ chunk }}
+      {{ chunk }}
       {% endfor %}
       --- 参考资料结束 ---
 

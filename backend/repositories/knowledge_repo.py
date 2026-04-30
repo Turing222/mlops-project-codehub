@@ -2,6 +2,7 @@ import uuid
 
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import contains_eager
 
 from backend.models.orm.chunk import DocumentChunk
 from backend.models.orm.knowledge import File, FileStatus, FileVisibility, KnowledgeBase
@@ -141,6 +142,7 @@ class KnowledgeRepository:
         stmt = (
             select(DocumentChunk, distance)
             .join(File, DocumentChunk.file_id == File.id)
+            .options(contains_eager(DocumentChunk.file))
             .where(File.kb_id == kb_id)
             .order_by(distance)
             .limit(limit)
@@ -166,6 +168,7 @@ class KnowledgeRepository:
         stmt = (
             select(DocumentChunk, rank)
             .join(File, DocumentChunk.file_id == File.id)
+            .options(contains_eager(DocumentChunk.file))
             .where(File.kb_id == kb_id)
             .where(ts_vector.op("@@")(ts_query))
             .order_by(rank.desc())

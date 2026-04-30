@@ -92,15 +92,16 @@ class TestTemplateRendering:
 
     def test_rag_template_renders_chunks(self):
         """RAG 模板正确渲染文档片段"""
-        chunks = ["文档A的内容", "文档B的内容"]
+        chunks = ["[R1.1] 文档A的内容", "[R2.1] 文档B的内容"]
         result = render_system_prompt(
             template=RAG_SYSTEM_TEMPLATE,
             context_chunks=chunks,
         )
         assert "文档A的内容" in result
         assert "文档B的内容" in result
-        assert "[1]" in result
-        assert "[2]" in result
+        assert "[R1.1]" in result
+        assert "[R2.1]" in result
+        assert "必须在对应句子后标注 chunk 级引用" in result
 
 
 # ============================================================

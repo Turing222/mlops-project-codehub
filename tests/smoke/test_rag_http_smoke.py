@@ -159,8 +159,15 @@ async def test_rag_upload_ingest_and_chat_search_context(
     search_context = answer["search_context"]
     assert search_context is not None
     assert search_context["kb_id"] == upload_body["kb_id"]
+    assert search_context["refs"]
     assert search_context["chunks"]
+    first_ref = search_context["refs"][0]
+    assert first_ref["source_type"] == "file"
+    assert first_ref["file_id"] == upload_body["file_id"]
+    assert first_ref["chunks"][0]["ref_id"].startswith("R")
+    assert first_ref["chunks"][0]["chunk_id"]
     first_chunk = search_context["chunks"][0]
     assert first_chunk["source_type"] == "file"
     assert first_chunk["file_id"] == upload_body["file_id"]
+    assert first_chunk["ref_id"] == first_ref["chunks"][0]["ref_id"]
     assert first_chunk["id"]

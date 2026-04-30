@@ -27,6 +27,9 @@ async def test_retrieve_fulltext_formats_hits():
         source_type="file",
         file_id=uuid.uuid4(),
         message_id=None,
+        file=SimpleNamespace(filename="source.md"),
+        chunk_index=7,
+        meta_info={"page_label": "3"},
     )
     service.vector_index_service.search_chunks_for_kb_fulltext = AsyncMock(
         return_value=[(chunk, 0.2)]
@@ -42,6 +45,9 @@ async def test_retrieve_fulltext_formats_hits():
     assert result[0]["content"] == "chunk text"
     assert result[0]["source_type"] == "file"
     assert result[0]["file_id"] == str(chunk.file_id)
+    assert result[0]["filename"] == "source.md"
+    assert result[0]["chunk_index"] == 7
+    assert result[0]["meta_info"] == {"page_label": "3"}
     assert result[0]["distance"] == 0.2
     assert result[0]["score"] == 0.8
 
