@@ -39,7 +39,7 @@ def make_upload_file(
 
 class TestKnowledgeServiceStreamingUpload:
     @pytest.mark.asyncio
-    async def test_save_upload_file_streaming_writes_file_and_records_metadata(
+    async def test_save_upload_file_writes_file_and_records_metadata(
         self,
         knowledge_service,
     ):
@@ -60,7 +60,7 @@ class TestKnowledgeServiceStreamingUpload:
         repo.create_file.side_effect = create_file
         upload_file = make_upload_file("demo.txt", content, size=len(content))
 
-        result = await service.save_upload_file_streaming(
+        result = await service.save_upload_file(
             kb_id=kb_id,
             user_id=user_id,
             upload_file=upload_file,
@@ -79,7 +79,7 @@ class TestKnowledgeServiceStreamingUpload:
         repo.create_file.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_save_upload_file_streaming_rejects_missing_kb_access(
+    async def test_save_upload_file_rejects_missing_kb_access(
         self,
         knowledge_service,
     ):
@@ -89,7 +89,7 @@ class TestKnowledgeServiceStreamingUpload:
         upload_file = make_upload_file("demo.txt", b"abc", size=3)
 
         with pytest.raises(ResourceNotFound):
-            await service.save_upload_file_streaming(
+            await service.save_upload_file(
                 kb_id=uuid.uuid4(),
                 user_id=uuid.uuid4(),
                 upload_file=upload_file,
@@ -99,7 +99,7 @@ class TestKnowledgeServiceStreamingUpload:
         assert not any(path.is_file() for path in storage_root.rglob("*"))
 
     @pytest.mark.asyncio
-    async def test_save_upload_file_streaming_cleans_partial_file_when_size_limit_exceeded(
+    async def test_save_upload_file_cleans_partial_file_when_size_limit_exceeded(
         self,
         knowledge_service,
     ):
@@ -112,7 +112,7 @@ class TestKnowledgeServiceStreamingUpload:
         upload_file = make_upload_file("too-large.txt", oversize_content)
 
         with pytest.raises(ValidationError) as exc_info:
-            await service.save_upload_file_streaming(
+            await service.save_upload_file(
                 kb_id=kb_id,
                 user_id=user_id,
                 upload_file=upload_file,

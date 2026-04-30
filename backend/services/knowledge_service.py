@@ -47,19 +47,6 @@ class KnowledgeService:
         user_id: uuid.UUID,
         upload_file: UploadFile,
     ) -> File:
-        return await self.save_upload_file_streaming(
-            kb_id=kb_id,
-            user_id=user_id,
-            upload_file=upload_file,
-        )
-
-    async def save_upload_file_streaming(
-        self,
-        *,
-        kb_id: uuid.UUID,
-        user_id: uuid.UUID,
-        upload_file: UploadFile,
-    ) -> File:
         safe_filename = self._validate_upload_file(upload_file)
         kb = await self._ensure_kb_access(
             kb_id=kb_id,

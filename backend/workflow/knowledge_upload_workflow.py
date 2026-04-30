@@ -29,23 +29,37 @@ class KnowledgeUploadWorkflow:
         self.knowledge_service = knowledge_service
         self.task_service = task_service
 
-    async def submit_ingestion(
+    async def submit(
         self,
         *,
-        kb_id: uuid.UUID,
         user_id: uuid.UUID,
         upload_file: UploadFile,
+        kb_id: uuid.UUID | None = None,
     ) -> KnowledgeUploadResponse:
+        """统一上传入口。
+
+        Args:
+            user_id: 当前用户 ID。
+            upload_file: FastAPI 上传文件对象。
+            kb_id: 目标知识库 ID；为 ``None`` 时自动使用/创建默认知识库。
+        """
+        use_default_kb = kb_id is None
+
         with trace_span(
             "knowledge.upload.save_file",
             {
-                "rag.kb_id": kb_id,
                 "user.id": user_id,
                 "file.name": getattr(upload_file, "filename", None),
-                "knowledge.upload.streaming": False,
+                "knowledge.upload.default_kb": use_default_kb,
             },
         ) as span:
             async with self.knowledge_service.uow:
+                if use_default_kb:
+                    kb = await self.knowledge_service.get_or_create_default_kb(
+                        user_id=user_id,
+                    )
+                    kb_id = kb.id
+
                 file_obj = await self.knowledge_service.save_upload_file(
                     kb_id=kb_id,
                     user_id=user_id,
@@ -54,126 +68,21 @@ class KnowledgeUploadWorkflow:
             set_span_attributes(
                 span,
                 {
+                    "rag.kb_id": kb_id,
                     "rag.file_id": file_obj.id,
                     "file.size": getattr(file_obj, "file_size", None),
                 },
             )
+
         return await self._create_and_dispatch_ingestion(
             kb_id=kb_id,
             user_id=user_id,
             file_obj=file_obj,
         )
 
-    async def submit_stream_ingestion(
-        self,
-        *,
-        kb_id: uuid.UUID,
-        user_id: uuid.UUID,
-        upload_file: UploadFile,
-    ) -> KnowledgeUploadResponse:
-        with trace_span(
-            "knowledge.upload.save_file",
-            {
-                "rag.kb_id": kb_id,
-                "user.id": user_id,
-                "file.name": getattr(upload_file, "filename", None),
-                "knowledge.upload.streaming": True,
-            },
-        ) as span:
-            async with self.knowledge_service.uow:
-                file_obj = await self.knowledge_service.save_upload_file_streaming(
-                    kb_id=kb_id,
-                    user_id=user_id,
-                    upload_file=upload_file,
-                )
-            set_span_attributes(
-                span,
-                {
-                    "rag.file_id": file_obj.id,
-                    "file.size": getattr(file_obj, "file_size", None),
-                },
-            )
-        return await self._create_and_dispatch_ingestion(
-            kb_id=kb_id,
-            user_id=user_id,
-            file_obj=file_obj,
-        )
-
-    async def submit_default_stream_ingestion(
-        self,
-        *,
-        user_id: uuid.UUID,
-        upload_file: UploadFile,
-    ) -> KnowledgeUploadResponse:
-        with trace_span(
-            "knowledge.upload.save_file",
-            {
-                "user.id": user_id,
-                "file.name": getattr(upload_file, "filename", None),
-                "knowledge.upload.default_kb": True,
-                "knowledge.upload.streaming": True,
-            },
-        ) as span:
-            async with self.knowledge_service.uow:
-                kb = await self.knowledge_service.get_or_create_default_kb(
-                    user_id=user_id,
-                )
-                file_obj = await self.knowledge_service.save_upload_file_streaming(
-                    kb_id=kb.id,
-                    user_id=user_id,
-                    upload_file=upload_file,
-                )
-            set_span_attributes(
-                span,
-                {
-                    "rag.kb_id": file_obj.kb_id,
-                    "rag.file_id": file_obj.id,
-                    "file.size": getattr(file_obj, "file_size", None),
-                },
-            )
-        return await self._create_and_dispatch_ingestion(
-            kb_id=file_obj.kb_id,
-            user_id=user_id,
-            file_obj=file_obj,
-        )
-
-    async def submit_default_ingestion(
-        self,
-        *,
-        user_id: uuid.UUID,
-        upload_file: UploadFile,
-    ) -> KnowledgeUploadResponse:
-        with trace_span(
-            "knowledge.upload.save_file",
-            {
-                "user.id": user_id,
-                "file.name": getattr(upload_file, "filename", None),
-                "knowledge.upload.default_kb": True,
-                "knowledge.upload.streaming": False,
-            },
-        ) as span:
-            async with self.knowledge_service.uow:
-                kb = await self.knowledge_service.get_or_create_default_kb(
-                    user_id=user_id,
-                )
-                file_obj = await self.knowledge_service.save_upload_file(
-                    kb_id=kb.id,
-                    user_id=user_id,
-                    upload_file=upload_file,
-                )
-            set_span_attributes(
-                span,
-                {
-                    "rag.kb_id": file_obj.kb_id,
-                    "rag.file_id": file_obj.id,
-                    "file.size": getattr(file_obj, "file_size", None),
-                },
-            )
-        return await self._create_and_dispatch_ingestion(
-            kb_id=file_obj.kb_id,
-            user_id=user_id,
-            file_obj=file_obj,
-        )
+    # ------------------------------------------------------------------
+    # 内部：创建任务 → 投递异步消息
+    # ------------------------------------------------------------------
 
     async def _create_and_dispatch_ingestion(
         self,
@@ -204,17 +113,13 @@ class KnowledgeUploadWorkflow:
                     span, {"task.id": task.id, "task.status": task.status}
                 )
         except AppError as exc:
-            await self._handle_task_creation_failure(
-                kb_id=kb_id,
-                file_id=file_obj.id,
-                exc=exc,
+            await self._handle_ingestion_failure(
+                kb_id=kb_id, file_id=file_obj.id, exc=exc,
             )
             raise
         except Exception as exc:
-            await self._handle_task_creation_failure(
-                kb_id=kb_id,
-                file_id=file_obj.id,
-                exc=exc,
+            await self._handle_ingestion_failure(
+                kb_id=kb_id, file_id=file_obj.id, exc=exc,
             )
             raise ServiceError("创建知识处理任务失败，请稍后重试") from exc
 
@@ -233,19 +138,13 @@ class KnowledgeUploadWorkflow:
                     inject_trace_context(),
                 )
         except AppError as exc:
-            await self._handle_dispatch_failure(
-                kb_id=kb_id,
-                file_id=file_obj.id,
-                task_id=task.id,
-                exc=exc,
+            await self._handle_ingestion_failure(
+                kb_id=kb_id, file_id=file_obj.id, task_id=task.id, exc=exc,
             )
             raise
         except Exception as exc:
-            await self._handle_dispatch_failure(
-                kb_id=kb_id,
-                file_id=file_obj.id,
-                task_id=task.id,
-                exc=exc,
+            await self._handle_ingestion_failure(
+                kb_id=kb_id, file_id=file_obj.id, task_id=task.id, exc=exc,
             )
             raise DependencyUnavailable("任务投递失败，请稍后重试") from exc
 
@@ -257,53 +156,31 @@ class KnowledgeUploadWorkflow:
             task_status=task.status,
         )
 
-    async def _handle_task_creation_failure(
+    # ------------------------------------------------------------------
+    # 统一错误处理
+    # ------------------------------------------------------------------
+
+    async def _handle_ingestion_failure(
         self,
         *,
         kb_id: uuid.UUID,
         file_id: uuid.UUID,
         exc: Exception,
+        task_id: uuid.UUID | None = None,
     ) -> None:
-        try:
-            async with self.knowledge_service.uow:
-                await self.knowledge_service.set_file_status(
-                    file_id=file_id,
-                    status=FileStatus.FAILED,
-                )
-        except Exception:
-            logger.exception("任务创建失败后文件状态更新异常: file_id=%s", file_id)
+        """处理任务创建或投递阶段的失败，确保状态一致性。"""
+        # 标记 task 失败（仅在 task 已创建的投递阶段）
+        if task_id is not None:
+            try:
+                async with self.task_service.uow:
+                    await self.task_service.mark_failed(
+                        task_id=task_id,
+                        error_log=f"任务投递失败: {exc}",
+                    )
+            except Exception:
+                logger.exception("任务失败状态更新异常: task_id=%s", task_id)
 
-        if isinstance(exc, AppError):
-            logger.warning(
-                "知识库任务创建失败: kb_id=%s, file_id=%s, error=%s",
-                kb_id,
-                file_id,
-                exc,
-            )
-        else:
-            logger.exception(
-                "知识库任务创建失败: kb_id=%s, file_id=%s",
-                kb_id,
-                file_id,
-            )
-
-    async def _handle_dispatch_failure(
-        self,
-        *,
-        kb_id: uuid.UUID,
-        file_id: uuid.UUID,
-        task_id: uuid.UUID,
-        exc: Exception,
-    ) -> None:
-        try:
-            async with self.task_service.uow:
-                await self.task_service.mark_failed(
-                    task_id=task_id,
-                    error_log=f"任务投递失败: {exc}",
-                )
-        except Exception:
-            logger.exception("任务失败状态更新异常: task_id=%s", task_id)
-
+        # 标记文件失败
         try:
             async with self.knowledge_service.uow:
                 await self.knowledge_service.set_file_status(
@@ -313,18 +190,14 @@ class KnowledgeUploadWorkflow:
         except Exception:
             logger.exception("文件失败状态更新异常: file_id=%s", file_id)
 
+        # 统一日志
         if isinstance(exc, AppError):
             logger.warning(
-                "知识库任务投递失败: kb_id=%s, file_id=%s, task_id=%s, error=%s",
-                kb_id,
-                file_id,
-                task_id,
-                exc,
+                "知识库任务失败: kb_id=%s, file_id=%s, task_id=%s, error=%s",
+                kb_id, file_id, task_id, exc,
             )
         else:
             logger.exception(
-                "知识库任务投递失败: kb_id=%s, file_id=%s, task_id=%s",
-                kb_id,
-                file_id,
-                task_id,
+                "知识库任务失败: kb_id=%s, file_id=%s, task_id=%s",
+                kb_id, file_id, task_id,
             )

@@ -54,7 +54,7 @@ async def upload_file_to_default_kb(
             "default_kb": True,
         },
     ) as audit:
-        result = await upload_workflow.submit_default_ingestion(
+        result = await upload_workflow.submit(
             user_id=current_user.id,
             upload_file=file,
         )
@@ -66,38 +66,8 @@ async def upload_file_to_default_kb(
         return result
 
 
-@router.post(
-    "/default/upload-stream",
-    response_model=KnowledgeUploadResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def upload_file_stream_to_default_kb(
-    file: UpFile,
-    current_user: CurrentUser,
-    upload_workflow: KnowledgeUploadWorkflowDep,
-    audit_service: AuditService = Depends(get_audit_service),
-) -> KnowledgeUploadResponse:
-    async with capture_audit(
-        audit_service,
-        action=AuditAction.FILE_UPLOAD_SUBMIT,
-        actor_user_id=current_user.id,
-        resource_type="file",
-        metadata={
-            "filename": getattr(file, "filename", None),
-            "default_kb": True,
-            "streaming": True,
-        },
-    ) as audit:
-        result = await upload_workflow.submit_default_stream_ingestion(
-            user_id=current_user.id,
-            upload_file=file,
-        )
-        audit.set_resource(resource_id=result.file_id)
-        audit.add_metadata(
-            task_id=str(result.task_id),
-            kb_id=str(result.kb_id) if result.kb_id else None,
-        )
-        return result
+# TODO: 未来如需真正的流式上传（Request.stream() 绕过 UploadFile 缓冲），
+#       可新增 /upload-stream 端点并在 workflow.submit 中传入 stream 参数。
 
 
 @router.post(
@@ -120,41 +90,7 @@ async def upload_file(
         resource_type="file",
         metadata={"kb_id": str(kb_id), "filename": getattr(file, "filename", None)},
     ) as audit:
-        result = await upload_workflow.submit_ingestion(
-            kb_id=kb_id,
-            user_id=current_user.id,
-            upload_file=file,
-        )
-        audit.set_resource(resource_id=result.file_id)
-        audit.add_metadata(task_id=str(result.task_id))
-        return result
-
-
-@router.post(
-    "/bases/{kb_id}/upload-stream",
-    response_model=KnowledgeUploadResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def upload_file_stream(
-    kb_id: uuid.UUID,
-    file: UpFile,
-    current_user: CurrentUser,
-    upload_workflow: KnowledgeUploadWorkflowDep,
-    permission_service: PermissionService = Depends(get_permission_service),
-    audit_service: AuditService = Depends(get_audit_service),
-) -> KnowledgeUploadResponse:
-    async with capture_audit(
-        audit_service,
-        action=AuditAction.FILE_UPLOAD_SUBMIT,
-        actor_user_id=current_user.id,
-        resource_type="file",
-        metadata={
-            "kb_id": str(kb_id),
-            "filename": getattr(file, "filename", None),
-            "streaming": True,
-        },
-    ) as audit:
-        result = await upload_workflow.submit_stream_ingestion(
+        result = await upload_workflow.submit(
             kb_id=kb_id,
             user_id=current_user.id,
             upload_file=file,

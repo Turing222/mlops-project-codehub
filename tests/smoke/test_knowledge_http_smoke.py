@@ -20,7 +20,7 @@ create_auth_headers = smoke_helpers.create_auth_headers
 smoke_client = smoke_helpers.smoke_client
 
 USERS_ME_PATH = "/api/v1/users/me"
-UPLOAD_STREAM_PATH_TEMPLATE = "/api/v1/knowledge/bases/{kb_id}/upload-stream"
+UPLOAD_PATH_TEMPLATE = "/api/v1/knowledge/bases/{kb_id}/upload"
 TASK_STATUS_PATH_TEMPLATE = "/api/v1/knowledge/tasks/{task_id}"
 FILE_STATUS_PATH_TEMPLATE = "/api/v1/knowledge/files/{file_id}"
 
@@ -168,7 +168,7 @@ async def _poll_json(
 
 
 @pytest.mark.asyncio
-async def test_knowledge_upload_stream_over_http_reaches_ready_state(
+async def test_knowledge_upload_over_http_reaches_ready_state(
     smoke_client: httpx.AsyncClient,
 ):
     ready_response = await smoke_client.get(SMOKE_READY_PATH)
@@ -183,7 +183,7 @@ async def test_knowledge_upload_stream_over_http_reaches_ready_state(
     )
 
     upload_response = await smoke_client.post(
-        UPLOAD_STREAM_PATH_TEMPLATE.format(kb_id=kb_id),
+        UPLOAD_PATH_TEMPLATE.format(kb_id=kb_id),
         headers=headers,
         files={
             "file": (

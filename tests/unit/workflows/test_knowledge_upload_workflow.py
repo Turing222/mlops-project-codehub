@@ -20,7 +20,7 @@ class DummyUoW:
 
 
 @pytest.mark.asyncio
-async def test_submit_stream_ingestion_creates_task_and_dispatches_job(monkeypatch):
+async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypatch):
     file_id = uuid.uuid4()
     task_id = uuid.uuid4()
     kb_id = uuid.uuid4()
@@ -29,7 +29,7 @@ async def test_submit_stream_ingestion_creates_task_and_dispatches_job(monkeypat
 
     knowledge_service = SimpleNamespace(
         uow=DummyUoW(),
-        save_upload_file_streaming=AsyncMock(
+        save_upload_file=AsyncMock(
             return_value=SimpleNamespace(
                 id=file_id,
                 file_path="/tmp/demo.txt",
@@ -55,13 +55,13 @@ async def test_submit_stream_ingestion_creates_task_and_dispatches_job(monkeypat
         kiq_mock,
     )
 
-    result = await workflow.submit_stream_ingestion(
+    result = await workflow.submit(
         kb_id=kb_id,
         user_id=user_id,
         upload_file=upload_file,
     )
 
-    knowledge_service.save_upload_file_streaming.assert_awaited_once_with(
+    knowledge_service.save_upload_file.assert_awaited_once_with(
         kb_id=kb_id,
         user_id=user_id,
         upload_file=upload_file,
@@ -82,7 +82,7 @@ async def test_submit_stream_ingestion_creates_task_and_dispatches_job(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_submit_default_stream_ingestion_uses_default_kb_and_dispatches_job(
+async def test_submit_without_kb_id_uses_default_kb_and_dispatches_job(
     monkeypatch,
 ):
     file_id = uuid.uuid4()
@@ -94,7 +94,7 @@ async def test_submit_default_stream_ingestion_uses_default_kb_and_dispatches_jo
     knowledge_service = SimpleNamespace(
         uow=DummyUoW(),
         get_or_create_default_kb=AsyncMock(return_value=SimpleNamespace(id=kb_id)),
-        save_upload_file_streaming=AsyncMock(
+        save_upload_file=AsyncMock(
             return_value=SimpleNamespace(
                 id=file_id,
                 kb_id=kb_id,
@@ -121,13 +121,13 @@ async def test_submit_default_stream_ingestion_uses_default_kb_and_dispatches_jo
         kiq_mock,
     )
 
-    result = await workflow.submit_default_stream_ingestion(
+    result = await workflow.submit(
         user_id=user_id,
         upload_file=upload_file,
     )
 
     knowledge_service.get_or_create_default_kb.assert_awaited_once_with(user_id=user_id)
-    knowledge_service.save_upload_file_streaming.assert_awaited_once_with(
+    knowledge_service.save_upload_file.assert_awaited_once_with(
         kb_id=kb_id,
         user_id=user_id,
         upload_file=upload_file,

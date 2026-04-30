@@ -15,7 +15,7 @@ SMOKE_READY_PATH = os.getenv("SMOKE_READY_PATH", "/api/v1/health_check/db_ready"
 
 REGISTER_PATH = "/api/v1/auth/register"
 LOGIN_PATH = "/api/v1/auth/login"
-DEFAULT_UPLOAD_STREAM_PATH = "/api/v1/knowledge/default/upload-stream"
+DEFAULT_UPLOAD_PATH = "/api/v1/knowledge/default/upload"
 QUERY_SENT_PATH = "/api/v1/chat/query_sent"
 
 
@@ -118,7 +118,7 @@ async def test_rag_upload_ingest_and_chat_search_context(
     headers, suffix = await _create_auth_headers(smoke_client)
     unique_fact = f"RAG_SMOKE_FACT_{suffix}"
     upload_response = await smoke_client.post(
-        DEFAULT_UPLOAD_STREAM_PATH,
+        DEFAULT_UPLOAD_PATH,
         headers=headers,
         files={
             "file": (

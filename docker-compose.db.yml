@@ -29,8 +29,8 @@ x-secret-file-env: &secret-file-env
   LLM_API_KEY_FILE: /run/secrets/LLM_API_KEY
   RAG_EMBED_API_KEY_FILE: /run/secrets/RAG_EMBED_API_KEY
   LANGFUSE_SECRET_KEY_FILE: /run/secrets/LANGFUSE_SECRET_KEY
-  S3_ACCESS_KEY_ID_FILE: /run/secrets/S3_ACCESS_KEY_ID
-  S3_SECRET_ACCESS_KEY_FILE: /run/secrets/S3_SECRET_ACCESS_KEY
+  S3_ACCESS_KEY_ID_FILE: ${S3_ACCESS_KEY_ID_FILE:-}
+  S3_SECRET_ACCESS_KEY_FILE: ${S3_SECRET_ACCESS_KEY_FILE:-}
 
 x-app-environment: &app-environment
   CURRENT_UID: ${CURRENT_UID:-1000}
@@ -46,10 +46,12 @@ x-app-environment: &app-environment
   LOCAL_STORAGE_ROOT: ${LOCAL_STORAGE_ROOT:-/data/knowledge_files}
   # Deprecated: KNOWLEDGE_STORAGE_ROOT 已被 LOCAL_STORAGE_ROOT 取代，优先级低于后者，将在后续版本移除。
   KNOWLEDGE_STORAGE_ROOT: ${KNOWLEDGE_STORAGE_ROOT:-/data/knowledge_files}
-  S3_BUCKET: ${S3_BUCKET:-}
+  S3_BUCKET: ${S3_BUCKET:-knowledge-files}
   S3_PREFIX: ${S3_PREFIX:-knowledge_files}
-  S3_REGION: ${S3_REGION:-}
-  S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
   ENABLE_OTEL_METRICS: ${ENABLE_OTEL_METRICS:-false}
   ENABLE_OTEL_TRACES: ${ENABLE_OTEL_TRACES:-false}
   OTEL_TRACES_ENDPOINT: ${OTEL_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
@@ -105,6 +107,40 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+  minio:
+    image: quay.io/minio/minio:latest
+    profiles: ["s3"]
+    logging: *default-logging
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    command: server /data --address ":9000" --console-address ":9001"
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+
+  minio_init:
+    image: quay.io/minio/mc:latest
+    profiles: ["s3"]
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c '
+      until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
+        sleep 2;
+      done;
+      mc mb --ignore-existing local/"$${S3_BUCKET}";
+      mc anonymous set none local/"$${S3_BUCKET}";
+      '
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-knowledge-files}
+    restart: "no"
 
   db_migrator:
     image: ai-tutor-backend:v1
@@ -416,6 +452,8 @@ volumes:
     name: grafana_data_db
   loki_data_db:
     name: loki_data_db
+  minio_data:
+    name: minio_data
 
 secrets:
   SECRET_KEY:

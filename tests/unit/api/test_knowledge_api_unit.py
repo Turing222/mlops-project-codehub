@@ -12,7 +12,7 @@ from backend.models.schemas.knowledge_schema import KnowledgeUploadResponse
 
 
 @pytest.mark.asyncio
-async def test_upload_file_stream_uses_stream_workflow():
+async def test_upload_file_delegates_to_submit_workflow():
     kb_id = uuid.uuid4()
     user_id = uuid.uuid4()
     upload_file = MagicMock(spec=UploadFile)
@@ -24,10 +24,10 @@ async def test_upload_file_stream_uses_stream_workflow():
         task_status="pending",
     )
     upload_workflow = SimpleNamespace(
-        submit_stream_ingestion=AsyncMock(return_value=expected)
+        submit=AsyncMock(return_value=expected)
     )
 
-    result = await knowledge_api.upload_file_stream(
+    result = await knowledge_api.upload_file(
         kb_id=kb_id,
         file=upload_file,
         current_user=SimpleNamespace(id=user_id),
@@ -35,7 +35,7 @@ async def test_upload_file_stream_uses_stream_workflow():
     )
 
     assert result == expected
-    upload_workflow.submit_stream_ingestion.assert_awaited_once_with(
+    upload_workflow.submit.assert_awaited_once_with(
         kb_id=kb_id,
         user_id=user_id,
         upload_file=upload_file,
@@ -43,7 +43,7 @@ async def test_upload_file_stream_uses_stream_workflow():
 
 
 @pytest.mark.asyncio
-async def test_upload_file_stream_to_default_kb_uses_default_workflow():
+async def test_upload_file_to_default_kb_delegates_to_submit_workflow():
     user_id = uuid.uuid4()
     upload_file = MagicMock(spec=UploadFile)
     expected = KnowledgeUploadResponse(
@@ -54,17 +54,17 @@ async def test_upload_file_stream_to_default_kb_uses_default_workflow():
         task_status="pending",
     )
     upload_workflow = SimpleNamespace(
-        submit_default_stream_ingestion=AsyncMock(return_value=expected)
+        submit=AsyncMock(return_value=expected)
     )
 
-    result = await knowledge_api.upload_file_stream_to_default_kb(
+    result = await knowledge_api.upload_file_to_default_kb(
         file=upload_file,
         current_user=SimpleNamespace(id=user_id),
         upload_workflow=upload_workflow,
     )
 
     assert result == expected
-    upload_workflow.submit_default_stream_ingestion.assert_awaited_once_with(
+    upload_workflow.submit.assert_awaited_once_with(
         user_id=user_id,
         upload_file=upload_file,
     )
