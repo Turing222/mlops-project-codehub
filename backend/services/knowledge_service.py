@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from pathlib import Path
 
@@ -8,10 +7,16 @@ from backend.core.exceptions import (
     AppError,
     ResourceNotFound,
     ServiceError,
+    UploadSizeLimitExceeded,
     ValidationError,
 )
 from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.knowledge import File, FileStatus, KnowledgeBase
+from backend.services.object_storage import (
+    LocalObjectStorage,
+    ObjectStorage,
+    StoredObject,
+)
 from backend.services.permission_service import Permission, PermissionService
 
 DEFAULT_KNOWLEDGE_BASE_NAME = "默认知识库"
@@ -22,11 +27,16 @@ class KnowledgeService:
     def __init__(
         self,
         uow: AbstractUnitOfWork,
-        storage_root: Path,
+        storage: ObjectStorage | None = None,
+        storage_root: Path | None = None,
         max_upload_size_mb: int = 20,
     ):
         self.uow = uow
-        self.storage_root = storage_root
+        if storage is None:
+            if storage_root is None:
+                raise ValueError("storage or storage_root is required")
+            storage = LocalObjectStorage(storage_root)
+        self.storage = storage
         self.max_upload_size_mb = max(1, max_upload_size_mb)
         self.max_upload_size_bytes = self.max_upload_size_mb * 1024 * 1024
 
@@ -37,27 +47,10 @@ class KnowledgeService:
         user_id: uuid.UUID,
         upload_file: UploadFile,
     ) -> File:
-        safe_filename = self._validate_upload_file(upload_file)
-        content = await self._read_upload_content(upload_file)
-        if not content:
-            raise ValidationError("上传文件为空")
-
-        kb = await self._ensure_kb_access(
+        return await self.save_upload_file_streaming(
             kb_id=kb_id,
             user_id=user_id,
-            permission=Permission.FILE_WRITE,
-        )
-
-        target_path = self._build_storage_path(kb_id=kb_id, filename=safe_filename)
-        await asyncio.to_thread(self._write_file, target_path, content)
-
-        return await self._create_file_record(
-            kb_id=kb_id,
-            filename=safe_filename,
-            file_path=target_path,
-            file_size=len(content),
-            owner_id=user_id,
-            workspace_id=getattr(kb, "workspace_id", None),
+            upload_file=upload_file,
         )
 
     async def save_upload_file_streaming(
@@ -74,31 +67,37 @@ class KnowledgeService:
             permission=Permission.FILE_WRITE,
         )
 
-        target_path = self._build_storage_path(kb_id=kb_id, filename=safe_filename)
-        temp_path = self._build_temp_storage_path(kb_id=kb_id, filename=safe_filename)
-        moved_to_target = False
-
+        stored_object: StoredObject | None = None
         try:
-            file_size = await self._stream_upload_to_file(upload_file, temp_path)
-            if file_size <= 0:
+            stored_object = await self.storage.save_upload_stream(
+                kb_id=kb_id,
+                filename=safe_filename,
+                upload_file=upload_file,
+                max_size_bytes=self.max_upload_size_bytes,
+            )
+            if stored_object.size <= 0:
                 raise ValidationError("上传文件为空")
-
-            await asyncio.to_thread(self._move_file, temp_path, target_path)
-            moved_to_target = True
 
             return await self._create_file_record(
                 kb_id=kb_id,
                 filename=safe_filename,
-                file_path=target_path,
-                file_size=file_size,
+                stored_object=stored_object,
                 owner_id=user_id,
                 workspace_id=getattr(kb, "workspace_id", None),
             )
         except AppError:
-            self._cleanup_file(target_path if moved_to_target else temp_path)
+            if stored_object is not None:
+                await self.storage.delete(stored_object)
             raise
+        except UploadSizeLimitExceeded as exc:
+            if stored_object is not None:
+                await self.storage.delete(stored_object)
+            raise ValidationError(
+                f"上传文件超过大小限制（最大 {self.max_upload_size_mb}MB）"
+            ) from exc
         except Exception as exc:
-            self._cleanup_file(target_path if moved_to_target else temp_path)
+            if stored_object is not None:
+                await self.storage.delete(stored_object)
             raise ServiceError("上传文件保存失败，请稍后重试") from exc
 
     async def get_file(self, file_id: uuid.UUID) -> File | None:
@@ -146,18 +145,6 @@ class KnowledgeService:
             file_id=file_id, status=status
         )
 
-    def _build_storage_path(self, *, kb_id: uuid.UUID, filename: str) -> Path:
-        kb_dir = self.storage_root / str(kb_id)
-        kb_dir.mkdir(parents=True, exist_ok=True)
-        unique_name = f"{uuid.uuid4().hex}_{filename}"
-        return kb_dir / unique_name
-
-    def _build_temp_storage_path(self, *, kb_id: uuid.UUID, filename: str) -> Path:
-        tmp_dir = self.storage_root / str(kb_id) / ".tmp"
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-        unique_name = f"{uuid.uuid4().hex}_{filename}.part"
-        return tmp_dir / unique_name
-
     @staticmethod
     def _sanitize_filename(filename: str) -> str:
         base = Path(filename).name.strip()
@@ -165,21 +152,6 @@ class KnowledgeService:
             return "unnamed.txt"
         base = base.replace("\x00", "")
         return base
-
-    @staticmethod
-    def _write_file(path: Path, content: bytes) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("wb") as f:
-            f.write(content)
-
-    @staticmethod
-    def _move_file(src: Path, dst: Path) -> None:
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        src.replace(dst)
-
-    @staticmethod
-    def _cleanup_file(path: Path) -> None:
-        path.unlink(missing_ok=True)
 
     def _validate_upload_file(self, upload_file: UploadFile) -> str:
         if not upload_file.filename:
@@ -238,8 +210,7 @@ class KnowledgeService:
         *,
         kb_id: uuid.UUID,
         filename: str,
-        file_path: Path,
-        file_size: int,
+        stored_object: StoredObject,
         owner_id: uuid.UUID,
         workspace_id: uuid.UUID | None,
     ) -> File:
@@ -247,52 +218,18 @@ class KnowledgeService:
             return await self.uow.knowledge_repo.create_file(
                 kb_id=kb_id,
                 filename=filename,
-                file_path=str(file_path),
-                file_size=file_size,
+                file_path=stored_object.uri,
+                file_size=stored_object.size,
                 status=FileStatus.UPLOADED,
                 owner_id=owner_id,
                 workspace_id=workspace_id,
+                storage_backend=stored_object.backend,
+                storage_bucket=stored_object.bucket,
+                storage_key=stored_object.key,
             )
         except AppError:
-            self._cleanup_file(file_path)
+            await self.storage.delete(stored_object)
             raise
         except Exception as exc:
-            self._cleanup_file(file_path)
+            await self.storage.delete(stored_object)
             raise ServiceError("上传文件保存失败，请稍后重试") from exc
-
-    async def _stream_upload_to_file(self, upload_file: UploadFile, path: Path) -> int:
-        total_size = 0
-        chunk_size = 1024 * 1024
-
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("wb") as f:
-            while True:
-                chunk = await upload_file.read(chunk_size)
-                if not chunk:
-                    break
-                total_size += len(chunk)
-                if total_size > self.max_upload_size_bytes:
-                    raise ValidationError(
-                        f"上传文件超过大小限制（最大 {self.max_upload_size_mb}MB）"
-                    )
-                await asyncio.to_thread(f.write, chunk)
-
-        return total_size
-
-    async def _read_upload_content(self, upload_file: UploadFile) -> bytes:
-        chunks: list[bytes] = []
-        total_size = 0
-        chunk_size = 1024 * 1024
-
-        while True:
-            chunk = await upload_file.read(chunk_size)
-            if not chunk:
-                break
-            total_size += len(chunk)
-            if total_size > self.max_upload_size_bytes:
-                raise ValidationError(
-                    f"上传文件超过大小限制（最大 {self.max_upload_size_mb}MB）"
-                )
-            chunks.append(chunk)
-
-        return b"".join(chunks)

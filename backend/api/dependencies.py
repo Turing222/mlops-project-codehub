@@ -23,6 +23,7 @@ from backend.api.deps.auth import (
 from backend.api.deps.permissions import get_permission_service
 from backend.api.deps.services import (
     get_knowledge_service,
+    get_object_storage,
     get_session_query_service,
     get_task_service,
     get_user_import_service,
@@ -53,6 +54,7 @@ __all__ = [
     "get_chat_nonstream_workflow",
     "get_chat_workflow",
     "get_knowledge_service",
+    "get_object_storage",
     "get_permission_service",
     "get_knowledge_upload_workflow",
     "get_knowledge_rag_workflow",

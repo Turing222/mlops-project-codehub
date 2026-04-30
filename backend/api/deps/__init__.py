@@ -16,6 +16,7 @@ from backend.api.deps.auth import (
 from backend.api.deps.permissions import get_permission_service
 from backend.api.deps.services import (
     get_knowledge_service,
+    get_object_storage,
     get_task_service,
     get_user_import_service,
     get_user_service,
@@ -42,6 +43,7 @@ __all__ = [
     "get_chunking_service",
     "get_vector_index_service",
     "get_knowledge_service",
+    "get_object_storage",
     "get_permission_service",
     "get_task_service",
     "get_user_service",

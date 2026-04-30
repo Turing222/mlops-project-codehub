@@ -101,6 +101,7 @@ def create_db_assets() -> tuple[AsyncEngine, async_sessionmaker]:
         pool_size=settings.POSTGRES_POOL_SIZE,
         max_overflow=settings.POSTGRES_MAX_OVERFLOW,
         pool_pre_ping=True,
+        connect_args=settings.database_connect_args,
     )
     _instrument_engine(engine)
 

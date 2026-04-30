@@ -1,19 +1,91 @@
+import logging
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 
+import yaml
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy.engine import URL
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+from sqlalchemy.engine import URL, make_url
 
 import backend.core.secret_env  # noqa: F401
+
+_logger = logging.getLogger(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+
+def _current_app_env() -> str:
+    return os.getenv("APP_ENV", "local").strip().lower() or "local"
+
+
+def _config_dir() -> Path:
+    raw_config_dir = os.getenv("CONFIG_DIR")
+    if raw_config_dir:
+        path = Path(raw_config_dir)
+        if not path.is_absolute():
+            path = BASE_DIR / path
+        return path
+    return BASE_DIR / "configs"
+
+
+def _env_files() -> tuple[str, ...] | None:
+    files = []
+    base_env = BASE_DIR / ".env"
+    if base_env.exists():
+        files.append(str(base_env))
+    app_env_file = BASE_DIR / f".env.{_current_app_env()}"
+    if app_env_file.exists():
+        files.append(str(app_env_file))
+    return tuple(files) or None
+
+
+class AppYamlSettingsSource(PydanticBaseSettingsSource):
+    def get_field_value(self, field, field_name: str) -> tuple[Any, str, bool]:
+        return None, field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        config: dict[str, Any] = {}
+        app_env = str(self.current_state.get("APP_ENV") or _current_app_env())
+        config_dir = self.current_state.get("CONFIG_DIR") or _config_dir()
+        config_dir = Path(config_dir)
+        if not config_dir.is_absolute():
+            config_dir = BASE_DIR / config_dir
+        for filename in ("base.yaml", f"{app_env}.yaml"):
+            path = config_dir / "app" / filename
+            if not path.exists():
+                continue
+            with path.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            if not isinstance(data, dict):
+                raise ValueError(f"App config file must contain a mapping: {path}")
+            config.update(data)
+        known_fields = self.settings_cls.model_fields
+        unknown_keys = [k for k in config if k not in known_fields]
+        if unknown_keys:
+            _logger.warning(
+                "AppYamlSettings: 以下配置键未被识别，已忽略（请检查拼写）: %s",
+                unknown_keys,
+            )
+        return {
+            key: value
+            for key, value in config.items()
+            if key in known_fields
+        }
 
 
 class Settings(BaseSettings):
     # --- 目录配置 ---
     # 使用 Path 的写法更现代、简洁
-    BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
+    APP_ENV: str = Field(default_factory=_current_app_env)
+    CONFIG_DIR: Path = Field(default_factory=_config_dir)
+    BASE_DIR: Path = BASE_DIR
     LOG_DIR: Path = BASE_DIR / "logs/backend"
 
     # --- 项目信息 ---
@@ -23,14 +95,17 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/v1"
 
     # --- 数据库配置 (敏感信息不设置默认值，强制从 env 读取) ---
+    DATABASE_URL: str | None = None
     POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "password"
-    POSTGRES_SERVER: str = "postgres1"  # 默认值可以保留，env 有则覆盖
+    POSTGRES_PASSWORD: str = ""
+    POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "mentor_ai"
     POSTGRES_DB_ECHO: bool = False  # 生产环境建议关闭，开发环境可开启
     POSTGRES_POOL_SIZE: int = 10
     POSTGRES_MAX_OVERFLOW: int = 20
+    POSTGRES_SSL_MODE: str | None = None
+    POSTGRES_CONNECT_TIMEOUT_SECONDS: int = Field(default=10, ge=1)
 
     BATCH_SIZE: int = 500
 
@@ -41,10 +116,20 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str | None = None
 
     OBSIDIAN_VAULT_PATH: str = "/data/obsidian"
+    # Deprecated: 已被 LOCAL_STORAGE_ROOT 取代，将在后续版本移除。
+    # 若同时设置 LOCAL_STORAGE_ROOT，该字段会被忽略（见 local_storage_root property）。
     KNOWLEDGE_STORAGE_ROOT: Path = Path(".files/knowledge_files")
+    STORAGE_BACKEND: str = "local"
+    LOCAL_STORAGE_ROOT: Path | None = None  # 替代 KNOWLEDGE_STORAGE_ROOT，优先级更高
     KNOWLEDGE_MAX_UPLOAD_SIZE_MB: int = 20
     KNOWLEDGE_CHUNK_SIZE: int = 800
     KNOWLEDGE_CHUNK_OVERLAP: int = 120
+    S3_BUCKET: str | None = None
+    S3_PREFIX: str = "knowledge_files"
+    S3_REGION: str | None = None
+    S3_ENDPOINT_URL: str | None = None
+    S3_ACCESS_KEY_ID: str | None = None
+    S3_SECRET_ACCESS_KEY: str | None = None
 
     # --- Redis 配置 ---
     REDIS_URL: str | None = None
@@ -89,19 +174,57 @@ class Settings(BaseSettings):
 
     # Pydantic Settings 配置
     model_config = SettingsConfigDict(
-        env_file=".env" if os.path.exists(".env") else None,
+        env_file=_env_files(),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
     )
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+            AppYamlSettingsSource(settings_cls),
+        )
+
     @property
     def database_url(self) -> str:
-        return self._build_database_url().render_as_string(hide_password=False)
+        return self._database_url_obj().render_as_string(hide_password=False)
 
     @property
     def database_url_safe(self) -> str:
-        return self._build_database_url().render_as_string(hide_password=True)
+        return self._database_url_obj().render_as_string(hide_password=True)
+
+    @property
+    def database_connect_args(self) -> dict[str, object]:
+        connect_args: dict[str, object] = {
+            "timeout": self.POSTGRES_CONNECT_TIMEOUT_SECONDS
+        }
+        ssl_mode = (self.POSTGRES_SSL_MODE or "").strip().lower()
+        if ssl_mode == "disable":
+            connect_args["ssl"] = False
+        elif ssl_mode == "require":
+            connect_args["ssl"] = True
+        return connect_args
+
+    @property
+    def local_storage_root(self) -> Path:
+        return self.LOCAL_STORAGE_ROOT or self.KNOWLEDGE_STORAGE_ROOT
+
+    def _database_url_obj(self) -> URL:
+        if self.DATABASE_URL:
+            return make_url(self.DATABASE_URL)
+        return self._build_database_url()
 
     def _build_database_url(self) -> URL:
         return URL.create(
@@ -156,6 +279,24 @@ class Settings(BaseSettings):
         return urlunsplit(
             (parsed.scheme, parsed.netloc, f"/{db}", parsed.query, parsed.fragment)
         )
+
+    @field_validator("STORAGE_BACKEND")
+    @classmethod
+    def validate_storage_backend(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"local", "s3"}:
+            raise ValueError("STORAGE_BACKEND must be one of: local, s3")
+        return normalized
+
+    @field_validator("POSTGRES_SSL_MODE")
+    @classmethod
+    def validate_postgres_ssl_mode(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        normalized = value.strip().lower()
+        if normalized not in {"disable", "require"}:
+            raise ValueError("POSTGRES_SSL_MODE must be one of: disable, require")
+        return normalized
 
     @field_validator("SECRET_KEY")
     @classmethod

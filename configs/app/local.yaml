@@ -1,0 +1,5 @@
+APP_ENV: local
+STORAGE_BACKEND: local
+LOCAL_STORAGE_ROOT: .files/knowledge_files
+LLM_PROVIDER: mock
+RAG_EMBED_PROVIDER: mock

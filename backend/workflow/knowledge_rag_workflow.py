@@ -62,33 +62,30 @@ class KnowledgeRAGWorkflow:
                         "rag.kb_id": file_obj.kb_id,
                         "file.name": file_obj.filename,
                         "file.path": file_obj.file_path,
+                        "file.storage_backend": file_obj.storage_backend,
+                        "file.storage_key": file_obj.storage_key,
                         "file.size": file_obj.file_size,
                     },
                 )
         if not file_obj:
             raise ResourceNotFound("文件不存在")
 
-        file_path = Path(file_obj.file_path)
-        if not file_path.exists():
-            async with self.knowledge_service.uow:
-                await self.knowledge_service.set_file_status(
-                    file_id=file_id,
-                    status=FileStatus.FAILED,
-                )
-            raise ResourceNotFound("上传文件在存储路径中不存在")
-
         try:
-            with trace_span(
-                "knowledge.ingest.extract_chunks",
-                {
-                    "rag.file_id": file_id,
-                    "rag.kb_id": file_obj.kb_id,
-                    "file.name": file_obj.filename,
-                    "file.extension": file_path.suffix.lower(),
-                },
-            ) as span:
-                chunks = await asyncio.to_thread(self._extract_chunks, file_path)
-                set_span_attributes(span, {"rag.chunk_count": len(chunks)})
+            async with self.knowledge_service.storage.download_to_temp(
+                file_obj
+            ) as file_path:
+                with trace_span(
+                    "knowledge.ingest.extract_chunks",
+                    {
+                        "rag.file_id": file_id,
+                        "rag.kb_id": file_obj.kb_id,
+                        "file.name": file_obj.filename,
+                        "file.extension": file_path.suffix.lower(),
+                        "file.storage_backend": file_obj.storage_backend,
+                    },
+                ) as span:
+                    chunks = await asyncio.to_thread(self._extract_chunks, file_path)
+                    set_span_attributes(span, {"rag.chunk_count": len(chunks)})
             if not chunks:
                 raise ValidationError("文件无可用文本内容，无法构建 RAG 索引")
 
@@ -110,13 +107,20 @@ class KnowledgeRAGWorkflow:
                         file_id=file_id,
                         chunks=chunks,
                         filename=file_obj.filename,
-                        file_path=str(file_path),
+                        file_path=file_obj.file_path,
                     )
                 async with self.knowledge_service.uow:
                     await self.knowledge_service.set_file_status(
                         file_id=file_id,
                         status=FileStatus.READY,
                     )
+        except FileNotFoundError as exc:
+            async with self.knowledge_service.uow:
+                await self.knowledge_service.set_file_status(
+                    file_id=file_id,
+                    status=FileStatus.FAILED,
+                )
+            raise ResourceNotFound("上传文件在存储路径中不存在") from exc
         except AppError:
             async with self.knowledge_service.uow:
                 await self.knowledge_service.set_file_status(

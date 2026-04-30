@@ -4,7 +4,7 @@ import uuid
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
@@ -59,13 +59,27 @@ class File(Base, BaseIdModel, AuditMixin):
     """
 
     __tablename__ = "knowledge_files"
+    __table_args__ = (
+        CheckConstraint(
+            "storage_backend IN ('local', 's3')",
+            name="ck_knowledge_files_storage_backend",
+        ),
+    )
 
     kb_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("knowledge_bases.id", ondelete="CASCADE"), index=True
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     # 物理路径或 S3 Key
-    file_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    storage_backend: Mapped[str] = mapped_column(
+        String(20),
+        default="local",
+        server_default="local",
+        nullable=False,
+    )
+    storage_bucket: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[FileStatus] = mapped_column(String(20), default=FileStatus.UPLOADED)
     owner_id: Mapped[uuid.UUID | None] = mapped_column(

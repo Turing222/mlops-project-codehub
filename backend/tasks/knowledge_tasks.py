@@ -12,6 +12,7 @@ from backend.core.task_broker import broker
 from backend.core.trace_utils import set_span_attributes, trace_span, use_trace_context
 from backend.services.chunking_service import ChunkingService
 from backend.services.knowledge_service import KnowledgeService
+from backend.services.object_storage import ObjectStorage, create_object_storage
 from backend.services.task_service import TaskService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.vector_index_service import VectorIndexService
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker | None = None
 _embedder = None
+_object_storage: ObjectStorage | None = None
 
 
 def _get_session_factory() -> async_sessionmaker:
@@ -45,6 +47,13 @@ def _get_embedder():
             dimensions=profile.dimensions,
         )
     return _embedder
+
+
+def _get_object_storage() -> ObjectStorage:
+    global _object_storage
+    if _object_storage is None:
+        _object_storage = create_object_storage(settings)
+    return _object_storage
 
 
 async def _safe_mark_failed(
@@ -102,7 +111,7 @@ async def _ingest_knowledge_file_task(file_id: str, task_id: str | None = None):
         )
         knowledge_service = KnowledgeService(
             uow=uow,
-            storage_root=settings.KNOWLEDGE_STORAGE_ROOT,
+            storage=_get_object_storage(),
             max_upload_size_mb=settings.KNOWLEDGE_MAX_UPLOAD_SIZE_MB,
         )
         workflow = KnowledgeRAGWorkflow(

@@ -115,3 +115,16 @@ class TokenLimitExceeded(LLMError):
     """Token 超出模型上下文窗口限制"""
 
     status_code = 413
+
+
+# --- 存储层信号异常 (Storage Layer Signals) ---
+# 这些异常不继承 AppError，属于内部信号，由上层服务翻译成具体的业务异常后再向外暴露。
+
+
+class UploadSizeLimitExceeded(Exception):
+    """上传文件超过允许的最大字节数。
+
+    由 object_storage 的流式写入逻辑抛出，由 KnowledgeService 捕获后
+    翻译为 ValidationError(422) 返回给调用方。
+    不直接继承 AppError，避免意外被全局异常处理器暴露为 HTTP 响应。
+    """

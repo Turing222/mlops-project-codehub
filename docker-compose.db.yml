@@ -15,6 +15,8 @@ x-app-secrets: &app-secrets
   - LLM_API_KEY
   - RAG_EMBED_API_KEY
   - LANGFUSE_SECRET_KEY
+  - S3_ACCESS_KEY_ID
+  - S3_SECRET_ACCESS_KEY
 
 x-secret-file-env: &secret-file-env
   SECRET_KEY_FILE: /run/secrets/SECRET_KEY
@@ -27,6 +29,8 @@ x-secret-file-env: &secret-file-env
   LLM_API_KEY_FILE: /run/secrets/LLM_API_KEY
   RAG_EMBED_API_KEY_FILE: /run/secrets/RAG_EMBED_API_KEY
   LANGFUSE_SECRET_KEY_FILE: /run/secrets/LANGFUSE_SECRET_KEY
+  S3_ACCESS_KEY_ID_FILE: /run/secrets/S3_ACCESS_KEY_ID
+  S3_SECRET_ACCESS_KEY_FILE: /run/secrets/S3_SECRET_ACCESS_KEY
 
 x-app-environment: &app-environment
   CURRENT_UID: ${CURRENT_UID:-1000}
@@ -38,7 +42,14 @@ x-app-environment: &app-environment
   REDIS_PORT: ${REDIS_PORT:-6379}
   LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
   RAG_EMBED_PROVIDER: ${RAG_EMBED_PROVIDER:-google}
+  STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+  LOCAL_STORAGE_ROOT: ${LOCAL_STORAGE_ROOT:-/data/knowledge_files}
+  # Deprecated: KNOWLEDGE_STORAGE_ROOT 已被 LOCAL_STORAGE_ROOT 取代，优先级低于后者，将在后续版本移除。
   KNOWLEDGE_STORAGE_ROOT: ${KNOWLEDGE_STORAGE_ROOT:-/data/knowledge_files}
+  S3_BUCKET: ${S3_BUCKET:-}
+  S3_PREFIX: ${S3_PREFIX:-knowledge_files}
+  S3_REGION: ${S3_REGION:-}
+  S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
   ENABLE_OTEL_METRICS: ${ENABLE_OTEL_METRICS:-false}
   ENABLE_OTEL_TRACES: ${ENABLE_OTEL_TRACES:-false}
   OTEL_TRACES_ENDPOINT: ${OTEL_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
@@ -183,7 +194,7 @@ services:
       <<: [*app-environment, *secret-file-env]
       TASKIQ_HEALTH_MIN_PROCESSES: "2"
     healthcheck:
-      test: [ "CMD-SHELL", "python -m backend.core.task_worker_healthcheck || exit 1" ]
+      test: [ "CMD-SHELL", "python -m backend.tasks.worker_healthcheck || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -427,3 +438,7 @@ secrets:
     file: ${SMOKE_RAG_EMBED_API_KEY_FILE:-./deploy/empty-secret.txt}
   LANGFUSE_SECRET_KEY:
     file: ${SMOKE_LANGFUSE_SECRET_KEY_FILE:-./deploy/empty-secret.txt}
+  S3_ACCESS_KEY_ID:
+    file: ${SMOKE_S3_ACCESS_KEY_ID_FILE:-./deploy/empty-secret.txt}
+  S3_SECRET_ACCESS_KEY:
+    file: ${SMOKE_S3_SECRET_ACCESS_KEY_FILE:-./deploy/empty-secret.txt}

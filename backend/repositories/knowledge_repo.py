@@ -71,6 +71,9 @@ class KnowledgeRepository:
         owner_id: uuid.UUID | None = None,
         workspace_id: uuid.UUID | None = None,
         visibility: FileVisibility = FileVisibility.WORKSPACE,
+        storage_backend: str = "local",
+        storage_bucket: str | None = None,
+        storage_key: str | None = None,
     ) -> File:
         file_obj = File(
             kb_id=kb_id,
@@ -81,6 +84,9 @@ class KnowledgeRepository:
             owner_id=owner_id,
             workspace_id=workspace_id,
             visibility=visibility,
+            storage_backend=storage_backend,
+            storage_bucket=storage_bucket,
+            storage_key=storage_key,
         )
         self.session.add(file_obj)
         await self.session.flush()

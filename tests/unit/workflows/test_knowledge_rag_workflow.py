@@ -1,8 +1,11 @@
-from unittest.mock import MagicMock
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from backend.core.exceptions import ValidationError
+from backend.models.orm.knowledge import FileStatus
 from backend.workflow.knowledge_rag_workflow import KnowledgeRAGWorkflow
 
 
@@ -109,3 +112,69 @@ def test_extract_chunks_rejects_unsupported_file_suffix(tmp_path):
 
     with pytest.raises(ValidationError):
         workflow._extract_chunks(file_path)
+
+
+class FakeAsyncUow:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return None
+
+
+class FakeStorage:
+    def __init__(self, path):
+        self.path = path
+
+    @asynccontextmanager
+    async def download_to_temp(self, _file_obj):
+        yield self.path
+
+
+@pytest.mark.asyncio
+async def test_ingest_file_downloads_from_storage_before_extracting(tmp_path):
+    file_path = tmp_path / "downloaded.txt"
+    file_path.write_text("remote content", encoding="utf-8")
+    file_obj = SimpleNamespace(
+        id="file-id",
+        kb_id="kb-id",
+        filename="demo.txt",
+        file_path="s3://bucket/key",
+        file_size=14,
+        storage_backend="s3",
+        storage_bucket="bucket",
+        storage_key="key",
+    )
+    statuses = []
+
+    async def set_file_status(*, file_id, status):
+        statuses.append(status)
+        if status == FileStatus.PARSING:
+            return file_obj
+        return file_obj
+
+    knowledge_service = SimpleNamespace(
+        uow=FakeAsyncUow(),
+        storage=FakeStorage(file_path),
+        set_file_status=set_file_status,
+    )
+    vector_index_service = SimpleNamespace(
+        uow=FakeAsyncUow(),
+        replace_file_chunks=AsyncMock(),
+    )
+    chunking = FakeChunkingService(chunk_size=20)
+    workflow = KnowledgeRAGWorkflow(
+        knowledge_service=knowledge_service,
+        chunking_service=chunking,
+        vector_index_service=vector_index_service,
+    )
+
+    await workflow.ingest_file(file_id="file-id")
+
+    vector_index_service.replace_file_chunks.assert_called_once_with(
+        file_id="file-id",
+        chunks=["remote content"],
+        filename="demo.txt",
+        file_path="s3://bucket/key",
+    )
+    assert statuses == [FileStatus.PARSING, FileStatus.CHUNKING, FileStatus.READY]
