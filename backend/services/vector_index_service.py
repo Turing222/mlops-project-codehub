@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import uuid
 from typing import TypedDict
 
@@ -6,6 +7,8 @@ from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.domain.interfaces import AbstractRAGEmbedder, AbstractUnitOfWork
 from backend.models.orm.chunk import ChunkSourceType, DocumentChunk
 from backend.services.base import BaseService
+
+CHUNKING_VERSION = 1
 
 
 class _HybridHit(TypedDict):
@@ -60,8 +63,12 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                             "source_type": ChunkSourceType.FILE,
                             "file_id": file_id,
                             "content": chunk_text,
+                            "content_hash": hashlib.sha256(
+                                chunk_text.encode("utf-8")
+                            ).hexdigest(),
                             "token_count": len(chunk_text),
                             "chunk_index": idx,
+                            "chunking_version": CHUNKING_VERSION,
                             "meta_info": {
                                 "filename": filename,
                                 "path": file_path,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -17,10 +18,18 @@ def make_upload_file(filename: str, content: bytes) -> UploadFile:
 class FakeS3Client:
     def __init__(self):
         self.objects: dict[tuple[str, str], bytes] = {}
+        self.metadata: dict[tuple[str, str], dict] = {}
         self.deleted: list[tuple[str, str]] = []
 
-    def upload_fileobj(self, file_obj, bucket: str, key: str) -> None:
+    def upload_fileobj(
+        self,
+        file_obj,
+        bucket: str,
+        key: str,
+        ExtraArgs: dict | None = None,
+    ) -> None:
         self.objects[(bucket, key)] = file_obj.read()
+        self.metadata[(bucket, key)] = ExtraArgs or {}
 
     def download_fileobj(self, bucket: str, key: str, file_obj) -> None:
         file_obj.write(self.objects[(bucket, key)])
@@ -43,6 +52,7 @@ async def test_local_object_storage_saves_downloads_and_deletes(tmp_path: Path):
     )
 
     assert stored.backend == "local"
+    assert stored.sha256 == hashlib.sha256(b"hello").hexdigest()
     assert Path(stored.uri).read_bytes() == b"hello"
     async with storage.download_to_temp(
         type("FileObj", (), {"storage_key": stored.key, "file_path": stored.uri})()
@@ -69,7 +79,11 @@ async def test_s3_object_storage_saves_downloads_and_cleans_temp_file():
     assert stored.backend == "s3"
     assert stored.bucket == "bucket-a"
     assert stored.key.startswith("prefix/")
+    assert stored.sha256 == hashlib.sha256(b"hello s3").hexdigest()
     assert client.objects[("bucket-a", stored.key)] == b"hello s3"
+    assert client.metadata[("bucket-a", stored.key)] == {
+        "Metadata": {"sha256": stored.sha256}
+    }
 
     file_obj = type(
         "FileObj",

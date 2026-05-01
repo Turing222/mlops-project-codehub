@@ -1,4 +1,5 @@
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -21,6 +22,13 @@ from backend.services.permission_service import Permission, PermissionService
 
 DEFAULT_KNOWLEDGE_BASE_NAME = "默认知识库"
 DEFAULT_KNOWLEDGE_BASE_DESCRIPTION = "系统自动创建的默认知识库"
+
+
+@dataclass(frozen=True, slots=True)
+class SavedKnowledgeFile:
+    file: File
+    should_ingest: bool
+    deduplicated: bool
 
 
 class KnowledgeService:
@@ -47,6 +55,20 @@ class KnowledgeService:
         user_id: uuid.UUID,
         upload_file: UploadFile,
     ) -> File:
+        result = await self.save_upload_file_for_ingestion(
+            kb_id=kb_id,
+            user_id=user_id,
+            upload_file=upload_file,
+        )
+        return result.file
+
+    async def save_upload_file_for_ingestion(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        user_id: uuid.UUID,
+        upload_file: UploadFile,
+    ) -> SavedKnowledgeFile:
         safe_filename = self._validate_upload_file(upload_file)
         kb = await self._ensure_kb_access(
             kb_id=kb_id,
@@ -65,12 +87,29 @@ class KnowledgeService:
             if stored_object.size <= 0:
                 raise app_validation_error("上传文件为空", code="UPLOAD_FILE_EMPTY")
 
-            return await self._create_file_record(
+            duplicate = await self.uow.knowledge_repo.get_ready_file_by_hash(
+                kb_id=kb_id,
+                content_sha256=stored_object.sha256,
+            )
+            if duplicate is not None:
+                await self.storage.delete(stored_object)
+                return SavedKnowledgeFile(
+                    file=duplicate,
+                    should_ingest=False,
+                    deduplicated=True,
+                )
+
+            file_obj = await self._create_file_record(
                 kb_id=kb_id,
                 filename=safe_filename,
                 stored_object=stored_object,
                 owner_id=user_id,
                 workspace_id=getattr(kb, "workspace_id", None),
+            )
+            return SavedKnowledgeFile(
+                file=file_obj,
+                should_ingest=True,
+                deduplicated=False,
             )
         except AppException:
             if stored_object is not None:
@@ -218,6 +257,7 @@ class KnowledgeService:
                 storage_backend=stored_object.backend,
                 storage_bucket=stored_object.bucket,
                 storage_key=stored_object.key,
+                content_sha256=stored_object.sha256,
             )
         except AppException:
             await self.storage.delete(stored_object)

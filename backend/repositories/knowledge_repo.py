@@ -74,6 +74,7 @@ class KnowledgeRepository:
         storage_backend: str = "local",
         storage_bucket: str | None = None,
         storage_key: str | None = None,
+        content_sha256: str | None = None,
     ) -> File:
         file_obj = File(
             kb_id=kb_id,
@@ -87,6 +88,7 @@ class KnowledgeRepository:
             storage_backend=storage_backend,
             storage_bucket=storage_bucket,
             storage_key=storage_key,
+            content_sha256=content_sha256,
         )
         self.session.add(file_obj)
         await self.session.flush()
@@ -95,6 +97,23 @@ class KnowledgeRepository:
 
     async def get_file(self, file_id: uuid.UUID) -> File | None:
         return await self.session.get(File, file_id)
+
+    async def get_ready_file_by_hash(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        content_sha256: str,
+    ) -> File | None:
+        stmt = (
+            select(File)
+            .where(File.kb_id == kb_id)
+            .where(File.content_sha256 == content_sha256)
+            .where(File.status == FileStatus.READY)
+            .order_by(File.created_at.asc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
 
     async def update_file_status(
         self,

@@ -34,10 +34,16 @@ class DocumentChunk(Base, BaseIdModel):
 
     # 原始切片内容
     content: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # 预计算 token 数，优化 LLM 上下文选择
     token_count: Mapped[int] = mapped_column(Integer)
     # 序列号，用于拼接上下文
     chunk_index: Mapped[int] = mapped_column(Integer)
+    chunking_version: Mapped[int] = mapped_column(
+        Integer,
+        default=1,
+        server_default=text("1"),
+    )
     # 元数据：存储如 {"page_label": "12", "header": "Chapter 1"} 或 {"session_id": "..."}
     meta_info: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'"))
 
@@ -55,6 +61,11 @@ class DocumentChunk(Base, BaseIdModel):
         CheckConstraint(
             "(file_id IS NOT NULL)::int + (message_id IS NOT NULL)::int = 1",
             name="ck_chunk_exactly_one_source",
+        ),
+        Index(
+            "ix_document_chunks_file_content_hash",
+            "file_id",
+            "content_hash",
         ),
     )
 

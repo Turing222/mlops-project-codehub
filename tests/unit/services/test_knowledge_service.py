@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -19,6 +20,7 @@ def knowledge_service(tmp_path: Path):
     repo = SimpleNamespace(
         get_kb_by_name_for_user=AsyncMock(),
         get_kb_for_user=AsyncMock(),
+        get_ready_file_by_hash=AsyncMock(return_value=None),
         create_kb=AsyncMock(),
         create_file=AsyncMock(),
     )
@@ -72,11 +74,47 @@ class TestKnowledgeServiceStreamingUpload:
         assert saved_path.parent == storage_root / str(kb_id)
         assert result.filename == "demo.txt"
         assert result.file_size == len(content)
+        assert result.content_sha256 == hashlib.sha256(content).hexdigest()
         assert result.status == FileStatus.UPLOADED
         assert result.owner_id == user_id
         assert result.workspace_id == workspace_id
         repo.get_kb_for_user.assert_awaited_once_with(kb_id=kb_id, user_id=user_id)
+        repo.get_ready_file_by_hash.assert_awaited_once_with(
+            kb_id=kb_id,
+            content_sha256=hashlib.sha256(content).hexdigest(),
+        )
         repo.create_file.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_save_upload_file_reuses_ready_duplicate_and_deletes_new_object(
+        self,
+        knowledge_service,
+    ):
+        service, repo, storage_root = knowledge_service
+        kb_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        content = b"duplicate content"
+        duplicate = SimpleNamespace(
+            id=uuid.uuid4(),
+            kb_id=kb_id,
+            filename="existing.txt",
+            file_path="/already/indexed.txt",
+            file_size=len(content),
+            content_sha256=hashlib.sha256(content).hexdigest(),
+            status=FileStatus.READY,
+        )
+        repo.get_kb_for_user.return_value = SimpleNamespace(id=kb_id)
+        repo.get_ready_file_by_hash.return_value = duplicate
+
+        result = await service.save_upload_file(
+            kb_id=kb_id,
+            user_id=user_id,
+            upload_file=make_upload_file("demo.txt", content, size=len(content)),
+        )
+
+        assert result == duplicate
+        repo.create_file.assert_not_awaited()
+        assert not any(path.is_file() for path in storage_root.rglob("*"))
 
     @pytest.mark.asyncio
     async def test_save_upload_file_rejects_missing_kb_access(

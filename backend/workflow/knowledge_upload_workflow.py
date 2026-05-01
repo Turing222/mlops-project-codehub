@@ -65,17 +65,21 @@ class KnowledgeUploadWorkflow:
                     kb_id = kb.id
                 assert kb_id is not None
 
-                file_obj = await self.knowledge_service.save_upload_file(
-                    kb_id=kb_id,
-                    user_id=user_id,
-                    upload_file=upload_file,
+                save_result = (
+                    await self.knowledge_service.save_upload_file_for_ingestion(
+                        kb_id=kb_id,
+                        user_id=user_id,
+                        upload_file=upload_file,
+                    )
                 )
+                file_obj = save_result.file
             set_span_attributes(
                 span,
                 {
                     "rag.kb_id": kb_id,
                     "rag.file_id": file_obj.id,
                     "file.size": getattr(file_obj, "file_size", None),
+                    "knowledge.upload.deduplicated": save_result.deduplicated,
                 },
             )
 
@@ -83,6 +87,8 @@ class KnowledgeUploadWorkflow:
             kb_id=kb_id,
             user_id=user_id,
             file_obj=file_obj,
+            should_ingest=save_result.should_ingest,
+            deduplicated=save_result.deduplicated,
         )
 
     # ------------------------------------------------------------------
@@ -95,6 +101,8 @@ class KnowledgeUploadWorkflow:
         kb_id: uuid.UUID,
         user_id: uuid.UUID,
         file_obj: File,
+        should_ingest: bool = True,
+        deduplicated: bool = False,
     ) -> KnowledgeUploadResponse:
         try:
             with trace_span(
@@ -104,16 +112,29 @@ class KnowledgeUploadWorkflow:
                     "rag.file_id": file_obj.id,
                     "user.id": user_id,
                     "file.name": file_obj.filename,
+                    "knowledge.upload.deduplicated": deduplicated,
                 },
             ) as span:
                 async with self.task_service.uow:
-                    task = await self.task_service.create_kb_ingestion_task(
-                        kb_id=kb_id,
-                        file_id=file_obj.id,
-                        file_path=file_obj.file_path,
-                        filename=file_obj.filename,
-                        user_id=user_id,
-                    )
+                    if should_ingest:
+                        task = await self.task_service.create_kb_ingestion_task(
+                            kb_id=kb_id,
+                            file_id=file_obj.id,
+                            file_path=file_obj.file_path,
+                            filename=file_obj.filename,
+                            user_id=user_id,
+                        )
+                    else:
+                        task = (
+                            await self.task_service.create_completed_kb_ingestion_task(
+                                kb_id=kb_id,
+                                file_id=file_obj.id,
+                                file_path=file_obj.file_path,
+                                filename=file_obj.filename,
+                                user_id=user_id,
+                                deduplicated=deduplicated,
+                            )
+                        )
                 set_span_attributes(
                     span, {"task.id": task.id, "task.status": task.status}
                 )
@@ -130,6 +151,16 @@ class KnowledgeUploadWorkflow:
                 "创建知识处理任务失败，请稍后重试",
                 code="KNOWLEDGE_TASK_CREATE_FAILED",
             ) from exc
+
+        if not should_ingest:
+            return KnowledgeUploadResponse(
+                task_id=task.id,
+                file_id=file_obj.id,
+                kb_id=kb_id,
+                file_status=file_obj.status,
+                task_status=task.status,
+                deduplicated=deduplicated,
+            )
 
         try:
             with trace_span(
@@ -165,6 +196,7 @@ class KnowledgeUploadWorkflow:
             kb_id=kb_id,
             file_status=file_obj.status,
             task_status=task.status,
+            deduplicated=deduplicated,
         )
 
     # ------------------------------------------------------------------

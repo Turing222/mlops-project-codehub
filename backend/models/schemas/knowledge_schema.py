@@ -10,6 +10,7 @@ class KnowledgeUploadResponse(BaseModel):
     kb_id: uuid.UUID | None = Field(default=None, description="知识库 ID")
     file_status: str = Field(description="文件处理状态")
     task_status: str = Field(description="任务状态")
+    deduplicated: bool = Field(default=False, description="是否复用已就绪的同内容文件")
 
 
 class KnowledgeFileResponse(BaseModel):
@@ -19,6 +20,7 @@ class KnowledgeFileResponse(BaseModel):
     kb_id: uuid.UUID
     filename: str
     file_size: int
+    content_sha256: str | None = None
     status: str
     created_at: datetime
     updated_at: datetime

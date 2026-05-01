@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.services.vector_index_service import VectorIndexService
+from backend.services.vector_index_service import CHUNKING_VERSION, VectorIndexService
 
 
 @pytest.mark.asyncio
@@ -48,6 +49,11 @@ async def test_replace_file_chunks_uses_batch_embedding():
         [0.3, 0.4],
         [0.5, 0.6],
     ]
+    assert [record["content_hash"] for record in records] == [
+        hashlib.sha256(text.encode("utf-8")).hexdigest()
+        for text in ["chunk 1", "chunk 2", "chunk 3"]
+    ]
+    assert {record["chunking_version"] for record in records} == {CHUNKING_VERSION}
 
 
 @pytest.mark.asyncio

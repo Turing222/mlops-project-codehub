@@ -4,7 +4,7 @@ import uuid
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
@@ -64,6 +64,11 @@ class File(Base, BaseIdModel, AuditMixin):
             "storage_backend IN ('local', 's3')",
             name="ck_knowledge_files_storage_backend",
         ),
+        Index(
+            "ix_knowledge_files_kb_content_sha256",
+            "kb_id",
+            "content_sha256",
+        ),
     )
 
     kb_id: Mapped[uuid.UUID] = mapped_column(
@@ -81,6 +86,7 @@ class File(Base, BaseIdModel, AuditMixin):
     storage_bucket: Mapped[str | None] = mapped_column(String(255), nullable=True)
     storage_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[FileStatus] = mapped_column(String(20), default=FileStatus.UPLOADED)
     owner_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),

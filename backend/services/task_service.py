@@ -32,6 +32,30 @@ class TaskService(BaseService[AbstractUnitOfWork]):
             },
         )
 
+    async def create_completed_kb_ingestion_task(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        file_id: uuid.UUID,
+        file_path: str,
+        filename: str,
+        user_id: uuid.UUID,
+        deduplicated: bool = False,
+    ) -> TaskJob:
+        return await self.uow.task_repo.create(
+            action_type="KB_INGESTION",
+            status=TaskStatus.COMPLETED,
+            progress=100,
+            payload={
+                "kb_id": str(kb_id),
+                "file_id": str(file_id),
+                "file_path": file_path,
+                "filename": filename,
+                "user_id": str(user_id),
+                "deduplicated": deduplicated,
+            },
+        )
+
     async def get_by_id(self, task_id: uuid.UUID) -> TaskJob | None:
         return await self.uow.task_repo.get(task_id)
 

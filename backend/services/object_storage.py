@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import tempfile
 import uuid
 from contextlib import asynccontextmanager
@@ -25,6 +26,13 @@ class StoredObject:
     key: str
     uri: str
     size: int
+    sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class UploadStreamStats:
+    size: int
+    sha256: str
 
 
 class ObjectStorage(Protocol):
@@ -65,7 +73,7 @@ class LocalObjectStorage:
         temp_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            size = await _stream_upload_to_path(
+            stats = await _stream_upload_to_path(
                 upload_file=upload_file,
                 path=temp_path,
                 max_size_bytes=max_size_bytes,
@@ -81,7 +89,8 @@ class LocalObjectStorage:
             bucket=None,
             key=key,
             uri=str(target_path),
-            size=size,
+            size=stats.size,
+            sha256=stats.sha256,
         )
 
     async def delete(self, stored_object: StoredObject) -> None:
@@ -144,7 +153,7 @@ class S3ObjectStorage:
         max_size_bytes: int,
     ) -> StoredObject:
         key = self._build_key(kb_id=kb_id, filename=filename)
-        temp_path = await _copy_upload_to_temp(
+        temp_path, stats = await _copy_upload_to_temp(
             upload_file=upload_file,
             max_size_bytes=max_size_bytes,
             suffix=Path(filename).suffix,
@@ -156,8 +165,8 @@ class S3ObjectStorage:
                     file_obj,
                     self.bucket,
                     key,
+                    ExtraArgs={"Metadata": {"sha256": stats.sha256}},
                 )
-            size = temp_path.stat().st_size
         except Exception:
             await asyncio.to_thread(
                 self.client.delete_object,
@@ -173,7 +182,8 @@ class S3ObjectStorage:
             bucket=self.bucket,
             key=key,
             uri=f"s3://{self.bucket}/{key}",
-            size=size,
+            size=stats.size,
+            sha256=stats.sha256,
         )
 
     async def delete(self, stored_object: StoredObject) -> None:
@@ -253,8 +263,9 @@ async def _stream_upload_to_path(
     upload_file: UploadFile,
     path: Path,
     max_size_bytes: int,
-) -> int:
+) -> UploadStreamStats:
     total_size = 0
+    hasher = hashlib.sha256()
     chunk_size = 1024 * 1024
     with path.open("wb") as target:
         while True:
@@ -264,8 +275,9 @@ async def _stream_upload_to_path(
             total_size += len(chunk)
             if total_size > max_size_bytes:
                 raise UploadSizeLimitExceeded("upload exceeds max_size_bytes")
+            hasher.update(chunk)
             target.write(chunk)  # 本地内存写入无需 asyncio.to_thread
-    return total_size
+    return UploadStreamStats(size=total_size, sha256=hasher.hexdigest())
 
 
 async def _copy_upload_to_temp(
@@ -273,15 +285,15 @@ async def _copy_upload_to_temp(
     upload_file: UploadFile,
     max_size_bytes: int,
     suffix: str,
-) -> Path:
+) -> tuple[Path, UploadStreamStats]:
     temp_path = _new_temp_path(suffix=suffix)
     try:
-        await _stream_upload_to_path(
+        stats = await _stream_upload_to_path(
             upload_file=upload_file,
             path=temp_path,
             max_size_bytes=max_size_bytes,
         )
-        return temp_path
+        return temp_path, stats
     except Exception:
         temp_path.unlink(missing_ok=True)
         raise
