@@ -1,19 +1,20 @@
 """
-core/concurrency.py — 全局并发控制
+ChatWorkflow 与 ChatNonStreamWorkflow 在同一 Python 进程内共享同一
+Semaphore 实例，确保进程内的 LLM / DB 并发上限一致。
 
-设计原则：
-1. Semaphore 使用 threading.Lock 双重检查保护初始化，防止多协程同时触发
-   懒初始化产生竞态（R2 修复）。
-2. ChatWorkflow 与 ChatNonStreamWorkflow 共享同一 Semaphore 实例，
-   确保 LLM / DB 并发上限是全局有效的（R4 修复）。
-3. Semaphore 在首次访问时才创建（不在模块导入时），避免测试环境
-   因没有 running event loop 而报错。
+注意：asyncio.Semaphore 不是分布式并发控制；多 uvicorn worker、
+多 TaskIQ worker、多容器部署时，每个进程都会拥有独立的 Semaphore。
 """
 
 import asyncio
 import threading
+import time
+from collections.abc import AsyncIterator, Mapping
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from typing import Any
 
 from backend.core.config import settings
+from backend.core.trace_utils import set_span_attributes, trace_span
 
 # --- 线程锁：保护 Semaphore 的懒初始化 ---
 _llm_lock = threading.Lock()
@@ -48,6 +49,64 @@ def get_db_semaphore() -> asyncio.Semaphore:
             if _db_semaphore is None:
                 _db_semaphore = asyncio.Semaphore(settings.DB_MAX_CONCURRENCY)
     return _db_semaphore
+
+
+@asynccontextmanager
+async def traced_semaphore_slot(
+    name: str,
+    semaphore: asyncio.Semaphore,
+    limit: int,
+    attributes: Mapping[str, Any] | None = None,
+) -> AsyncIterator[None]:
+    """
+    Acquire a semaphore slot and expose queue/hold timing as a child trace span.
+    """
+    span_attrs: dict[str, Any] = {
+        "concurrency.name": name,
+        "concurrency.limit": limit,
+    }
+    if attributes:
+        span_attrs.update(attributes)
+
+    with trace_span(f"concurrency.{name}", span_attrs) as span:
+        start = time.perf_counter()
+        await semaphore.acquire()
+        acquired_at = time.perf_counter()
+        set_span_attributes(
+            span,
+            {
+                "concurrency.wait_ms": (acquired_at - start) * 1000,
+                "concurrency.acquired": True,
+            },
+        )
+        try:
+            yield
+        finally:
+            hold_ms = (time.perf_counter() - acquired_at) * 1000
+            set_span_attributes(span, {"concurrency.hold_ms": hold_ms})
+            semaphore.release()
+
+
+def llm_concurrency_slot(
+    attributes: Mapping[str, Any] | None = None,
+) -> AbstractAsyncContextManager[None]:
+    return traced_semaphore_slot(
+        "llm",
+        get_llm_semaphore(),
+        settings.LLM_MAX_CONCURRENCY,
+        attributes,
+    )
+
+
+def db_concurrency_slot(
+    attributes: Mapping[str, Any] | None = None,
+) -> AbstractAsyncContextManager[None]:
+    return traced_semaphore_slot(
+        "db",
+        get_db_semaphore(),
+        settings.DB_MAX_CONCURRENCY,
+        attributes,
+    )
 
 
 def reset_semaphores() -> None:

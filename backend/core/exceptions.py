@@ -1,6 +1,7 @@
 # app/core/exceptions.py
 
 import logging
+import time
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -12,6 +13,23 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # 获取我们在 setup_logging 中配置好的 logger
 # 这里用 "uvicorn.error" 或者 __name__ 都可以，只要是根记录器的子集就能继承配置
 logger = logging.getLogger(__name__)
+
+
+def _trace_response_headers(request: Request) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    request_id = getattr(request.state, "request_id", None)
+    trace_id = getattr(request.state, "trace_id", None)
+    process_start = getattr(request.state, "process_start", None)
+
+    if request_id:
+        headers["X-Request-ID"] = str(request_id)
+    if trace_id:
+        headers["X-Trace-ID"] = str(trace_id)
+    if isinstance(process_start, int | float):
+        headers["X-Process-Time"] = (
+            f"{(time.perf_counter() - process_start) * 1000:.2f}ms"
+        )
+    return headers
 
 
 def setup_exception_handlers(app: FastAPI):
@@ -36,6 +54,7 @@ def setup_exception_handlers(app: FastAPI):
                     "request_id": request_id,
                 }
             ),
+            headers=_trace_response_headers(request),
         )
 
     @app.exception_handler(StarletteHTTPException)
@@ -60,7 +79,10 @@ def setup_exception_handlers(app: FastAPI):
                     "request_id": request_id,
                 }
             ),
-            headers=getattr(exc, "headers", None),
+            headers={
+                **_trace_response_headers(request),
+                **(getattr(exc, "headers", None) or {}),
+            },
         )
 
     @app.exception_handler(RequestValidationError)
@@ -83,6 +105,7 @@ def setup_exception_handlers(app: FastAPI):
                     "request_id": request_id,
                 }
             ),
+            headers=_trace_response_headers(request),
         )
 
     @app.exception_handler(Exception)
@@ -103,6 +126,7 @@ def setup_exception_handlers(app: FastAPI):
                 "details": {},
                 "request_id": request_id,
             },
+            headers=_trace_response_headers(request),
         )
 
 

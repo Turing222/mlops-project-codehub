@@ -20,7 +20,11 @@ from backend.ai.core import PromptManager
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.core.token_counter import count_tokens
 from backend.config.llm import get_llm_model_config
-from backend.core.concurrency import get_db_semaphore, get_llm_semaphore
+from backend.core.concurrency import (
+    db_concurrency_slot,
+    get_db_semaphore,
+    get_llm_semaphore,
+)
 from backend.core.config import settings
 from backend.core.exceptions import AppException, app_service_error
 from backend.core.redis import redis_client
@@ -125,7 +129,7 @@ class ChatWorkflow:
 
         # 1. 确认或创建会话 + 保存用户消息 + 创建助手消息占位
         with trace_span("chat.stream.create_session_and_messages", trace_attrs) as span:
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     # R1/R5 修复：用 SELECT FOR UPDATE 悲观锁读取用户行，
                     # 防止多个并发请求同时通过余额检查（TOCTOU 竞态）
@@ -177,7 +181,7 @@ class ChatWorkflow:
 
         # 2. 查询历史消息并组装 Prompt
         with trace_span("chat.stream.fetch_history", trace_attrs) as span:
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     session_manager = SessionManager(self.uow)
                     history_messages = await session_manager.get_session_messages(
@@ -250,7 +254,7 @@ class ChatWorkflow:
                 await redis.delete(lock_key)
             logger.warning("流式任务初始化失败: %s", exc)
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(assistant_msg.id)
@@ -261,7 +265,7 @@ class ChatWorkflow:
                 await redis.delete(lock_key)
             logger.error("流式任务初始化异常: %s", str(exc), exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'message': '服务暂时不可用，请稍后重试'})}\n\n"
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(assistant_msg.id)
@@ -294,14 +298,18 @@ class ChatWorkflow:
                 while True:
                     remaining = deadline - loop.time()
                     if remaining <= 0:
-                        raise app_service_error("LLM 响应超时，请稍后重试", code="LLM_TIMEOUT")
+                        raise app_service_error(
+                            "LLM 响应超时，请稍后重试", code="LLM_TIMEOUT"
+                        )
                     try:
                         first_message = await asyncio.wait_for(
                             anext(stream_iter),
                             timeout=remaining,
                         )
                     except TimeoutError as exc:
-                        raise app_service_error("LLM 响应超时，请稍后重试", code="LLM_TIMEOUT") from exc
+                        raise app_service_error(
+                            "LLM 响应超时，请稍后重试", code="LLM_TIMEOUT"
+                        ) from exc
                     except StopAsyncIteration as exc:
                         raise app_service_error(
                             "LLM 流式通道异常结束",
@@ -363,7 +371,7 @@ class ChatWorkflow:
                 await redis.delete(lock_key)
             logger.warning("流式 LLM 调用业务异常: %s", exc)
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(assistant_msg.id)
@@ -374,7 +382,7 @@ class ChatWorkflow:
                 await redis.delete(lock_key)
             logger.error("流式 LLM 调用异常: %s", str(exc), exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'message': '服务暂时不可用，请稍后重试'})}\n\n"
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(assistant_msg.id)
@@ -409,7 +417,7 @@ class ChatWorkflow:
         tokens_output = count_tokens(full_content, model_name)
 
         with trace_span("chat.stream.finalize_message", trace_attrs) as span:
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_success(

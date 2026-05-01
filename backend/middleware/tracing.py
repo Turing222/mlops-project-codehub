@@ -1,25 +1,17 @@
 import logging
 import time
-import uuid
-from contextvars import ContextVar
 
 from fastapi import FastAPI, Request, Response
-from opentelemetry import trace
 from starlette.middleware.base import RequestResponseEndpoint
 
-# 保留 ContextVar 以便业务层获取 RID（如日志、异常报告等）
-REQUEST_ID_CTX: ContextVar[str] = ContextVar("request_id", default="")
+from backend.core.trace_utils import (
+    REQUEST_ID_CTX,
+    current_trace_id,
+    set_current_span_attributes,
+)
 
 # 设置日志
 logger = logging.getLogger(__name__)
-
-
-def _current_trace_id() -> str:
-    span = trace.get_current_span()
-    span_ctx = span.get_span_context()
-    if span_ctx and span_ctx.trace_id:
-        return f"{span_ctx.trace_id:032x}"
-    return uuid.uuid4().hex
 
 
 def setup_tracing(app: FastAPI):
@@ -46,23 +38,37 @@ def setup_tracing(app: FastAPI):
         request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
         start = time.perf_counter()
-        trace_id = _current_trace_id()
+        trace_id = current_trace_id()
 
         # 1. 优先使用 Nginx 传入的 X-Request-ID，否则用 trace_id 作为 RID
         incoming_rid = request.headers.get("X-Request-ID", "").strip()
         rid = incoming_rid or trace_id
         token = REQUEST_ID_CTX.set(rid)
         request.state.request_id = rid
+        request.state.trace_id = trace_id
+        request.state.process_start = start
+        set_current_span_attributes(
+            {
+                "app.request_id": rid,
+                "app.incoming_request_id": bool(incoming_rid),
+            }
+        )
 
         try:
             # 2. 执行后续的路由逻辑（耗时由 OTel span 自动记录）
             response = await call_next(request)
 
             # 3. 注入关联 header
+            process_time_ms = (time.perf_counter() - start) * 1000
             response.headers["X-Request-ID"] = rid
             response.headers["X-Trace-ID"] = trace_id
-            response.headers["X-Process-Time"] = (
-                f"{(time.perf_counter() - start) * 1000:.2f}ms"
+            response.headers["X-Process-Time"] = f"{process_time_ms:.2f}ms"
+            set_current_span_attributes(
+                {
+                    "app.request_id": rid,
+                    "app.process_time_ms": process_time_ms,
+                    "http.response.status_code": response.status_code,
+                }
             )
 
             return response
@@ -74,6 +80,9 @@ def setup_tracing(app: FastAPI):
             logger.debug(
                 "Exception propagating through tracing middleware",
                 extra={"rid": rid},
+            )
+            set_current_span_attributes(
+                {"app.request_id": rid, "error.type": "exception"}
             )
             raise
         finally:

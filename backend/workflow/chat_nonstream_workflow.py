@@ -6,7 +6,12 @@ from langfuse import get_client, observe
 
 from backend.ai.core import PromptManager
 from backend.ai.core.chat_context_builder import ChatContextBuilder
-from backend.core.concurrency import get_db_semaphore, get_llm_semaphore
+from backend.core.concurrency import (
+    db_concurrency_slot,
+    get_db_semaphore,
+    get_llm_semaphore,
+    llm_concurrency_slot,
+)
 from backend.core.config import settings
 from backend.core.exceptions import (
     AppException,
@@ -199,7 +204,7 @@ class ChatNonStreamWorkflow:
                     query_text=query_text, kb_id=kb_id
                 )
 
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot({"rag.kb_id": kb_id}):
                 async with rag_uow:
                     return await self.rag_service.retrieve(
                         query_text=query_text,
@@ -285,7 +290,7 @@ class ChatNonStreamWorkflow:
         with trace_span(
             "chat.nonstream.create_session_and_messages", trace_attrs
         ) as span:
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     # R1/R5 修复：用 SELECT FOR UPDATE 悲观锁读取用户行，
                     # 防止多个并发请求同时通过余额检查（TOCTOU 竞态）
@@ -339,7 +344,7 @@ class ChatNonStreamWorkflow:
             trace_attrs["chat.assistant_message_id"] = assistant_msg.id
 
         with trace_span("chat.nonstream.fetch_history", trace_attrs) as span:
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     session_manager = SessionManager(self.uow)
                     history_messages = await session_manager.get_session_messages(
@@ -404,7 +409,7 @@ class ChatNonStreamWorkflow:
 
         try:
             with trace_span("chat.nonstream.call_llm", trace_attrs) as span:
-                async with self._get_llm_semaphore():
+                async with llm_concurrency_slot(trace_attrs):
                     result = await self.llm_service.generate_response(llm_query)
                 set_span_attributes(
                     span,
@@ -418,7 +423,7 @@ class ChatNonStreamWorkflow:
         except AppException:
             if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(assistant_msg.id)
@@ -426,7 +431,7 @@ class ChatNonStreamWorkflow:
         except Exception as exc:
             if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(assistant_msg.id)
@@ -438,7 +443,7 @@ class ChatNonStreamWorkflow:
         if not result.success:
             if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(
@@ -452,7 +457,7 @@ class ChatNonStreamWorkflow:
             )
 
         with trace_span("chat.nonstream.persist_answer", trace_attrs) as span:
-            async with self._get_db_semaphore():
+            async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     updated_msg = await updater.update_as_success(

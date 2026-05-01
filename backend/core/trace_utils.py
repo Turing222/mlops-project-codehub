@@ -3,12 +3,14 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from opentelemetry import context, propagate, trace
 from opentelemetry.trace import Span, Status, StatusCode
 
 _TRACER = trace.get_tracer("backend.business")
+REQUEST_ID_CTX: ContextVar[str] = ContextVar("request_id", default="")
 
 
 def _coerce_attribute(value: Any) -> Any:
@@ -29,6 +31,17 @@ def set_span_attributes(span: Span, attributes: Mapping[str, Any]) -> None:
         coerced = _coerce_attribute(value)
         if coerced is not None:
             span.set_attribute(key, coerced)
+
+
+def set_current_span_attributes(attributes: Mapping[str, Any]) -> None:
+    set_span_attributes(trace.get_current_span(), attributes)
+
+
+def current_trace_id(fallback: str | None = None) -> str:
+    span_ctx = trace.get_current_span().get_span_context()
+    if span_ctx and span_ctx.trace_id:
+        return f"{span_ctx.trace_id:032x}"
+    return fallback if fallback is not None else uuid.uuid4().hex
 
 
 def inject_trace_context() -> dict[str, str]:
