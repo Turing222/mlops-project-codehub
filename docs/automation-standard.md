@@ -12,6 +12,7 @@
 相关规范：
 
 - [async-default-style.md](./async-default-style.md)
+- [backend-interface-style.md](./backend-interface-style.md)
 
 ## 1. 设计目标
 

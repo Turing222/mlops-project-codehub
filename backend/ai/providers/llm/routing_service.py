@@ -1,3 +1,10 @@
+"""LLM routing service.
+
+职责：按候选顺序尝试多个 LLM 服务，用于 profile 或 API key fallback。
+边界：流式输出一旦发出 chunk 就不能安全切换候选。
+失败处理：所有候选失败时返回包含尝试摘要的统一业务错误。
+"""
+
 import logging
 import time
 from collections.abc import AsyncGenerator, Sequence
@@ -12,14 +19,16 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class LLMRouteCandidate:
+    """一个可被路由尝试的 LLM 候选。"""
+
     label: str
     service: AbstractLLMService
 
 
 class LLMRoutingService(AbstractLLMService):
-    """Try configured LLM candidates in order until one succeeds."""
+    """按顺序尝试 LLM 候选并处理 fallback。"""
 
-    def __init__(self, candidates: Sequence[LLMRouteCandidate]):
+    def __init__(self, candidates: Sequence[LLMRouteCandidate]) -> None:
         if not candidates:
             raise ValueError("LLM routing service requires at least one candidate")
         self.candidates = tuple(candidates)

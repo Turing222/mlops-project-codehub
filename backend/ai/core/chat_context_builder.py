@@ -1,3 +1,10 @@
+"""Chat context builder.
+
+职责：合并短期对话记忆、RAG 检索结果和 Prompt 组装结果。
+边界：本模块不调用 LLM，也不写入会话消息；只为 workflow 准备输入上下文。
+副作用：会触发 RAG 检索并记录 trace 属性。
+"""
+
 import logging
 import uuid
 from dataclasses import dataclass
@@ -14,18 +21,22 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PreparedChatContext:
+    """对话上下文组装后的结果。"""
+
     assembled_prompt: AssembledPrompt
     search_context: dict | None
 
 
 @dataclass
 class PreparedRAGReferences:
+    """RAG 片段和前端可展示检索上下文。"""
+
     context_chunks: list[str]
     search_context: dict | None
 
 
 class ChatContextBuilder:
-    """构建对话上下文：记忆压缩 + RAG 检索 + Prompt 组装。"""
+    """为聊天 workflow 准备 Prompt 和检索上下文。"""
 
     def __init__(
         self,
@@ -104,7 +115,7 @@ class ChatContextBuilder:
 
     @staticmethod
     def _history_to_dicts(messages) -> list[ConversationMessage]:
-        """将 ORM 消息对象转换为 PromptManager 所需的字典列表。"""
+        """只保留 Prompt 需要的用户/助手消息。"""
         return [
             {"role": msg.role, "content": msg.content}
             for msg in messages

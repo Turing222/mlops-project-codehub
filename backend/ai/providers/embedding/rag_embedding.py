@@ -1,3 +1,10 @@
+"""RAG embedding providers.
+
+职责：封装 OpenAI-compatible、Google GenAI 和本地 mock 的向量化调用。
+边界：本模块只返回向量，不写入索引；索引替换由 VectorIndexService 负责。
+失败处理：空输入、空响应和维度不匹配都会转换为统一业务错误。
+"""
+
 import logging
 
 import openai
@@ -22,7 +29,7 @@ class OpenAICompatibleEmbedder(AbstractRAGEmbedder):
         base_url: str,
         api_key: str,
         dimensions: int | None = None,
-    ):
+    ) -> None:
         self.model_name = model_name
         self.base_url = base_url
         self.api_key = api_key
@@ -139,7 +146,7 @@ class GoogleGenAIEmbedder(AbstractRAGEmbedder):
         model_name: str,
         api_key: str,
         dimensions: int | None = None,
-    ):
+    ) -> None:
         self.model_name = model_name
         self.api_key = api_key
         self.dimensions = dimensions
@@ -224,7 +231,7 @@ class GoogleGenAIEmbedder(AbstractRAGEmbedder):
 class MockRAGEmbedder(AbstractRAGEmbedder):
     """Deterministic local embedder for smoke tests and offline development."""
 
-    def __init__(self, *, dimensions: int = 768):
+    def __init__(self, *, dimensions: int = 768) -> None:
         self.dimensions = max(1, dimensions)
 
     def encode_query(self, text: str) -> list[float]:

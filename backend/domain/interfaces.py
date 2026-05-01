@@ -1,6 +1,9 @@
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
+from types import TracebackType
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 from backend.repositories.access_repo import AccessRepository
@@ -16,20 +19,27 @@ class AbstractUnitOfWork(ABC):
     chat_repo: ChatRepository
     knowledge_repo: KnowledgeRepository
     task_repo: TaskRepository
+    session: AsyncSession
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "AbstractUnitOfWork":
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         if exc_type is None:
             await self.commit()
         else:
             await self.rollback()
 
     @abstractmethod
-    async def commit(self): ...
+    async def commit(self) -> None: ...
+
     @abstractmethod
-    async def rollback(self): ...
+    async def rollback(self) -> None: ...
 
 
 class AbstractLLMService(ABC):

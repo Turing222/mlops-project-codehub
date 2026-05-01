@@ -1,10 +1,17 @@
+"""Object storage service.
+
+职责：封装本地文件系统和 S3 的上传、删除、临时下载能力。
+边界：本模块只处理对象存储，不创建知识库 File 记录。
+失败处理：上传失败会清理临时文件或已写入对象，避免残留半成品。
+"""
+
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import tempfile
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -16,11 +23,13 @@ if TYPE_CHECKING:
 
 
 class UploadSizeLimitExceeded(Exception):
-    """Internal storage signal for uploads that exceed configured byte limits."""
+    """上传流超过配置大小上限。"""
 
 
 @dataclass(frozen=True, slots=True)
 class StoredObject:
+    """已保存对象的持久化定位信息。"""
+
     backend: str
     bucket: str | None
     key: str
@@ -31,11 +40,15 @@ class StoredObject:
 
 @dataclass(frozen=True, slots=True)
 class UploadStreamStats:
+    """上传流的大小和内容哈希。"""
+
     size: int
     sha256: str
 
 
 class ObjectStorage(Protocol):
+    """知识文件对象存储协议。"""
+
     backend: str
 
     async def save_upload_stream(
@@ -49,13 +62,18 @@ class ObjectStorage(Protocol):
 
     async def delete(self, stored_object: StoredObject) -> None: ...
 
-    def download_to_temp(self, file_obj: object): ...
+    def download_to_temp(
+        self,
+        file_obj: object,
+    ) -> AbstractAsyncContextManager[Path]: ...
 
 
 class LocalObjectStorage:
+    """本地文件系统对象存储实现。"""
+
     backend = "local"
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path) -> None:
         self.root = root
 
     async def save_upload_stream(
@@ -122,6 +140,8 @@ class LocalObjectStorage:
 
 
 class S3ObjectStorage:
+    """S3-compatible 对象存储实现。"""
+
     backend = "s3"
 
     def __init__(
@@ -134,7 +154,7 @@ class S3ObjectStorage:
         access_key_id: str | None = None,
         secret_access_key: str | None = None,
         client: Any | None = None,
-    ):
+    ) -> None:
         self.bucket = bucket
         self.prefix = prefix.strip("/")
         self.client = client or self._create_client(
@@ -244,6 +264,7 @@ class S3ObjectStorage:
 
 
 def create_object_storage(settings) -> ObjectStorage:
+    """按 Settings 构建对象存储实现。"""
     if settings.STORAGE_BACKEND == "local":
         return LocalObjectStorage(settings.local_storage_root)
     if not settings.S3_BUCKET:
@@ -276,7 +297,7 @@ async def _stream_upload_to_path(
             if total_size > max_size_bytes:
                 raise UploadSizeLimitExceeded("upload exceeds max_size_bytes")
             hasher.update(chunk)
-            target.write(chunk)  # 本地内存写入无需 asyncio.to_thread
+            target.write(chunk)
     return UploadStreamStats(size=total_size, sha256=hasher.hexdigest())
 
 

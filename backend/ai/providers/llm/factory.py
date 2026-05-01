@@ -1,3 +1,10 @@
+"""LLM provider factory.
+
+职责：按配置文件选择 LLM provider，并在多 profile 或多 key 时构造路由服务。
+边界：本模块只创建服务实例，不执行模型请求。
+失败处理：未知 provider 在启动或依赖注入阶段尽早暴露。
+"""
+
 from backend.config.llm import LLMProfile, get_llm_model_config
 from backend.core.config import settings
 from backend.domain.interfaces import AbstractLLMService
@@ -9,7 +16,7 @@ from .routing_service import LLMRouteCandidate, LLMRoutingService
 
 
 class LLMProviderFactory:
-    """负责按配置选择并构建 LLM provider。"""
+    """按配置构建 LLM 服务实例。"""
 
     @staticmethod
     def create(provider: str | None = None) -> AbstractLLMService:

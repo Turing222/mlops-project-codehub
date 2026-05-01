@@ -1,3 +1,10 @@
+"""Non-streaming chat workflow.
+
+职责：编排非流式聊天请求的幂等、会话消息、Prompt/RAG、LLM 调用和结果持久化。
+边界：本模块不实现 provider 细节，也不负责 HTTP 响应结构。
+失败处理：任一阶段失败会清理幂等锁并回写助手消息失败状态。
+"""
+
 import asyncio
 import logging
 import uuid
@@ -41,10 +48,6 @@ logger = logging.getLogger(__name__)
 class ChatNonStreamWorkflow:
     """非流式对话编排器。"""
 
-    # R2/R4 修复：Semaphore 改为全局共享实例（见 core/concurrency.py），
-    # 使用 threading.Lock 双重检查保护初始化，消除类级别竞态，
-    # 并确保与 ChatWorkflow 共享同一并发上限。
-
     @staticmethod
     def _get_llm_semaphore() -> asyncio.Semaphore:
         return get_llm_semaphore()
@@ -59,7 +62,7 @@ class ChatNonStreamWorkflow:
         llm_service: AbstractLLMService,
         prompt_manager: PromptManager | None = None,
         rag_service: AbstractRAGService | None = None,
-    ):
+    ) -> None:
         self.uow = uow
         self.llm_service = llm_service
         self.prompt_manager = prompt_manager or PromptManager()
@@ -292,8 +295,7 @@ class ChatNonStreamWorkflow:
         ) as span:
             async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
-                    # R1/R5 修复：用 SELECT FOR UPDATE 悲观锁读取用户行，
-                    # 防止多个并发请求同时通过余额检查（TOCTOU 竞态）
+                    # 悲观锁保护 token 余额检查，避免并发请求同时通过额度判断。
                     user = await self.uow.user_repo.get_with_lock(user_id)
                     if user and user.used_tokens >= user.max_tokens:
                         if redis is not None and lock_key is not None:
@@ -467,7 +469,7 @@ class ChatNonStreamWorkflow:
                         tokens_output=result.completion_tokens,
                         search_context=search_context,
                     )
-                    # R1/R5 修复：条件原子累加，超出上限时返回 False
+                    # token 累加使用条件更新，避免并发完成时突破用户额度上限。
                     total_tokens = tokens_input + (result.completion_tokens or 0)
                     ok = await self.uow.user_repo.increment_used_tokens_guarded(
                         user_id, total_tokens

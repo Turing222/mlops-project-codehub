@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +12,7 @@ from backend.models.orm.knowledge import File, FileStatus, FileVisibility, Knowl
 class KnowledgeRepository:
     """知识库聚合仓储（多模型组合，不继承 CRUDBase）。"""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_kb(self, kb_id: uuid.UUID) -> KnowledgeBase | None:
@@ -76,7 +77,7 @@ class KnowledgeRepository:
         storage_key: str | None = None,
         content_sha256: str | None = None,
     ) -> File:
-        file_obj = File(
+        knowledge_file = File(
             kb_id=kb_id,
             filename=filename,
             file_path=file_path,
@@ -90,10 +91,10 @@ class KnowledgeRepository:
             storage_key=storage_key,
             content_sha256=content_sha256,
         )
-        self.session.add(file_obj)
+        self.session.add(knowledge_file)
         await self.session.flush()
-        await self.session.refresh(file_obj)
-        return file_obj
+        await self.session.refresh(knowledge_file)
+        return knowledge_file
 
     async def get_file(self, file_id: uuid.UUID) -> File | None:
         return await self.session.get(File, file_id)
@@ -120,27 +121,31 @@ class KnowledgeRepository:
         file_id: uuid.UUID,
         status: FileStatus,
     ) -> File | None:
-        file_obj = await self.get_file(file_id)
-        if not file_obj:
+        knowledge_file = await self.get_file(file_id)
+        if not knowledge_file:
             return None
-        file_obj.status = status
-        self.session.add(file_obj)
+        knowledge_file.status = status
+        self.session.add(knowledge_file)
         await self.session.flush()
-        await self.session.refresh(file_obj)
-        return file_obj
+        await self.session.refresh(knowledge_file)
+        return knowledge_file
 
     async def delete_chunks_for_file(self, file_id: uuid.UUID) -> None:
         stmt = delete(DocumentChunk).where(DocumentChunk.file_id == file_id)
         await self.session.execute(stmt)
 
-    async def add_chunks(self, chunks_data: list[dict]):
+    async def add_chunks(self, chunks_data: list[dict]) -> None:
         # chunks_data 包含 content 和 embedding(list)
         if not chunks_data:
             return
         stmt = insert(DocumentChunk).values(chunks_data)
         await self.session.execute(stmt)
 
-    async def vector_search(self, query_vector: list[float], limit=5):
+    async def vector_search(
+        self,
+        query_vector: list[float],
+        limit: int = 5,
+    ) -> Sequence[DocumentChunk]:
         # 利用 pgvector 的 <=> 符号进行余弦相似度搜索
         from sqlalchemy import select
 

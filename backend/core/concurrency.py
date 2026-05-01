@@ -1,9 +1,8 @@
-"""
-ChatWorkflow 与 ChatNonStreamWorkflow 在同一 Python 进程内共享同一
-Semaphore 实例，确保进程内的 LLM / DB 并发上限一致。
+"""Process-local concurrency gates.
 
-注意：asyncio.Semaphore 不是分布式并发控制；多 uvicorn worker、
-多 TaskIQ worker、多容器部署时，每个进程都会拥有独立的 Semaphore。
+职责：为聊天 workflow 提供进程内共享的 LLM/DB semaphore 和 trace 计时。
+边界：asyncio.Semaphore 不是分布式限流；多 worker/多容器各自拥有独立额度。
+副作用：等待和持有时长会写入当前 trace span。
 """
 
 import asyncio
@@ -16,7 +15,7 @@ from typing import Any
 from backend.core.config import settings
 from backend.core.trace_utils import set_span_attributes, trace_span
 
-# --- 线程锁：保护 Semaphore 的懒初始化 ---
+# 懒初始化可能跨线程触发，用线程锁保护同一进程内的单例。
 _llm_lock = threading.Lock()
 _db_lock = threading.Lock()
 
@@ -25,12 +24,7 @@ _db_semaphore: asyncio.Semaphore | None = None
 
 
 def get_llm_semaphore() -> asyncio.Semaphore:
-    """
-    获取全局 LLM 并发 Semaphore（懒初始化 + 双重检查）。
-
-    threading.Lock 保护初始化过程，asyncio.Semaphore 在已有 event loop
-    的情况下被创建，两个 Workflow 共享同一实例。
-    """
+    """返回进程内共享的 LLM semaphore。"""
     global _llm_semaphore
     if _llm_semaphore is None:
         with _llm_lock:
@@ -40,9 +34,7 @@ def get_llm_semaphore() -> asyncio.Semaphore:
 
 
 def get_db_semaphore() -> asyncio.Semaphore:
-    """
-    获取全局 DB 并发 Semaphore（懒初始化 + 双重检查）。
-    """
+    """返回进程内共享的 DB semaphore。"""
     global _db_semaphore
     if _db_semaphore is None:
         with _db_lock:
@@ -58,9 +50,7 @@ async def traced_semaphore_slot(
     limit: int,
     attributes: Mapping[str, Any] | None = None,
 ) -> AsyncIterator[None]:
-    """
-    Acquire a semaphore slot and expose queue/hold timing as a child trace span.
-    """
+    """获取 semaphore 槽位，并记录排队和持有时长。"""
     span_attrs: dict[str, Any] = {
         "concurrency.name": name,
         "concurrency.limit": limit,
@@ -90,6 +80,7 @@ async def traced_semaphore_slot(
 def llm_concurrency_slot(
     attributes: Mapping[str, Any] | None = None,
 ) -> AbstractAsyncContextManager[None]:
+    """返回 LLM 并发槽位上下文。"""
     return traced_semaphore_slot(
         "llm",
         get_llm_semaphore(),
@@ -101,6 +92,7 @@ def llm_concurrency_slot(
 def db_concurrency_slot(
     attributes: Mapping[str, Any] | None = None,
 ) -> AbstractAsyncContextManager[None]:
+    """返回 DB 并发槽位上下文。"""
     return traced_semaphore_slot(
         "db",
         get_db_semaphore(),
@@ -110,10 +102,7 @@ def db_concurrency_slot(
 
 
 def reset_semaphores() -> None:
-    """
-    测试专用：重置 Semaphore 实例，以便在不同 event loop 中重新初始化。
-    生产代码不应调用此函数。
-    """
+    """测试专用：跨 event loop 用例结束后重置 semaphore 单例。"""
     global _llm_semaphore, _db_semaphore
     with _llm_lock:
         _llm_semaphore = None

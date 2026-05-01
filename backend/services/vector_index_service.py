@@ -1,3 +1,10 @@
+"""Vector index service.
+
+职责：把文件切片转换为 embedding 并写入/检索知识库索引。
+边界：本模块不解析原始文件、不决定知识库访问权限。
+风险：替换文件切片会先删除旧索引再写入新索引，调用方应放在事务边界内。
+"""
+
 import asyncio
 import hashlib
 import uuid
@@ -12,17 +19,21 @@ CHUNKING_VERSION = 1
 
 
 class _HybridHit(TypedDict):
+    """混合检索融合过程中的内部命中结构。"""
+
     chunk: DocumentChunk
     score: float
 
 
 class VectorIndexService(BaseService[AbstractUnitOfWork]):
+    """知识库向量索引写入和检索服务。"""
+
     def __init__(
         self,
         uow: AbstractUnitOfWork,
         embedder: AbstractRAGEmbedder,
         embed_batch_size: int = 32,
-    ):
+    ) -> None:
         super().__init__(uow)
         self.embedder = embedder
         self.embed_batch_size = max(1, embed_batch_size)
@@ -245,7 +256,7 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
         if max_score <= 0:
             return [(item["chunk"], 1.0) for item in ranked]
 
-        # 归一化到与向量检索一致的距离方向（越小越好）
+        # 混合分数越高越相关；对外保持与向量距离一致的“越小越好”语义。
         return [
             (
                 item["chunk"],

@@ -1,4 +1,9 @@
-# app/core/exceptions.py
+"""Application exception boundary.
+
+职责：定义统一业务异常和 FastAPI 全局异常处理器。
+边界：本模块只塑形 HTTP 错误响应，不负责业务补偿或日志上下文生成。
+副作用：处理器会透传 request_id/trace_id 响应头，便于前端和日志关联。
+"""
 
 import logging
 import time
@@ -10,8 +15,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-# 获取我们在 setup_logging 中配置好的 logger
-# 这里用 "uvicorn.error" 或者 __name__ 都可以，只要是根记录器的子集就能继承配置
 logger = logging.getLogger(__name__)
 
 
@@ -32,9 +35,14 @@ def _trace_response_headers(request: Request) -> dict[str, str]:
     return headers
 
 
-def setup_exception_handlers(app: FastAPI):
+def setup_exception_handlers(app: FastAPI) -> None:
+    """注册全局异常处理器，保持错误响应结构一致。"""
+
     @app.exception_handler(AppException)
-    async def app_exception_handler(request: Request, exc: AppException):
+    async def app_exception_handler(
+        request: Request,
+        exc: AppException,
+    ) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None)
 
         logger.warning(
@@ -58,7 +66,10 @@ def setup_exception_handlers(app: FastAPI):
         )
 
     @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    async def http_exception_handler(
+        request: Request,
+        exc: StarletteHTTPException,
+    ) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None)
         detail = exc.detail
 
@@ -86,7 +97,10 @@ def setup_exception_handlers(app: FastAPI):
         )
 
     @app.exception_handler(RequestValidationError)
-    async def request_validation_handler(request: Request, exc: RequestValidationError):
+    async def request_validation_handler(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None)
 
         logger.warning(
@@ -109,7 +123,10 @@ def setup_exception_handlers(app: FastAPI):
         )
 
     @app.exception_handler(Exception)
-    async def unexpected_exception_handler(request: Request, exc: Exception):
+    async def unexpected_exception_handler(
+        request: Request,
+        exc: Exception,
+    ) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None)
 
         logger.exception(
@@ -131,13 +148,15 @@ def setup_exception_handlers(app: FastAPI):
 
 
 class AppException(Exception):
+    """可映射为统一 HTTP 错误响应的业务异常。"""
+
     def __init__(
         self,
         code: str,
         message: str,
         status_code: int = 400,
         details: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         self.code = code
         self.message = message
         self.status_code = status_code
@@ -151,6 +170,7 @@ def app_bad_request(
     code: str = "BAD_REQUEST",
     details: dict[str, Any] | None = None,
 ) -> AppException:
+    """创建 400 Bad Request 业务异常。"""
     return AppException(code=code, message=message, status_code=400, details=details)
 
 
@@ -160,6 +180,7 @@ def app_validation_error(
     code: str = "VALIDATION_ERROR",
     details: dict[str, Any] | None = None,
 ) -> AppException:
+    """创建 422 Validation Error 业务异常。"""
     return AppException(code=code, message=message, status_code=422, details=details)
 
 
@@ -169,6 +190,7 @@ def app_unauthorized(
     code: str = "UNAUTHORIZED",
     details: dict[str, Any] | None = None,
 ) -> AppException:
+    """创建 401 Unauthorized 业务异常。"""
     return AppException(code=code, message=message, status_code=401, details=details)
 
 
@@ -178,6 +200,7 @@ def app_forbidden(
     code: str = "PERMISSION_DENIED",
     details: dict[str, Any] | None = None,
 ) -> AppException:
+    """创建 403 Forbidden 业务异常。"""
     return AppException(code=code, message=message, status_code=403, details=details)
 
 
@@ -187,6 +210,7 @@ def app_not_found(
     code: str = "RESOURCE_NOT_FOUND",
     details: dict[str, Any] | None = None,
 ) -> AppException:
+    """创建 404 Not Found 业务异常。"""
     return AppException(code=code, message=message, status_code=404, details=details)
 
 
@@ -196,6 +220,7 @@ def app_payload_too_large(
     code: str = "PAYLOAD_TOO_LARGE",
     details: dict[str, Any] | None = None,
 ) -> AppException:
+    """创建 413 Payload Too Large 业务异常。"""
     return AppException(code=code, message=message, status_code=413, details=details)
 
 
@@ -205,6 +230,7 @@ def app_too_many_requests(
     code: str = "TOO_MANY_REQUESTS",
     details: dict[str, Any] | None = None,
 ) -> AppException:
+    """创建 429 Too Many Requests 业务异常。"""
     return AppException(code=code, message=message, status_code=429, details=details)
 
 
@@ -214,6 +240,7 @@ def app_service_error(
     code: str = "SERVICE_ERROR",
     details: dict[str, Any] | None = None,
 ) -> AppException:
+    """创建 500 Service Error 业务异常。"""
     return AppException(code=code, message=message, status_code=500, details=details)
 
 
@@ -223,4 +250,5 @@ def app_dependency_unavailable(
     code: str = "DEPENDENCY_UNAVAILABLE",
     details: dict[str, Any] | None = None,
 ) -> AppException:
+    """创建 503 Dependency Unavailable 业务异常。"""
     return AppException(code=code, message=message, status_code=503, details=details)

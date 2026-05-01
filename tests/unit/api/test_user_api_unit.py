@@ -119,7 +119,7 @@ async def test_read_user_returns_404_when_not_found(user_service):
         )
 
     assert exc_info.value.status_code == 404
-    assert exc_info.value.message == "User not found"
+    assert exc_info.value.message == "用户不存在"
 
 
 @pytest.mark.asyncio
@@ -154,7 +154,7 @@ async def test_update_user_returns_404_when_not_found(user_service):
         )
 
     assert exc_info.value.status_code == 404
-    assert exc_info.value.message == "User not found"
+    assert exc_info.value.message == "用户不存在"
 
 
 @pytest.mark.asyncio
@@ -195,7 +195,7 @@ async def test_create_user_returns_400_when_service_returns_none(user_service):
         )
 
     assert exc_info.value.status_code == 400
-    assert exc_info.value.message == "User creation failed"
+    assert exc_info.value.message == "用户创建失败"
 
 
 @pytest.mark.asyncio

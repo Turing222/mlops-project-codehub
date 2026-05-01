@@ -1,3 +1,10 @@
+"""Application settings.
+
+职责：合并环境变量、dotenv、Docker secrets 和 YAML 配置，生成应用运行设置。
+边界：本模块不创建数据库、Redis 或 LLM 客户端；只提供配置值和派生 URL。
+副作用：导入时会加载受支持的 *_FILE secret 到环境变量。
+"""
+
 import logging
 import os
 from functools import lru_cache
@@ -47,6 +54,8 @@ def _env_files() -> tuple[str, ...] | None:
 
 
 class AppYamlSettingsSource(PydanticBaseSettingsSource):
+    """把 app/base.yaml 和 app/{APP_ENV}.yaml 接入 Pydantic Settings。"""
+
     def get_field_value(self, field, field_name: str) -> tuple[Any, str, bool]:
         return None, field_name, False
 
@@ -81,20 +90,19 @@ class AppYamlSettingsSource(PydanticBaseSettingsSource):
 
 
 class Settings(BaseSettings):
-    # --- 目录配置 ---
-    # 使用 Path 的写法更现代、简洁
+    """应用配置值和少量派生属性。"""
+
+    # 路径类配置保持为 Path，避免调用方重复做字符串转换。
     APP_ENV: str = Field(default_factory=_current_app_env)
     CONFIG_DIR: Path = Field(default_factory=_config_dir)
     BASE_DIR: Path = BASE_DIR
     LOG_DIR: Path = BASE_DIR / "logs/backend"
 
-    # --- 项目信息 ---
     PROJECT_NAME: str = "Obsidian Mentor AI"
     VERSION: str = "0.1.0"
     API_ROOT_PATH: str = "/api"
     API_V1_STR: str = "/v1"
 
-    # --- 数据库配置 (敏感信息不设置默认值，强制从 env 读取) ---
     DATABASE_URL: str | None = None
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = ""
@@ -109,15 +117,13 @@ class Settings(BaseSettings):
 
     BATCH_SIZE: int = 500
 
-    # --- LLM & AI 配置 ---
     OPENAI_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
     GOOGLE_API_KEY: str | None = None
     DEEPSEEK_API_KEY: str | None = None
 
     OBSIDIAN_VAULT_PATH: str = "/data/obsidian"
-    # Deprecated: 已被 LOCAL_STORAGE_ROOT 取代，将在后续版本移除。
-    # 若同时设置 LOCAL_STORAGE_ROOT，该字段会被忽略（见 local_storage_root property）。
+    # 兼容旧配置名；实际读取优先级在 local_storage_root property 中统一处理。
     KNOWLEDGE_STORAGE_ROOT: Path = Path(".files/knowledge_files")
     STORAGE_BACKEND: str = "local"
     LOCAL_STORAGE_ROOT: Path | None = None  # 替代 KNOWLEDGE_STORAGE_ROOT，优先级更高
@@ -131,23 +137,19 @@ class Settings(BaseSettings):
     S3_ACCESS_KEY_ID: str | None = None
     S3_SECRET_ACCESS_KEY: str | None = None
 
-    # --- Redis 配置 ---
     REDIS_URL: str | None = None
     TASKIQ_REDIS_URL: str | None = None
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: str | None = None
 
-    # --- 并发控制配置 ---
     LLM_MAX_CONCURRENCY: int = 5
     DB_MAX_CONCURRENCY: int = 10
     RATE_LIMIT_TRUSTED_PROXY_CIDRS: str = ""
-    # R8 修复：聊天接口速率限制参数外置到 Settings，通过环境变量控制，
-    # 压测环境可覆盖 CHAT_RATE_LIMIT_TIMES=100000，生产环境使用安全默认值。
+    # 限流参数必须可通过环境覆盖，压测和生产会使用不同阈值。
     CHAT_RATE_LIMIT_TIMES: int = 10
     CHAT_RATE_LIMIT_SECONDS: int = 60
 
-    # --- LLM 对话配置 ---
     LLM_PROVIDER: str = "mock"
     LLM_BASE_URL: str = "https://api.openai.com/v1"
     LLM_API_KEY: str = ""
@@ -167,12 +169,11 @@ class Settings(BaseSettings):
     RAG_EMBED_DIM: int = Field(default=768, ge=1)
     RAG_EMBED_BATCH_SIZE: int = Field(default=32, ge=1, le=256)
 
-    # --- 安全配置 (SECRET_KEY 必须从 env 读取) ---
+    # SECRET_KEY 不提供默认值，避免本地默认密钥进入生产。
     SECRET_KEY: str = Field(..., min_length=1)
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
-    # Pydantic Settings 配置
     model_config = SettingsConfigDict(
         env_file=_env_files(),
         env_file_encoding="utf-8",
@@ -308,6 +309,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """返回进程级缓存的 Settings。"""
     return Settings()
 
 

@@ -1,3 +1,10 @@
+"""Workspace permission service.
+
+职责：读取用户在 workspace 中的角色，并按配置策略判断权限。
+边界：本模块不维护角色数据；角色增删改由 WorkspaceService/repository 负责。
+风险：缺失 workspace 或角色时的默认行为完全由权限配置控制。
+"""
+
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +20,7 @@ from backend.services.permission_types import Permission
 class PermissionService:
     """配置文件驱动的工作区权限判断入口。"""
 
-    def __init__(self, uow: AbstractUnitOfWork):
+    def __init__(self, uow: AbstractUnitOfWork) -> None:
         self.uow = uow
         self.policy = get_permission_policy()
 

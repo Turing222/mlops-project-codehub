@@ -1,3 +1,10 @@
+"""Database engine lifecycle.
+
+职责：按 Settings 创建 async SQLAlchemy engine/session factory，并接入可选 DB tracing。
+边界：本模块不定义 repository 或事务边界；事务由 UnitOfWork 管理。
+副作用：init_db 会在 FastAPI lifespan 中预热连接并在关闭时释放连接池。
+"""
+
 import logging
 import os
 from collections.abc import AsyncGenerator
@@ -92,12 +99,11 @@ def _instrument_engine(engine: AsyncEngine) -> None:
     logger.info("OpenTelemetry 数据库 tracing 已启用: %s", settings.database_url_safe)
 
 
-# 1. 配置化 Engine 创建函数 (不再直接在顶层实例化)
 def create_db_assets() -> tuple[AsyncEngine, async_sessionmaker]:
-    """工厂函数：创建 engine 和 session_maker"""
+    """创建 engine 和 session factory，供 app 与 worker 复用。"""
     engine = create_async_engine(
         settings.database_url,
-        echo=settings.POSTGRES_DB_ECHO,  # 建议从配置中读取，不要硬编码 True
+        echo=settings.POSTGRES_DB_ECHO,
         pool_size=settings.POSTGRES_POOL_SIZE,
         max_overflow=settings.POSTGRES_MAX_OVERFLOW,
         pool_pre_ping=True,
@@ -111,16 +117,11 @@ def create_db_assets() -> tuple[AsyncEngine, async_sessionmaker]:
     return engine, session_factory
 
 
-# 2. 核心：Lifespan 资源注册器
 @asynccontextmanager
 async def init_db(app: FastAPI) -> AsyncGenerator[None, None]:
-    """
-    负责数据库资源的完整生命周期管理。
-    DBA 注意：这是你注入数据库预热逻辑（Warm-up）的最佳位置。
-    """
+    """在 FastAPI lifespan 中注册数据库资源并负责关闭。"""
     engine, session_factory = create_db_assets()
 
-    # 挂载到 app.state
     app.state.db_engine = engine
     app.state.session_factory = session_factory
 
@@ -130,13 +131,12 @@ async def init_db(app: FastAPI) -> AsyncGenerator[None, None]:
     )
 
     try:
-        # 在这里可以添加启动时的连接检查（防止配置错误导致启动后报错）
+        # 启动期预热能尽早暴露数据库 URL、认证或网络配置错误。
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
 
-        yield  # 运行权交还给 FastAPI，直到应用关闭
+        yield
 
     finally:
-        # 优雅停机：释放连接池
         await engine.dispose()
         logger.info("Database connection pool closed.")

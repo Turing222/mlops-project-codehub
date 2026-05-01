@@ -1,3 +1,10 @@
+"""LLM model configuration.
+
+职责：加载 LLM、路由和 embedding profile 配置，并解析 provider/profile alias。
+边界：本模块只读取 YAML 与环境变量，不创建具体 provider 客户端。
+失败处理：未知 profile、route 或 embedding provider 会抛出配置错误。
+"""
+
 from __future__ import annotations
 
 import os
@@ -15,6 +22,8 @@ from backend.config.schemas import LLMModelsConfig
 
 @dataclass(frozen=True, slots=True)
 class LLMProfile:
+    """一个可实例化 LLM provider 的配置 profile。"""
+
     name: str
     provider: str
     model: str
@@ -41,6 +50,8 @@ class LLMProfile:
 
 @dataclass(frozen=True, slots=True)
 class LLMRoute:
+    """一组按顺序 fallback 的 LLM profile。"""
+
     name: str
     profiles: tuple[str, ...]
     aliases: tuple[str, ...]
@@ -48,6 +59,8 @@ class LLMRoute:
 
 @dataclass(frozen=True, slots=True)
 class LLMModelConfig:
+    """LLM 与 embedding 运行时配置索引。"""
+
     default_profile: str
     profiles: dict[str, LLMProfile]
     alias_map: dict[str, str]
@@ -106,6 +119,7 @@ def load_llm_model_config(
     *,
     config_dir: str | Path | None = None,
 ) -> LLMModelConfig:
+    """从 YAML 加载并校验 LLM 模型配置。"""
     data = load_yaml_config("llm/models.yaml", config_dir=config_dir)
     try:
         config = LLMModelsConfig.model_validate(data)
@@ -163,10 +177,12 @@ def load_llm_model_config(
 
 @lru_cache
 def get_llm_model_config() -> LLMModelConfig:
+    """返回进程级缓存的 LLM 模型配置。"""
     return load_llm_model_config()
 
 
 def validate_llm_configs() -> None:
+    """启动时校验 prompt 和模型配置能被加载。"""
     get_prompt_config()
     get_llm_model_config()
 

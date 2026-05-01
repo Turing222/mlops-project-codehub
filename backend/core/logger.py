@@ -1,6 +1,14 @@
+"""JSON logging setup.
+
+职责：配置根 logger 的 JSON 输出，并注入常用字段与 OTel trace 上下文。
+边界：本模块不决定业务日志内容；调用方仍负责选择日志级别和字段。
+副作用：setup_logging 会清理根 logger 现有 handler，避免重复输出。
+"""
+
 import datetime
 import logging
 import sys
+from typing import Any
 
 import orjson
 from pythonjsonlogger import jsonlogger
@@ -14,12 +22,10 @@ except ImportError:
 
 
 class OrjsonFormatter(jsonlogger.JsonFormatter):
-    """
-    使用 orjson 高性能序列化的 JSON 格式化器
-    """
+    """使用 orjson 序列化并补齐标准字段的 JSON formatter。"""
 
-    def __init__(self, *args, **kwargs):
-        # 预设常用的日志字段
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # 保留业务 extra 字段，过滤掉 logging.LogRecord 的内部噪声。
         if "reserved_attrs" not in kwargs:
             kwargs["reserved_attrs"] = (
                 "args",
@@ -47,15 +53,18 @@ class OrjsonFormatter(jsonlogger.JsonFormatter):
             )
         super().__init__(*args, **kwargs)
 
-    def json_serializer(self, obj):
-        # 使用 orjson 序列化，并返回字符串
-        # option=orjson.OPT_PASSTHROUGH_DATETIME 用于处理时间，
-        # 但 JsonFormatter 默认会把时间转存为 asctime 字符串
+    def json_serializer(self, obj: object) -> str:
+        """返回 python-json-logger 需要的 JSON 字符串。"""
         return orjson.dumps(obj).decode("utf-8")
 
-    def add_fields(self, log_record, record, message_dict):
+    def add_fields(
+        self,
+        log_record: dict[str, Any],
+        record: logging.LogRecord,
+        message_dict: dict[str, Any],
+    ) -> None:
         super().add_fields(log_record, record, message_dict)
-        # 统一时间字段名为 timestamp
+        # timestamp 字段名固定，方便日志检索和仪表盘复用。
         if log_record.get("asctime"):
             log_record["timestamp"] = log_record.pop("asctime")
         else:
@@ -63,14 +72,13 @@ class OrjsonFormatter(jsonlogger.JsonFormatter):
                 record.created
             ).isoformat()
 
-        # 丰富字段信息
         log_record["level"] = record.levelname
         log_record["logger"] = record.name
         log_record["module"] = record.module
         log_record["func_name"] = record.funcName
         log_record["line_no"] = record.lineno
 
-        # 注入 OTel trace context，实现 Logs ↔ Traces 关联
+        # trace_id/span_id 直接进入日志，便于从日志跳转到 trace。
         if _OTEL_AVAILABLE:
             span = otel_trace.get_current_span()
             ctx = span.get_span_context()
@@ -79,31 +87,22 @@ class OrjsonFormatter(jsonlogger.JsonFormatter):
                 log_record["span_id"] = f"{ctx.span_id:016x}"
 
 
-def setup_logging():
-    """
-    通用日志配置
-    """
-    # 确保日志文件夹存在（无论从哪启动，路径都由 settings 决定）
-    # settings.LOG_DIR.mkdir(parents=True, exist_ok=True)
-    # log_dir = settings.LOG_DIR
+def setup_logging() -> None:
+    """配置根 logger 的控制台 JSON 输出。"""
 
-    logger = logging.getLogger()  # 获取根日志记录器
-    # logger.setLevel(logging.INFO)
+    logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
-    # 创建通用的 JSON Formatter 实例化
     json_formatter = OrjsonFormatter()
 
-    # 清除已有的 Handler（防止多次调用导致重复打印）
+    # 多次初始化时先清空 handler，避免同一日志被重复发送。
     if logger.handlers:
         logger.handlers.clear()
 
-    # 1. 输出到控制台的 Handler
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.DEBUG)
-    # 使用预先配置好的 JSON Formatter
     console_handler.setFormatter(json_formatter)
     logger.addHandler(console_handler)
 
-    # 降低一些第三方库冗余日志的级别，防止刷屏
+    # 第三方访问/SQL 日志量大，默认降级以保留业务日志信噪比。
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)

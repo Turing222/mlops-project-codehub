@@ -1,3 +1,10 @@
+"""Docker secret environment loader.
+
+职责：把受支持的 FOO_FILE 文件内容加载到对应 FOO 环境变量。
+边界：只处理白名单中的 secret 名称，避免任意文件被写入环境。
+副作用：模块导入时立即加载 secret，供 Settings 和第三方库读取。
+"""
+
 from __future__ import annotations
 
 import logging
@@ -23,7 +30,7 @@ SECRET_ENV_NAMES = {
 
 
 def load_secret_env() -> None:
-    """Load supported FOO_FILE secrets into FOO for libraries that read env vars."""
+    """加载受支持的 *_FILE secret 到环境变量。"""
     for name in SECRET_ENV_NAMES:
         path = os.getenv(f"{name}_FILE")
         if not path:

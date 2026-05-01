@@ -1,3 +1,10 @@
+"""Task worker healthcheck.
+
+职责：检查 TaskIQ worker 进程数量和队列 Redis 可用性。
+边界：只用于容器/运维健康检查，不验证具体任务执行能力。
+失败处理：异常会写入 stderr 并以非零退出码返回。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -60,6 +67,7 @@ async def _main() -> int:
 
 
 def main() -> int:
+    """命令行入口，返回 shell 友好的退出码。"""
     try:
         return asyncio.run(_main())
     except Exception as exc:

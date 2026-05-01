@@ -1,3 +1,10 @@
+"""Prompt resolver.
+
+职责：从 YAML 或 Langfuse 缓存解析 Prompt 模板，并提供进程内 TTL 缓存。
+边界：本模块只编译模板，不负责渲染业务变量或同步 Langfuse 数据。
+失败处理：缓存不可用且允许 fallback 时回退到 YAML 配置。
+"""
+
 from __future__ import annotations
 
 import logging
@@ -21,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class PromptResolver:
-    """Resolve prompt templates from Langfuse cache with YAML fallback."""
+    """按配置解析并缓存 Prompt 模板。"""
 
     def __init__(
         self,
@@ -171,4 +178,5 @@ _prompt_resolver = PromptResolver()
 
 
 def get_prompt_resolver() -> PromptResolver:
+    """返回进程级 PromptResolver 单例。"""
     return _prompt_resolver

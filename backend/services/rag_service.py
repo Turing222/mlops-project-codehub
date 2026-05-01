@@ -1,3 +1,10 @@
+"""RAG retrieval service.
+
+职责：对知识库执行向量、全文或混合检索，并返回 Prompt 可消费的片段结构。
+边界：本模块不解析文件、不维护索引；索引写入由 VectorIndexService 完成。
+失败处理：非业务异常降级为空检索上下文，保证聊天主链路可继续。
+"""
+
 import logging
 import uuid
 
@@ -15,19 +22,14 @@ logger = logging.getLogger(__name__)
 
 
 class RAGService(AbstractRAGService):
-    """
-    本地 RAG 检索服务（服务层）。
-    - 负责 query embedding
-    - 负责按 kb_id 做向量检索
-    - 返回统一结构，供 Workflow 组装 Prompt 与回写 search_context
-    """
+    """知识库检索服务。"""
 
     def __init__(
         self,
         uow: AbstractUnitOfWork,
         embedder: AbstractRAGEmbedder,
         top_k: int = 4,
-    ):
+    ) -> None:
         self.uow = uow
         self.embedder = embedder
         self.vector_index_service = VectorIndexService(uow=uow, embedder=embedder)

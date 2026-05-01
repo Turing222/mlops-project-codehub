@@ -8,6 +8,7 @@ Chat API — 对话相关的 HTTP 端点
 """
 
 import uuid
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -118,7 +119,7 @@ async def query_stream(
     """
     import json as _json
 
-    async def _audited_stream():
+    async def _audited_stream() -> AsyncIterator[str]:
         async with capture_audit(
             audit_service,
             action=AuditAction.CHAT_QUERY_STREAM,

@@ -1,3 +1,10 @@
+"""Mock LLM provider.
+
+职责：为本地开发、烟测和压测提供确定性的 LLM 输出。
+边界：本模块不发起外部网络请求，也不模拟真实模型质量。
+副作用：通过 sleep 模拟流式延迟，便于观察 API/DB/Redis 链路压力。
+"""
+
 import asyncio
 from collections.abc import AsyncGenerator
 
@@ -7,11 +14,7 @@ from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 
 
 class MockLLMService(AbstractLLMService):
-    """
-    专为极高并发压测设计的虚假 LLM 引擎。
-    它不会发起任何真实的网络请求，而是通过 asyncio.sleep 模拟生成延迟，
-    从而将性能瓶颈完全留给 FastAPI / 数据库 / Redis 进行检验。
-    """
+    """用于本地和压测的确定性 LLM 实现。"""
     
     async def stream_response(
         self,

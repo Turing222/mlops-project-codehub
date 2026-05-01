@@ -1,3 +1,10 @@
+"""Workspace service.
+
+职责：管理工作区、成员和角色变更。
+边界：本模块不直接暴露权限矩阵；权限判断委托给 PermissionService。
+风险：owner 角色变更需要额外保护，避免移除或降级最后一个 owner。
+"""
+
 import uuid
 from collections.abc import Sequence
 
@@ -18,7 +25,9 @@ from backend.services.permission_service import Permission, PermissionService
 
 
 class WorkspaceService(BaseService[AbstractUnitOfWork]):
-    def __init__(self, uow: AbstractUnitOfWork):
+    """工作区和成员管理服务。"""
+
+    def __init__(self, uow: AbstractUnitOfWork) -> None:
         super().__init__(uow)
         self.permission_service = PermissionService(uow)
 
@@ -125,7 +134,7 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
     ) -> None:
         workspace = await self._get_workspace_or_404(workspace_id)
         if current_user.is_superuser and self.permission_service.policy.superuser_bypass:
-            # R7: 超管也走软删除，保留关联数据
+            # 超管也走软删除，保留 KB/File/ChatSession 的 workspace 外键关系。
             await self.uow.access_repo.soft_delete_workspace(workspace)
             return
 
@@ -139,7 +148,7 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
                 code="WORKSPACE_OWNER_REQUIRED",
                 details={"workspace_id": str(workspace_id)},
             )
-        # R7: 改为软删除，保持 KB/File/ChatSession workspace_id 外键不变
+        # 工作区删除使用软删除，避免破坏历史知识库、文件和会话关联。
         await self.uow.access_repo.soft_delete_workspace(workspace)
 
     async def list_workspace_members(

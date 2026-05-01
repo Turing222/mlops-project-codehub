@@ -1,3 +1,10 @@
+"""Configuration schemas.
+
+职责：定义 YAML 配置文件的 Pydantic schema 和跨字段校验。
+边界：本模块不读取文件、不访问环境变量，只验证传入配置结构。
+失败处理：权限、角色、模板、profile 和 alias 冲突在加载阶段暴露。
+"""
+
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -7,18 +14,21 @@ from backend.services.permission_types import Permission
 
 
 class PermissionDefinition(BaseModel):
+    """单个权限的文档化定义。"""
     description: str = ""
 
     model_config = ConfigDict(extra="forbid")
 
 
 class RoleDefinition(BaseModel):
+    """workspace 角色包含的权限列表。"""
     permissions: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
 
 class PermissionDefaults(BaseModel):
+    """权限策略的默认 fallback 行为。"""
     superuser_bypass: bool = True
     missing_workspace: Literal["allow", "deny"] = "deny"
     missing_role: Literal["allow", "deny"] = "deny"
@@ -27,6 +37,7 @@ class PermissionDefaults(BaseModel):
 
 
 class PermissionsConfig(BaseModel):
+    """access/permissions.yaml 的完整 schema。"""
     version: int = 1
     permissions: dict[str, PermissionDefinition]
     roles: dict[str, RoleDefinition]
@@ -86,6 +97,7 @@ class PermissionsConfig(BaseModel):
 
 
 class PromptTemplateDefinition(BaseModel):
+    """Prompt 模板文本定义。"""
     content: str
 
     model_config = ConfigDict(extra="forbid")
@@ -99,12 +111,14 @@ class PromptTemplateDefinition(BaseModel):
 
 
 class PromptDefaults(BaseModel):
+    """Prompt 模板默认变量。"""
     variables: dict[str, object] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
 
 
 class PromptSource(BaseModel):
+    """Prompt 来源与缓存策略。"""
     provider: Literal["yaml", "langfuse_cache"] = "yaml"
     label: str = "production"
     ttl_seconds: int = Field(default=300, ge=0)
@@ -116,6 +130,7 @@ class PromptSource(BaseModel):
 
 
 class LangfusePromptDefinition(BaseModel):
+    """Langfuse prompt 映射定义。"""
     name: str
     type: Literal["text", "chat"] = "text"
     version: int | None = None
@@ -131,12 +146,14 @@ class LangfusePromptDefinition(BaseModel):
 
 
 class LangfusePromptConfig(BaseModel):
+    """Langfuse prompt 映射集合。"""
     templates: dict[str, LangfusePromptDefinition] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
 
 
 class PromptsConfig(BaseModel):
+    """llm/prompts.yaml 的完整 schema。"""
     version: int = 1
     source: PromptSource = Field(default_factory=PromptSource)
     langfuse: LangfusePromptConfig = Field(default_factory=LangfusePromptConfig)
@@ -166,6 +183,7 @@ class PromptsConfig(BaseModel):
 
 
 class LLMModelProfile(BaseModel):
+    """单个 LLM provider profile。"""
     provider: str
     model: str
     base_url: str | None = None
@@ -191,6 +209,7 @@ class LLMModelProfile(BaseModel):
 
 
 class LLMModelRoute(BaseModel):
+    """一组按顺序尝试的 LLM profile。"""
     profiles: list[str] = Field(min_length=1)
     aliases: list[str] = Field(default_factory=list)
 
@@ -206,6 +225,7 @@ class LLMModelRoute(BaseModel):
 
 
 class EmbeddingModelProfile(BaseModel):
+    """单个 embedding provider profile。"""
     provider: str
     model: str
     base_url: str | None = None
@@ -232,6 +252,7 @@ class EmbeddingModelProfile(BaseModel):
 
 
 class EmbeddingModelsConfig(BaseModel):
+    """embedding profile 配置集合。"""
     default_profile: str
     profiles: dict[str, EmbeddingModelProfile]
 
@@ -264,6 +285,7 @@ class EmbeddingModelsConfig(BaseModel):
 
 
 class LLMModelsConfig(BaseModel):
+    """llm/models.yaml 的完整 schema。"""
     version: int = 1
     default_profile: str
     profiles: dict[str, LLMModelProfile]

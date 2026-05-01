@@ -11,7 +11,7 @@ UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
 
 class CRUDBase[ModelType, CreateSchemaType: BaseModel, UpdateSchemaType: BaseModel]:
-    def __init__(self, model: type[ModelType], session: AsyncSession):
+    def __init__(self, model: type[ModelType], session: AsyncSession) -> None:
         """
         CRUD 对象应该包含具体的 SQLAlchemy 模型 (Model class)
         例如: user_crud = CRUDBase(User)

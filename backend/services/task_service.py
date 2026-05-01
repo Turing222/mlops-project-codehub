@@ -1,3 +1,10 @@
+"""Task service.
+
+职责：创建知识库入库任务并维护任务状态。
+边界：本模块只写 TaskJob 记录，不投递 TaskIQ 消息。
+风险：任务访问校验基于 payload.user_id，任务创建方必须写入该字段。
+"""
+
 import uuid
 
 from backend.core.exceptions import app_not_found
@@ -7,7 +14,9 @@ from backend.services.base import BaseService
 
 
 class TaskService(BaseService[AbstractUnitOfWork]):
-    def __init__(self, uow: AbstractUnitOfWork):
+    """TaskJob 创建、状态流转和访问校验服务。"""
+
+    def __init__(self, uow: AbstractUnitOfWork) -> None:
         super().__init__(uow)
 
     async def create_kb_ingestion_task(

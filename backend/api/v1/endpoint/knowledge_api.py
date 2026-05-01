@@ -125,9 +125,12 @@ async def get_file_status(
     permission_service: PermissionService = Depends(get_permission_service),
 ) -> KnowledgeFileResponse:
     async with service.uow:
-        file_obj = await service.get_file(file_id=file_id)
-        if not file_obj:
+        knowledge_file = await service.get_file(file_id=file_id)
+        if not knowledge_file:
             raise app_not_found("文件不存在", code="KNOWLEDGE_FILE_NOT_FOUND")
 
-        await service.ensure_kb_access(kb_id=file_obj.kb_id, user_id=current_user.id)
-    return KnowledgeFileResponse.model_validate(file_obj)
+        await service.ensure_kb_access(
+            kb_id=knowledge_file.kb_id,
+            user_id=current_user.id,
+        )
+    return KnowledgeFileResponse.model_validate(knowledge_file)

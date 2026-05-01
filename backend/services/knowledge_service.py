@@ -1,3 +1,10 @@
+"""Knowledge base file service.
+
+职责：校验知识库访问、保存上传对象、去重并创建文件记录。
+边界：本模块不解析文件内容、不生成向量；入库处理由 KnowledgeRAGWorkflow 负责。
+失败处理：数据库记录创建失败时会删除已保存对象，避免产生孤儿文件。
+"""
+
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,19 +33,23 @@ DEFAULT_KNOWLEDGE_BASE_DESCRIPTION = "系统自动创建的默认知识库"
 
 @dataclass(frozen=True, slots=True)
 class SavedKnowledgeFile:
+    """上传保存结果和是否需要后续入库。"""
+
     file: File
     should_ingest: bool
     deduplicated: bool
 
 
 class KnowledgeService:
+    """知识库文件保存和访问校验服务。"""
+
     def __init__(
         self,
         uow: AbstractUnitOfWork,
         storage: ObjectStorage | None = None,
         storage_root: Path | None = None,
         max_upload_size_mb: int = 20,
-    ):
+    ) -> None:
         self.uow = uow
         if storage is None:
             if storage_root is None:
@@ -202,7 +213,7 @@ class KnowledgeService:
         user_id: uuid.UUID,
         permission: Permission,
     ) -> KnowledgeBase:
-        # 先通过 owner+personal 快捷路径查询（仅返回该用户名下且无 workspace 绑定的 KB）
+        # personal KB 可以走 owner 快捷路径，workspace KB 仍需后续角色校验。
         kb = await self.uow.knowledge_repo.get_kb_for_user(
             kb_id=kb_id,
             user_id=user_id,
@@ -214,13 +225,11 @@ class KnowledgeService:
                 return kb
             raise app_not_found("知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND")
 
-        # 取完整 KB 对象（含 workspace_id）
         full_kb = kb or await get_kb(kb_id)
         if not full_kb:
             raise app_not_found("知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND")
 
-        # ① workspace KB：无论是否 owner，必须验证当前 workspace 成员权限
-        #    防止用户被移出/降级后仍凭 KB owner 身份绕过权限
+        # workspace KB 必须按当前成员角色判断，避免历史 owner 身份绕过权限。
         if full_kb.workspace_id is not None:
             if await PermissionService(self.uow).has_permission_for_user_id(
                 user_id=user_id,
@@ -230,7 +239,7 @@ class KnowledgeService:
                 return full_kb
             raise app_not_found("知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND")
 
-        # ② personal KB（workspace_id is None）：仅 owner 可访问
+        # personal KB 没有 workspace 角色，只有 owner 可访问。
         if full_kb.user_id == user_id:
             return full_kb
 

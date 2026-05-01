@@ -1,3 +1,10 @@
+"""Knowledge RAG ingestion workflow.
+
+职责：下载已上传文件、解析文本、切片并替换向量索引。
+边界：本模块不保存上传文件、不创建任务；上传和任务投递由 KnowledgeUploadWorkflow 负责。
+失败处理：解析或索引失败会把文件状态标记为 FAILED。
+"""
+
 import asyncio
 import uuid
 from pathlib import Path
@@ -34,12 +41,14 @@ PDF_FILE_SUFFIXES = {".pdf"}
 
 
 class KnowledgeRAGWorkflow:
+    """知识文件入库编排器。"""
+
     def __init__(
         self,
         knowledge_service: KnowledgeService,
         chunking_service: ChunkingService,
         vector_index_service: VectorIndexService,
-    ):
+    ) -> None:
         self.knowledge_service = knowledge_service
         self.chunking_service = chunking_service
         self.vector_index_service = vector_index_service

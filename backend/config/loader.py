@@ -1,3 +1,10 @@
+"""YAML configuration loader.
+
+职责：解析配置目录并加载项目 YAML 配置文件。
+边界：本模块只返回原始 mapping；schema 校验由具体 config 模块负责。
+失败处理：缺失、非文件、非法 YAML 或非 mapping 都转换为 ConfigurationError。
+"""
+
 from __future__ import annotations
 
 import os
@@ -8,10 +15,11 @@ import yaml
 
 
 class ConfigurationError(RuntimeError):
-    """Raised when a required application config file is missing or invalid."""
+    """配置文件缺失或非法。"""
 
 
 def get_config_dir(config_dir: str | Path | None = None) -> Path:
+    """返回配置根目录，显式参数优先于 CONFIG_DIR。"""
     if config_dir is None:
         config_dir = os.getenv("CONFIG_DIR")
     if config_dir:
@@ -27,6 +35,7 @@ def load_yaml_config(
     *,
     config_dir: str | Path | None = None,
 ) -> dict[str, Any]:
+    """加载相对于配置根目录的 YAML mapping。"""
     path = get_config_dir(config_dir) / relative_path
     if not path.exists():
         raise ConfigurationError(f"Config file not found: {path}")

@@ -137,7 +137,7 @@ async def test_read_user_not_found_returns_404(client, api_context):
     response = await client.get("/api/v1/users", params={"username": "not_exists"})
 
     assert response.status_code == 404
-    assert response.json()["message"] == "User not found"
+    assert response.json()["message"] == "用户不存在"
 
 
 @pytest.mark.asyncio
@@ -172,7 +172,7 @@ async def test_update_user_not_found_returns_404(client, api_context):
     )
 
     assert response.status_code == 404
-    assert response.json()["message"] == "User not found"
+    assert response.json()["message"] == "用户不存在"
 
 
 @pytest.mark.asyncio
@@ -209,7 +209,7 @@ async def test_create_user_returns_400_when_service_returns_none(client, api_con
     response = await client.post("/api/v1/users", json=payload)
 
     assert response.status_code == 400
-    assert response.json()["message"] == "User creation failed"
+    assert response.json()["message"] == "用户创建失败"
 
 
 @pytest.mark.asyncio

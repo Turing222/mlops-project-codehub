@@ -1,11 +1,8 @@
-"""
-Chat Workflow — 处理对话业务流程
+"""Streaming chat workflow.
 
-编排者角色：
-1. 从 DB 查询会话与历史消息
-2. 调用 PromptManager 组装完整的消息列表
-3. 发给 LLMService 获取回复
-4. 将结果存入 DB
+职责：编排流式聊天请求的幂等、会话消息、Prompt/RAG、TaskIQ 和 Redis stream 消费。
+边界：本模块不实现 provider 调用细节；LLM 输出由 TaskIQ worker 发布到 Redis。
+失败处理：任一阶段失败会清理幂等锁、回写助手消息失败状态，并向 SSE 输出错误事件。
 """
 
 import asyncio
@@ -47,9 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 class ChatWorkflow:
-    # R2/R4 修复：Semaphore 改为全局共享实例（见 core/concurrency.py），
-    # 使用 threading.Lock 双重检查保护初始化，消除类级别竞态，
-    # 并确保 ChatWorkflow 与 ChatNonStreamWorkflow 共享同一并发上限。
+    """流式对话编排器。"""
 
     @staticmethod
     def _get_llm_semaphore() -> asyncio.Semaphore:
@@ -66,7 +61,7 @@ class ChatWorkflow:
         prompt_manager: PromptManager | None = None,
         rag_service: AbstractRAGService | None = None,
         chat_context_builder: ChatContextBuilder | None = None,
-    ):
+    ) -> None:
         self.uow = uow
         self.llm_service = llm_service
         self.chat_context_builder = chat_context_builder or ChatContextBuilder(
@@ -83,10 +78,8 @@ class ChatWorkflow:
         kb_id: uuid.UUID | None = None,
         client_request_id: str | None = None,
     ) -> AsyncGenerator[str, None]:
-        """
-        处理流式查询请求 (含幂等、Token 管理)
-        """
-        # 绑定当前追踪的上下文信息
+        """处理 SSE 流式查询请求。"""
+        # Langfuse trace 需要在业务入口绑定用户和会话信息。
         get_client().update_current_trace(
             user_id=str(user_id),
             session_id=str(session_id) if session_id else None,
@@ -110,7 +103,7 @@ class ChatWorkflow:
             "chat.stream": True,
         }
 
-        # 0. 幂等校验
+        # 幂等锁避免同一 client_request_id 并发生成多条助手消息。
         with trace_span("chat.stream.idempotency_check", trace_attrs) as span:
             if client_request_id:
                 redis = await redis_client.init()
@@ -127,12 +120,11 @@ class ChatWorkflow:
                         yield f"data: {json.dumps({'type': 'error', 'message': '该请求已完成，请刷新页面'})}\n\n"
                         return
 
-        # 1. 确认或创建会话 + 保存用户消息 + 创建助手消息占位
+        # 会话和消息创建放在 DB 槽位内，避免高并发下耗尽连接池。
         with trace_span("chat.stream.create_session_and_messages", trace_attrs) as span:
             async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
-                    # R1/R5 修复：用 SELECT FOR UPDATE 悲观锁读取用户行，
-                    # 防止多个并发请求同时通过余额检查（TOCTOU 竞态）
+                    # 悲观锁保护 token 余额检查，避免并发请求同时通过额度判断。
                     user = await self.uow.user_repo.get_with_lock(user_id)
                     if user and user.used_tokens >= user.max_tokens:
                         if redis is not None and lock_key is not None:
@@ -179,7 +171,7 @@ class ChatWorkflow:
             trace_attrs["chat.session_id"] = session.id
             trace_attrs["chat.assistant_message_id"] = assistant_msg.id
 
-        # 2. 查询历史消息并组装 Prompt
+        # 历史消息和 Prompt 准备拆分，便于分别观察 DB 与 RAG/模板耗时。
         with trace_span("chat.stream.fetch_history", trace_attrs) as span:
             async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
@@ -213,7 +205,7 @@ class ChatWorkflow:
                 },
             )
 
-        # 3. 发送 meta 事件
+        # 先发送 meta，让前端尽早拿到会话和消息 id。
         meta_event = json.dumps(
             {
                 "type": "meta",
@@ -223,8 +215,6 @@ class ChatWorkflow:
             }
         )
         yield f"data: {meta_event}\n\n"
-
-        # 4. 改为 Taskiq 异步队列排队与 Redis Pub/Sub 接收流
 
         llm_query = LLMQueryDTO(
             session_id=session.id,
@@ -241,7 +231,7 @@ class ChatWorkflow:
                 "chat.stream.dispatch_task",
                 {**trace_attrs, "task.id": task_id, "redis.channel": channel},
             ):
-                # 先订阅后投递，避免 worker 首包发布过快导致丢消息
+                # 必须先订阅后投递，避免 worker 首包发布过快导致丢消息。
                 pubsub = (await redis_client.init()).pubsub()
                 await pubsub.subscribe(channel)
                 await generate_llm_stream_task.kiq(
@@ -407,7 +397,7 @@ class ChatWorkflow:
                         if asyncio.iscoroutine(maybe_awaitable):
                             await maybe_awaitable
 
-        # 5. 更新助手消息并累加 Token
+        # 流消费完成后再持久化完整答案，避免写入半截成功消息。
         full_content = "".join(accumulated_content)
         model_name = getattr(
             self.llm_service,
@@ -427,7 +417,7 @@ class ChatWorkflow:
                         tokens_output=tokens_output,
                         search_context=search_context,
                     )
-                    # R1/R5 修复：条件原子累加，超出上限时返回 False
+                    # token 累加使用条件更新，避免并发完成时突破用户额度上限。
                     total_tokens = tokens_input + tokens_output
                     ok = await self.uow.user_repo.increment_used_tokens_guarded(
                         user_id, total_tokens

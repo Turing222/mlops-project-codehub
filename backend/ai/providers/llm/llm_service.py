@@ -1,11 +1,8 @@
-"""
-LLM Service — 大语言模型调用封装
+"""OpenAI-compatible LLM service.
 
-企业级设计：
-- 统一的错误处理与日志
-- 流式 / 非流式两种调用模式
-- 通过 LLMQueryDTO / LLMResultDTO 与上层解耦
-- 模型配置由 config 驱动，不再硬编码
+职责：通过 OpenAI-compatible chat completions API 提供流式和非流式回复。
+边界：本模块不组装 Prompt、不保存消息；输入输出通过 LLM DTO 与上层解耦。
+失败处理：缺少 API key 或 provider 调用异常会转换为统一业务错误。
 """
 
 import logging
@@ -37,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 class LLMService(AbstractLLMService):
-    """LLM 服务：处理大语言模型 API 调用"""
+    """OpenAI-compatible chat completions 适配器。"""
 
     def __init__(
         self,
@@ -47,7 +44,7 @@ class LLMService(AbstractLLMService):
         api_key: str | None = None,
         model_name: str | None = None,
         max_retries: int | None = None,
-    ):
+    ) -> None:
         profile = get_llm_model_config().resolve_profile(provider_name)
         self.provider_name = provider_name
         self.base_url = base_url or profile.resolve_base_url() or settings.LLM_BASE_URL
@@ -113,9 +110,7 @@ class LLMService(AbstractLLMService):
         self,
         query: LLMQueryDTO,
     ) -> AsyncGenerator[str, None]:
-        """
-        流式返回 LLM 响应 (使用异步客户端)
-        """
+        """逐片返回模型输出，调用方负责聚合或转发。"""
         logger.info("LLM 开始流式请求: session_id=%s", query.session_id)
         try:
             messages = self._build_messages(query)
@@ -175,10 +170,7 @@ class LLMService(AbstractLLMService):
         self,
         query: LLMQueryDTO,
     ) -> LLMResultDTO:
-        """
-        非流式返回 LLM 响应。
-        内部复用流式路径并聚合结果，保持调用链一致。
-        """
+        """复用流式路径聚合完整响应，保持 provider 行为一致。"""
         start = time.perf_counter()
         chunks: list[str] = []
 

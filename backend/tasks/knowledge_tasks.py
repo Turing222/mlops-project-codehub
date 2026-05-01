@@ -1,3 +1,10 @@
+"""Knowledge ingestion TaskIQ tasks.
+
+职责：在 worker 中装配知识库入库依赖，执行文件解析、切片和向量索引。
+边界：上传请求只投递任务；实际解析和索引在本模块触发的 workflow 中完成。
+失败处理：任务失败会尽力回写 TaskJob 状态，回写失败只记录日志并继续抛原错误。
+"""
+
 import logging
 import uuid
 
@@ -14,6 +21,7 @@ from backend.core.exceptions import (
 )
 from backend.core.task_broker import broker
 from backend.core.trace_utils import set_span_attributes, trace_span, use_trace_context
+from backend.domain.interfaces import AbstractRAGEmbedder
 from backend.services.chunking_service import ChunkingService
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.object_storage import ObjectStorage, create_object_storage
@@ -26,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker | None = None
-_embedder = None
+_embedder: AbstractRAGEmbedder | None = None
 _object_storage: ObjectStorage | None = None
 
 
@@ -37,7 +45,7 @@ def _get_session_factory() -> async_sessionmaker:
     return _session_factory
 
 
-def _get_embedder():
+def _get_embedder() -> AbstractRAGEmbedder:
     global _embedder
     if _embedder is None:
         profile = get_llm_model_config().resolve_embedding_profile(
@@ -81,12 +89,16 @@ async def ingest_knowledge_file_task(
     file_id: str,
     task_id: str | None = None,
     trace_context: dict[str, str] | None = None,
-):
+) -> None:
+    """TaskIQ 入口：恢复 trace context 后执行知识文件入库。"""
     with use_trace_context(trace_context):
         await _ingest_knowledge_file_task(file_id=file_id, task_id=task_id)
 
 
-async def _ingest_knowledge_file_task(file_id: str, task_id: str | None = None):
+async def _ingest_knowledge_file_task(
+    file_id: str,
+    task_id: str | None = None,
+) -> None:
     logger.info("TaskIQ 开始处理知识库文件: file_id=%s task_id=%s", file_id, task_id)
     embedding_profile = get_llm_model_config().resolve_embedding_profile(
         settings.RAG_EMBED_PROVIDER

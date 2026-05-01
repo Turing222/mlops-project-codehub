@@ -1,3 +1,10 @@
+"""Permission policy configuration.
+
+职责：从 YAML 加载 workspace 角色权限策略并构建运行时判断对象。
+边界：本模块不查询用户角色；角色读取由 PermissionService 负责。
+失败处理：配置 schema 错误会在加载阶段转换为 ConfigurationError。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,6 +21,8 @@ from backend.services.permission_types import Permission
 
 @dataclass(frozen=True, slots=True)
 class PermissionPolicy:
+    """配置驱动的角色权限策略。"""
+
     role_permissions: dict[WorkspaceRole, frozenset[Permission]]
     superuser_bypass: bool = True
     missing_workspace: str = "deny"
@@ -37,6 +46,7 @@ def load_permission_policy(
     *,
     config_dir: str | Path | None = None,
 ) -> PermissionPolicy:
+    """加载权限策略并转换为枚举集合。"""
     config = load_permissions_config(config_dir=config_dir)
 
     all_permissions = frozenset(Permission)
@@ -62,6 +72,7 @@ def load_permissions_config(
     *,
     config_dir: str | Path | None = None,
 ) -> PermissionsConfig:
+    """加载并校验 permissions.yaml。"""
     data = load_yaml_config("access/permissions.yaml", config_dir=config_dir)
     try:
         return PermissionsConfig.model_validate(data)
@@ -71,9 +82,11 @@ def load_permissions_config(
 
 @lru_cache
 def get_permission_policy() -> PermissionPolicy:
+    """返回进程级缓存的权限策略。"""
     return load_permission_policy()
 
 
 @lru_cache
 def get_permissions_config() -> PermissionsConfig:
+    """返回进程级缓存的权限原始配置。"""
     return load_permissions_config()

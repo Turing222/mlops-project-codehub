@@ -1,3 +1,10 @@
+"""Knowledge upload workflow.
+
+职责：保存上传文件、创建入库任务，并投递知识库异步处理任务。
+边界：本模块不解析文件内容；解析、切片和向量化由 KnowledgeRAGWorkflow 处理。
+失败处理：任务创建或投递失败时，尽力回写文件和任务失败状态。
+"""
+
 import logging
 import uuid
 
@@ -23,13 +30,13 @@ logger = logging.getLogger(__name__)
 
 
 class KnowledgeUploadWorkflow:
-    """知识库上传工作流：保存文件、创建任务并投递异步处理。"""
+    """知识库上传提交编排器。"""
 
     def __init__(
         self,
         knowledge_service: KnowledgeService,
         task_service: TaskService,
-    ):
+    ) -> None:
         self.knowledge_service = knowledge_service
         self.task_service = task_service
 
@@ -40,13 +47,7 @@ class KnowledgeUploadWorkflow:
         upload_file: UploadFile,
         kb_id: uuid.UUID | None = None,
     ) -> KnowledgeUploadResponse:
-        """统一上传入口。
-
-        Args:
-            user_id: 当前用户 ID。
-            upload_file: FastAPI 上传文件对象。
-            kb_id: 目标知识库 ID；为 ``None`` 时自动使用/创建默认知识库。
-        """
+        """保存上传文件，并为需要入库的文件创建异步任务。"""
         use_default_kb = kb_id is None
 
         with trace_span(
@@ -90,10 +91,6 @@ class KnowledgeUploadWorkflow:
             should_ingest=save_result.should_ingest,
             deduplicated=save_result.deduplicated,
         )
-
-    # ------------------------------------------------------------------
-    # 内部：创建任务 → 投递异步消息
-    # ------------------------------------------------------------------
 
     async def _create_and_dispatch_ingestion(
         self,
@@ -199,10 +196,6 @@ class KnowledgeUploadWorkflow:
             deduplicated=deduplicated,
         )
 
-    # ------------------------------------------------------------------
-    # 统一错误处理
-    # ------------------------------------------------------------------
-
     async def _handle_ingestion_failure(
         self,
         *,
@@ -211,8 +204,8 @@ class KnowledgeUploadWorkflow:
         exc: Exception,
         task_id: uuid.UUID | None = None,
     ) -> None:
-        """处理任务创建或投递阶段的失败，确保状态一致性。"""
-        # 标记 task 失败（仅在 task 已创建的投递阶段）
+        """处理任务创建或投递阶段失败，尽量保持状态一致。"""
+        # 只有任务已创建后才可能回写任务失败状态。
         if task_id is not None:
             try:
                 async with self.task_service.uow:
@@ -223,7 +216,7 @@ class KnowledgeUploadWorkflow:
             except Exception:
                 logger.exception("任务失败状态更新异常: task_id=%s", task_id)
 
-        # 标记文件失败
+        # 文件状态也要回写失败，避免前端长期看到 UPLOADED/PENDING。
         try:
             async with self.knowledge_service.uow:
                 await self.knowledge_service.set_file_status(
@@ -233,7 +226,6 @@ class KnowledgeUploadWorkflow:
         except Exception:
             logger.exception("文件失败状态更新异常: file_id=%s", file_id)
 
-        # 统一日志
         if isinstance(exc, AppException):
             logger.warning(
                 "知识库任务失败: kb_id=%s, file_id=%s, task_id=%s, error=%s",

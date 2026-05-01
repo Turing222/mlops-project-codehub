@@ -1,3 +1,10 @@
+"""Session query service.
+
+职责：封装会话列表和会话详情读取，并转换为响应 schema。
+边界：本模块只服务查询接口，不创建消息、不调用 LLM。
+失败处理：不存在和越权访问统一转换为业务错误。
+"""
+
 import logging
 import uuid
 
@@ -15,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class SessionQueryService(BaseService[AbstractUnitOfWork]):
-    """会话查询服务：封装会话列表与会话详情查询。"""
+    """会话查询和响应转换服务。"""
 
     async def list_user_sessions(
         self,

@@ -12,7 +12,7 @@ from backend.repositories.base import CRUDBase
 class TaskRepository:
     """任务相关的 Repository（单模型，采用组合风格）。"""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.crud: CRUDBase[TaskJob, BaseModel, BaseModel] = CRUDBase(TaskJob, session)
 

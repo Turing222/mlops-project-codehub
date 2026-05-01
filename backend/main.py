@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -29,7 +30,7 @@ logger.info("系统初始化完成")
 
 # 1. 定义生命周期（DBA 关心的资源管理）
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 顺序组合不同的初始化逻辑
     # 启动时：可以在这里打印连接池状态
     get_permission_policy()
@@ -68,18 +69,18 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 
 # index信息
 @app.get("/")
-def read_root():
+def read_root() -> dict[str, str]:
     return {"message": "AI Mentor 数据库已就绪！"}
 
 
 @app.get("/metrics")
-def metrics_endpoint():
+def metrics_endpoint() -> PlainTextResponse:
     """Prometheus scrape 健康探针（实际指标通过 OTLP 推送）。"""
     return PlainTextResponse("")
 
 
 @app.get("/debug-request")
-async def debug_request(request: Request):
+async def debug_request(request: Request) -> dict[str, object]:
     # 1. 提取所有 Header
     headers = dict(request.headers)
 

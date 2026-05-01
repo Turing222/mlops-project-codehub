@@ -1,3 +1,10 @@
+"""User import service.
+
+职责：解析上传文件、映射字段、校验批量用户并写入数据库。
+边界：本模块不发送激活邮件或通知；导入后扩展点保留为空 hook。
+失败处理：唯一性和数据库异常转换为统一业务错误。
+"""
+
 import asyncio
 import logging
 import secrets
@@ -53,7 +60,7 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
         )
 
     async def import_users(self, user_maps: list[dict[str, Any]]) -> int:
-        """批量导入用户，返回成功导入数量。"""
+        """批量写入已清洗的用户数据。"""
         if not user_maps:
             logger.info("No valid users data found in file")
             raise app_validation_error("有效客户为0", code="USER_IMPORT_EMPTY")
@@ -105,7 +112,7 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
     async def transform_and_validate(
         cls, raw_data: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """执行字段映射、清洗与基础校验。"""
+        """执行字段映射和基础完整性校验。"""
         cleaned_schemas: list[dict[str, Any]] = []
         errors: list[str] = []
 
@@ -129,7 +136,7 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
         return cleaned_schemas
 
     async def _build_import_rows(self, user_maps: list[dict[str, Any]]) -> list[dict[str, str]]:
-        """构造可直接入库的数据行（补齐 hashed_password）。"""
+        """构造可入库数据行，并为临时密码生成哈希。"""
         rows: list[dict[str, str]] = []
         for user_map in user_maps:
             username = str(user_map["username"]).strip().lower()
@@ -146,5 +153,5 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
         return rows
 
     async def _after_import_batch_hook(self, import_rows: list[dict[str, str]]) -> None:
-        """导入后扩展钩子（预留给激活流程/通知流程）。"""
+        """导入后扩展钩子，预留给激活或通知流程。"""
         _ = import_rows

@@ -12,7 +12,7 @@ from backend.repositories.base import CRUDBase
 class ChatRepository:
     """聊天相关的 Repository，包含 Session 和 Message 的操作"""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.session_crud: CRUDBase[ChatSession, BaseModel, BaseModel] = CRUDBase(
             ChatSession, session

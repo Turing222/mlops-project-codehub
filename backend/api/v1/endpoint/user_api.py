@@ -38,7 +38,7 @@ UserImportServiceDep = Annotated[UserImportService, Depends(get_user_import_serv
 async def read_users_me(
     current_user: CurrentUser,
     permission_service: PermissionService = Depends(get_permission_service),
-):
+) -> UserResponse:
     user_resp_data = UserResponse.model_validate(current_user)
 
     # 复杂的、变动的、关联的字段，手动覆盖
@@ -54,7 +54,7 @@ async def read_user(
     _: SuperUser,
     user_service: UserServiceDep,
     permission_service: PermissionService = Depends(get_permission_service),
-):
+) -> UserResponse:
     """
     通过用户名或邮箱查询单个用户。
     DBA 视角：后端会根据参数存在与否，决定走 USERNAME 还是 EMAIL 的唯一索引。
@@ -66,12 +66,12 @@ async def read_user(
             user = await user_service.get_by_email(search_params.email)
         else:
             raise app_bad_request(
-                "Must provide either username or email",
+                "必须提供用户名或邮箱",
                 code="USER_SEARCH_PARAM_REQUIRED",
             )
 
         if not user:
-            raise app_not_found("User not found", code="USER_NOT_FOUND")
+            raise app_not_found("用户不存在", code="USER_NOT_FOUND")
     return UserResponse.model_validate(user)
 
 
@@ -85,7 +85,7 @@ async def update_user(
     user_service: UserServiceDep,
     permission_service: PermissionService = Depends(get_permission_service),
     audit_service: AuditService = Depends(get_audit_service),
-):
+) -> UserResponse:
     """
     局部更新用户信息。
     """
@@ -100,7 +100,7 @@ async def update_user(
         async with user_service.uow:
             updated_user = await user_service.user_update(user_id=user_id, user_in=user_in)
             if not updated_user:
-                raise app_not_found("User not found", code="USER_NOT_FOUND")
+                raise app_not_found("用户不存在", code="USER_NOT_FOUND")
         return UserResponse.model_validate(updated_user)
 
 
@@ -123,7 +123,7 @@ async def create_user(
         async with user_service.uow:
             user = await user_service.user_register_with_personal_workspace(user_in)
             if not user:
-                raise app_bad_request("User creation failed", code="USER_CREATION_FAILED")
+                raise app_bad_request("用户创建失败", code="USER_CREATION_FAILED")
             audit.set_resource(resource_id=user.id)
             return UserResponse.model_validate(user)
 

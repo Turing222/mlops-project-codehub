@@ -1,3 +1,10 @@
+"""Request tracing middleware.
+
+职责：为每个 HTTP 请求绑定 request_id、trace_id 和响应头。
+边界：OTel FastAPI instrumentation 负责 span 与指标，本模块只补充业务关联字段。
+失败处理：异常继续交给全局 exception handler，避免中间件吞掉业务错误。
+"""
+
 import logging
 import time
 
@@ -10,28 +17,11 @@ from backend.core.trace_utils import (
     set_current_span_attributes,
 )
 
-# 设置日志
 logger = logging.getLogger(__name__)
 
 
-def setup_tracing(app: FastAPI):
-    """
-    简化版请求追踪中间件。
-
-    OTel FastAPI Instrumentation 已自动处理：
-    - span 创建与 trace_id 生成
-    - 请求耗时测量（http.server.request.duration）
-    - HTTP 指标采集
-
-    本中间件仅负责：
-    - 透传 Nginx 的 X-Request-ID 或使用 OTel trace_id 作为 RID
-    - 注入 X-Request-ID / X-Trace-ID 响应头（方便前端 / 日志关联）
-    - 将 RID 存入 ContextVar（供业务层使用）
-
-    异常处理策略：
-    - 中间件不负责生成错误响应，仅记录日志后 re-raise
-    - 业务异常（AppException）和系统异常均由全局 exception_handler 统一处理
-    """
+def setup_tracing(app: FastAPI) -> None:
+    """注册 request_id/trace_id 关联中间件。"""
 
     @app.middleware("http")
     async def tracing_middleware(
@@ -40,32 +30,29 @@ def setup_tracing(app: FastAPI):
         start = time.perf_counter()
         trace_id = current_trace_id()
 
-        # 1. 优先使用 Nginx 传入的 X-Request-ID，否则用 trace_id 作为 RID
-        incoming_rid = request.headers.get("X-Request-ID", "").strip()
-        rid = incoming_rid or trace_id
-        token = REQUEST_ID_CTX.set(rid)
-        request.state.request_id = rid
+        incoming_request_id = request.headers.get("X-Request-ID", "").strip()
+        request_id = incoming_request_id or trace_id
+        token = REQUEST_ID_CTX.set(request_id)
+        request.state.request_id = request_id
         request.state.trace_id = trace_id
         request.state.process_start = start
         set_current_span_attributes(
             {
-                "app.request_id": rid,
-                "app.incoming_request_id": bool(incoming_rid),
+                "app.request_id": request_id,
+                "app.incoming_request_id": bool(incoming_request_id),
             }
         )
 
         try:
-            # 2. 执行后续的路由逻辑（耗时由 OTel span 自动记录）
             response = await call_next(request)
 
-            # 3. 注入关联 header
             process_time_ms = (time.perf_counter() - start) * 1000
-            response.headers["X-Request-ID"] = rid
+            response.headers["X-Request-ID"] = request_id
             response.headers["X-Trace-ID"] = trace_id
             response.headers["X-Process-Time"] = f"{process_time_ms:.2f}ms"
             set_current_span_attributes(
                 {
-                    "app.request_id": rid,
+                    "app.request_id": request_id,
                     "app.process_time_ms": process_time_ms,
                     "http.response.status_code": response.status_code,
                 }
@@ -74,17 +61,15 @@ def setup_tracing(app: FastAPI):
             return response
 
         except Exception:
-            # 仅记录日志，不自行构造响应
-            # 异常交由全局 exception_handler 处理，确保业务异常（AppException）
-            # 能走到正确的 handler，而不是被这里的兜底吞掉
+            # 这里只补充 trace 信息，错误响应统一由全局 exception handler 塑形。
             logger.debug(
                 "Exception propagating through tracing middleware",
-                extra={"rid": rid},
+                extra={"request_id": request_id},
             )
             set_current_span_attributes(
-                {"app.request_id": rid, "error.type": "exception"}
+                {"app.request_id": request_id, "error.type": "exception"}
             )
             raise
         finally:
-            # 4. 清理上下文，防止内存泄露或协程间干扰
+            # 请求结束必须重置 ContextVar，避免协程复用时串 request_id。
             REQUEST_ID_CTX.reset(token)

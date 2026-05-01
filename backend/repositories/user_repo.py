@@ -12,7 +12,7 @@ from backend.repositories.base import CRUDBase
 
 
 class UserRepository:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.crud: CRUDBase[User, UserCreate, UserUpdate] = CRUDBase(User, session)
 
@@ -83,7 +83,7 @@ class UserRepository:
         )
         await self.session.execute(stmt)
 
-    async def increment_used_tokens(self, user_id: uuid.UUID, amount: int):
+    async def increment_used_tokens(self, user_id: uuid.UUID, amount: int) -> None:
         """
         原子增加用户的已用 Token 数。
         使用 SQL 级别的原子操作 (SET used_tokens = used_tokens + amount)，

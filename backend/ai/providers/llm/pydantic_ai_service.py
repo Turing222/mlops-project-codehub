@@ -1,3 +1,10 @@
+"""Pydantic AI Gemini LLM service.
+
+职责：通过 Pydantic AI 的 Google/Gemini provider 提供 LLM 调用能力。
+边界：本模块只适配 Gemini 输入形态，不处理会话持久化或 Prompt 预算。
+失败处理：依赖缺失、API key 缺失和 provider 异常会转换为统一业务错误。
+"""
+
 import logging
 import time
 from collections.abc import AsyncGenerator
@@ -23,14 +30,14 @@ _ROLE_LABELS = {
 
 
 class PydanticAILLMService(AbstractLLMService):
-    """LLM service backed by Pydantic AI's Google/Gemini provider."""
+    """Gemini provider 的 LLM 服务适配器。"""
 
     def __init__(
         self,
         *,
         api_key: str | None = None,
         model_name: str | None = None,
-    ):
+    ) -> None:
         profile = get_llm_model_config().resolve_profile("gemini")
         self.api_key = (
             api_key

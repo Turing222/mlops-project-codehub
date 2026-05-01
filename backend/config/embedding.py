@@ -1,3 +1,10 @@
+"""Embedding model configuration.
+
+职责：把 LLM 模型配置中的 embeddings 段转换为运行时 profile。
+边界：本模块只解析配置和环境变量，不创建 embedder 客户端。
+默认值：缺少 embeddings 配置时提供 mock、google 和 openai-compatible profile。
+"""
+
 from __future__ import annotations
 
 import os
@@ -10,6 +17,8 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class EmbeddingProfile:
+    """一个可用于构建 embedder 的配置 profile。"""
+
     name: str
     provider: str
     model: str
@@ -31,6 +40,7 @@ class EmbeddingProfile:
 
 
 def build_embedding_profiles(config: LLMModelsConfig) -> dict[str, EmbeddingProfile]:
+    """从模型配置构建 embedding profile 映射。"""
     if config.embeddings is None:
         return {
             "mock": EmbeddingProfile(
@@ -81,17 +91,12 @@ def build_embedding_profiles(config: LLMModelsConfig) -> dict[str, EmbeddingProf
 
 
 def _embedding_provider_default_base_url(provider: str) -> str | None:
-    """Embedding provider 的默认 base URL fallback。
-
-    与 LLM 路由的 `_provider_default_base_url` 完全独立：
-    - Embedding 优先使用 RAG_EMBED_BASE_URL（嵌入专用配置），不复用 LLM_BASE_URL。
-    - 避免与 backend.config.llm 产生循环依赖。
-    """
+    """Embedding provider 的默认 base URL fallback。"""
     settings = _get_settings()
-    # Embedding 优先使用专属的 RAG_EMBED_BASE_URL
+    # embedding 专用 URL 优先，避免误用聊天模型的 base URL。
     if settings.RAG_EMBED_BASE_URL:
         return settings.RAG_EMBED_BASE_URL
-    # 小数几个兼容 openai-compatible 调用方式的 provider，倒退到 LLM 通用 URL
+    # openai-compatible embedding 可复用通用 LLM endpoint 作为兼容 fallback。
     normalized = provider.strip().lower()
     if normalized in {"openai", "openai-compatible"}:
         return settings.LLM_BASE_URL

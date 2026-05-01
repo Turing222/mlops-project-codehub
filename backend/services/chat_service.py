@@ -1,9 +1,8 @@
-"""
-Chat Service — 会话管理与消息更新
+"""Chat services.
 
-企业级设计：
-- SessionManager: 会话生命周期管理（创建、查询、验证权限）
-- ChatMessageUpdater: 消息状态机（thinking → streaming → success/failed）
+职责：管理会话归属、消息创建和助手消息状态更新。
+边界：本模块不调用 LLM、不组装 Prompt；对话编排由 workflow 负责。
+风险：workspace 知识库必须重新校验成员权限，避免 owner 身份绕过降级后的权限。
 """
 
 import logging
@@ -20,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 class SessionManager(BaseService[AbstractUnitOfWork]):
-    """会话管理器：确认或创建会话，创建用户消息"""
+    """负责会话确认、权限校验和消息创建。"""
 
-    def __init__(self, uow: AbstractUnitOfWork):
+    def __init__(self, uow: AbstractUnitOfWork) -> None:
         super().__init__(uow)
 
     async def ensure_session(
@@ -33,21 +32,7 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         kb_id: uuid.UUID | None = None,
         workspace_id: uuid.UUID | None = None,
     ) -> ChatSession:
-        """
-        确认或创建会话
-
-        Args:
-            user_id: 用户 ID
-            query_text: 用户问题（用于生成新会话标题）
-            session_id: 会话 ID，None 则创建新会话
-            kb_id: 知识库 ID，可选
-
-        Returns:
-            ChatSession 对象
-
-        Raises:
-            AppException: 会话不存在或无权访问
-        """
+        """复用已有会话或创建新会话，并校验访问权限。"""
         if session_id:
             session = await self.uow.chat_repo.get_session(session_id)
             if not session:
@@ -86,16 +71,21 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
             workspace_id=workspace_id,
         )
 
-        # 创建新会话，标题取问题前 50 字符
+        # 新会话标题从当前问题截断生成，避免持久化过长标题。
         title = query_text.strip()[:50] if query_text else "新对话"
-        create_session_kwargs = {
-            "user_id": user_id,
-            "title": title,
-            "kb_id": kb_id,
-        }
-        if workspace_id is not None:
-            create_session_kwargs["workspace_id"] = workspace_id
-        session = await self.uow.chat_repo.create_session(**create_session_kwargs)
+        if workspace_id is None:
+            session = await self.uow.chat_repo.create_session(
+                user_id=user_id,
+                title=title,
+                kb_id=kb_id,
+            )
+        else:
+            session = await self.uow.chat_repo.create_session(
+                user_id=user_id,
+                title=title,
+                kb_id=kb_id,
+                workspace_id=workspace_id,
+            )
         logger.info(
             "创建新会话: session_id=%s, title=%s, user_id=%s",
             session.id,
@@ -125,8 +115,7 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
                     details={"kb_id": str(kb_id)},
                 )
 
-            # ① workspace KB：无论是否 owner，必须验证 workspace 成员权限
-            #    防止用户被移出/降级后仍凭 KB owner 身份发起 chat
+            # workspace KB 必须重新校验成员权限，避免降级/移出后仍凭 KB owner 访问。
             if kb.workspace_id is not None:
                 if not await self._has_workspace_permission(
                     user_id=user_id,
@@ -140,7 +129,7 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
                     )
                 return kb.workspace_id
 
-            # ② personal KB（workspace_id is None）：仅 owner 可使用
+            # personal KB 没有 workspace 角色兜底，只允许 owner 使用。
             if kb.user_id == user_id:
                 return kb.workspace_id  # None
 
@@ -184,27 +173,23 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         user_id: uuid.UUID | None = None,
         message_metadata: dict | None = None,
     ) -> ChatMessage:
-        """
-        创建用户消息
-
-        Args:
-            session_id: 会话 ID
-            content: 消息内容
-
-        Returns:
-            ChatMessage 对象
-        """
-        create_message_kwargs = {
-            "session_id": session_id,
-            "role": "user",
-            "content": content.strip(),
-            "status": MessageStatus.SUCCESS,
-        }
-        if user_id is not None:
-            create_message_kwargs["user_id"] = user_id
-        if message_metadata is not None:
-            create_message_kwargs["message_metadata"] = message_metadata
-        message = await self.uow.chat_repo.create_message(**create_message_kwargs)
+        """创建已完成状态的用户消息。"""
+        if user_id is None and message_metadata is None:
+            message = await self.uow.chat_repo.create_message(
+                session_id=session_id,
+                role="user",
+                content=content.strip(),
+                status=MessageStatus.SUCCESS,
+            )
+        else:
+            message = await self.uow.chat_repo.create_message(
+                session_id=session_id,
+                role="user",
+                content=content.strip(),
+                status=MessageStatus.SUCCESS,
+                user_id=user_id,
+                message_metadata=message_metadata,
+            )
         logger.debug(
             "创建用户消息: message_id=%s, session_id=%s", message.id, session_id
         )
@@ -219,36 +204,24 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         user_id: uuid.UUID | None = None,
         message_metadata: dict | None = None,
     ) -> ChatMessage:
-        """
-        创建助手消息（初始状态为思考中）
-
-        Args:
-            session_id: 会话 ID
-            status: 消息状态，默认为 THINKING
-
-        Returns:
-            ChatMessage 对象
-        """
-        create_message_kwargs = {
-            "session_id": session_id,
-            "role": "assistant",
-            "content": "",
-            "status": status,
-            "client_request_id": client_request_id,
-            "search_context": search_context,
-        }
-        if user_id is not None:
-            create_message_kwargs["user_id"] = user_id
-        if message_metadata is not None:
-            create_message_kwargs["message_metadata"] = message_metadata
-        message = await self.uow.chat_repo.create_message(**create_message_kwargs)
+        """创建助手消息占位，后续由 workflow 回写状态。"""
+        message = await self.uow.chat_repo.create_message(
+            session_id=session_id,
+            role="assistant",
+            content="",
+            status=status,
+            client_request_id=client_request_id,
+            search_context=search_context,
+            user_id=user_id,
+            message_metadata=message_metadata,
+        )
         logger.debug(
             "创建助手消息: message_id=%s, session_id=%s", message.id, session_id
         )
         return message
 
     async def get_session(self, session_id: uuid.UUID) -> ChatSession | None:
-        """获取会话详情"""
+        """读取单个会话。"""
         return await self.uow.chat_repo.get_session(session_id)
 
     async def get_user_sessions(
@@ -257,7 +230,7 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         skip: int = 0,
         limit: int = 20,
     ) -> list[ChatSession]:
-        """获取用户的会话列表"""
+        """读取用户会话列表。"""
         sessions = await self.uow.chat_repo.get_user_sessions(
             user_id=user_id,
             skip=skip,
@@ -272,7 +245,7 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         skip: int = 0,
         limit: int = 100,
     ) -> list[ChatMessage]:
-        """获取会话的消息列表"""
+        """读取会话消息列表。"""
         messages = await self.uow.chat_repo.get_session_messages(
             session_id=session_id,
             skip=skip,
@@ -283,13 +256,9 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
 
 
 class ChatMessageUpdater(BaseService[AbstractUnitOfWork]):
-    """
-    聊天消息更新器：调用 LLM API 后的状态更新
+    """负责助手消息 THINKING/STREAMING/SUCCESS/FAILED 状态流转。"""
 
-    状态机: THINKING → STREAMING → SUCCESS / FAILED
-    """
-
-    def __init__(self, uow: AbstractUnitOfWork):
+    def __init__(self, uow: AbstractUnitOfWork) -> None:
         super().__init__(uow)
 
     async def update_as_success(
@@ -301,20 +270,7 @@ class ChatMessageUpdater(BaseService[AbstractUnitOfWork]):
         tokens_output: int | None = None,
         search_context: dict | None = None,
     ) -> ChatMessage:
-        """
-        更新消息为成功状态
-
-        Args:
-            message_id: 消息 ID
-            content: 完整的响应内容
-            start_time: 开始时间（用于计算延迟），可选
-
-        Returns:
-            更新后的 ChatMessage 对象
-
-        Raises:
-            AppException: 消息不存在
-        """
+        """把助手消息标记为成功，并保存 token/search_context。"""
         latency_ms = None
         if start_time:
             latency_ms = int((time.time() - start_time) * 1000)
@@ -347,16 +303,7 @@ class ChatMessageUpdater(BaseService[AbstractUnitOfWork]):
         message_id: uuid.UUID,
         error_content: str = "抱歉，处理您的请求时出现错误。",
     ) -> ChatMessage | None:
-        """
-        更新消息为失败状态
-
-        Args:
-            message_id: 消息 ID
-            error_content: 错误提示内容
-
-        Returns:
-            更新后的 ChatMessage 对象，消息不存在时返回 None
-        """
+        """把助手消息标记为失败；消息缺失时只记录日志。"""
         message = await self.uow.chat_repo.update_message_status(
             message_id=message_id,
             status=MessageStatus.FAILED,
@@ -373,16 +320,7 @@ class ChatMessageUpdater(BaseService[AbstractUnitOfWork]):
         message_id: uuid.UUID,
         content: str,
     ) -> ChatMessage | None:
-        """
-        更新消息为流式输出中状态
-
-        Args:
-            message_id: 消息 ID
-            content: 当前累积的内容
-
-        Returns:
-            更新后的 ChatMessage 对象
-        """
+        """保存当前已累积的流式内容。"""
         return await self.uow.chat_repo.update_message_status(
             message_id=message_id,
             status=MessageStatus.STREAMING,

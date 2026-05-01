@@ -1,3 +1,10 @@
+"""Audit service.
+
+职责：记录认证、权限、用户、工作区、文件和聊天等业务审计事件。
+边界：本模块不参与业务授权决策，只在调用方指定时写入审计表。
+失败处理：独立审计写入失败只记录日志，不阻断主业务流程。
+"""
+
 import logging
 import uuid
 from collections.abc import AsyncIterator
@@ -16,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 class AuditAction(StrEnum):
+    """审计事件动作枚举。"""
+
     AUTH_LOGIN_SUCCESS = "auth.login_success"
     AUTH_LOGIN_FAILED = "auth.login_failed"
     PERMISSION_DENIED = "permission.denied"
@@ -35,6 +44,8 @@ class AuditAction(StrEnum):
 
 @dataclass(slots=True)
 class AuditRequestContext:
+    """来自 HTTP 请求的审计上下文。"""
+
     ip: str | None = None
     user_agent: str | None = None
     request_id: str | None = None
@@ -42,6 +53,8 @@ class AuditRequestContext:
 
 @dataclass(slots=True)
 class AuditCapture:
+    """上下文管理器内可补充的审计资源信息。"""
+
     resource_type: str | None = None
     resource_id: uuid.UUID | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -58,11 +71,13 @@ class AuditCapture:
             self.resource_id = resource_id
 
     def add_metadata(self, **metadata: Any) -> None:
-        self.metadata.update({key: value for key, value in metadata.items() if value is not None})
+        self.metadata.update(
+            {key: value for key, value in metadata.items() if value is not None}
+        )
 
 
 class AuditService:
-    """Writes business audit events to audit_events."""
+    """写入业务审计事件。"""
 
     def __init__(
         self,
@@ -70,7 +85,7 @@ class AuditService:
         uow: AbstractUnitOfWork,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
         request_context: AuditRequestContext | None = None,
-    ):
+    ) -> None:
         self.uow = uow
         self.session_factory = session_factory
         self.request_context = request_context or AuditRequestContext()
@@ -147,6 +162,8 @@ class AuditService:
 
 
 class _AuditCaptureContext(AbstractAsyncContextManager[AuditCapture]):
+    """把上下文执行结果转换为审计 outcome。"""
+
     def __init__(
         self,
         *,
@@ -157,7 +174,7 @@ class _AuditCaptureContext(AbstractAsyncContextManager[AuditCapture]):
         resource_type: str | None,
         resource_id: uuid.UUID | None,
         metadata: dict[str, Any] | None,
-    ):
+    ) -> None:
         self.audit_service = audit_service
         self.action = action
         self.actor_user_id = actor_user_id
@@ -201,6 +218,7 @@ async def capture_audit(
     audit_service: object,
     **kwargs: Any,
 ) -> AsyncIterator[AuditCapture]:
+    """兼容可选 AuditService 的审计捕获入口。"""
     if isinstance(audit_service, AuditService):
         async with audit_service.capture(**kwargs) as audit:
             yield audit
@@ -214,5 +232,6 @@ async def capture_audit(
 
 
 async def record_audit(audit_service: object, **kwargs: Any) -> None:
+    """兼容可选 AuditService 的审计记录入口。"""
     if isinstance(audit_service, AuditService):
         await audit_service.record(**kwargs)
