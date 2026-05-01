@@ -11,7 +11,7 @@ import time
 from fastapi import FastAPI, Request, Response
 from starlette.middleware.base import RequestResponseEndpoint
 
-from backend.core.trace_utils import (
+from backend.observability.trace_utils import (
     REQUEST_ID_CTX,
     current_trace_id,
     set_current_span_attributes,

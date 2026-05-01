@@ -16,7 +16,7 @@ from backend.ai.core.prompt_templates import (
 )
 from backend.ai.core.token_counter import count_messages_tokens
 from backend.config.llm import get_llm_model_config
-from backend.core.config import settings
+from backend.config.settings import settings
 from backend.core.exceptions import app_payload_too_large
 from backend.models.schemas.chat_schema import ConversationMessage
 
@@ -54,9 +54,7 @@ class PromptManager:
         self.reserved_response_tokens = (
             reserved_response_tokens or settings.LLM_RESERVED_RESPONSE_TOKENS
         )
-        self.model_name = (
-            model_name or get_llm_model_config().resolve_profile().model
-        )
+        self.model_name = model_name or get_llm_model_config().resolve_profile().model
 
     def assemble(
         self,
@@ -71,9 +69,7 @@ class PromptManager:
         system_template = self.system_template or get_prompt_resolver().get_template(
             self.template_name
         )
-        system_content = render_system_prompt(
-            template=system_template, **merged_vars
-        )
+        system_content = render_system_prompt(template=system_template, **merged_vars)
 
         base_messages: list[ConversationMessage] = []
         if system_content.strip():

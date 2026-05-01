@@ -58,8 +58,12 @@ def load_samples(dataset_path: Path) -> list[EvalSample]:
                 id=str(payload.get("id") or f"line-{line_no}"),
                 query=query,
                 kb_id=kb_id,
-                expected_chunk_ids=[str(x) for x in payload.get("expected_chunk_ids", [])],
-                expected_keywords=[str(x) for x in payload.get("expected_keywords", [])],
+                expected_chunk_ids=[
+                    str(x) for x in payload.get("expected_chunk_ids", [])
+                ],
+                expected_keywords=[
+                    str(x) for x in payload.get("expected_keywords", [])
+                ],
                 reference_answer=reference_answer,
                 category=category,
                 retrieval_mode=retrieval_mode,

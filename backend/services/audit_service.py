@@ -15,8 +15,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import AppException
-from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.access import AuditEvent, AuditOutcome
 
 logger = logging.getLogger(__name__)

@@ -12,10 +12,14 @@ from langfuse import observe
 
 from backend.ai.providers.llm.factory import LLMProviderFactory
 from backend.core.exceptions import AppException
-from backend.core.redis import redis_client
-from backend.core.task_broker import broker
-from backend.core.trace_utils import set_span_attributes, trace_span, use_trace_context
+from backend.infra.redis import redis_client
+from backend.infra.task_broker import broker
 from backend.models.schemas.chat_schema import LLMQueryDTO
+from backend.observability.trace_utils import (
+    set_span_attributes,
+    trace_span,
+    use_trace_context,
+)
 
 logger = logging.getLogger(__name__)
 

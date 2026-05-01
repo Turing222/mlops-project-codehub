@@ -9,7 +9,9 @@ from backend.models.orm.access import WorkspaceRole
 WorkspaceNameStr = Annotated[str, Field(min_length=1, max_length=100)]
 WorkspaceSlugStr = Annotated[
     str,
-    Field(min_length=3, max_length=120, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$"),
+    Field(
+        min_length=3, max_length=120, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$"
+    ),
 ]
 
 

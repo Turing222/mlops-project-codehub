@@ -64,12 +64,16 @@ def _prepare_local_alembic_environment() -> None:
         os.environ.setdefault(key, value)
 
     secret_file_defaults = {
-        "SECRET_KEY_FILE": smoke_env_values.get("SMOKE_SECRET_KEY_FILE", "./secrets/smoke/secret_key.txt"),
+        "SECRET_KEY_FILE": smoke_env_values.get(
+            "SMOKE_SECRET_KEY_FILE", "./secrets/smoke/secret_key.txt"
+        ),
         "POSTGRES_PASSWORD_FILE": smoke_env_values.get(
             "SMOKE_POSTGRES_PASSWORD_FILE",
             "./secrets/smoke/postgres_password.txt",
         ),
-        "REDIS_PASSWORD_FILE": smoke_env_values.get("SMOKE_REDIS_PASSWORD_FILE", "./secrets/smoke/redis_password.txt"),
+        "REDIS_PASSWORD_FILE": smoke_env_values.get(
+            "SMOKE_REDIS_PASSWORD_FILE", "./secrets/smoke/redis_password.txt"
+        ),
     }
     for env_name, default_path in secret_file_defaults.items():
         if env_name in os.environ:
@@ -78,7 +82,10 @@ def _prepare_local_alembic_environment() -> None:
         if os.path.exists(secret_path):
             os.environ[env_name] = secret_path
 
-    if "POSTGRES_SERVER" not in original_env_keys and os.getenv("POSTGRES_SERVER") == "postgres":
+    if (
+        "POSTGRES_SERVER" not in original_env_keys
+        and os.getenv("POSTGRES_SERVER") == "postgres"
+    ):
         os.environ["POSTGRES_SERVER"] = "localhost"
 
     if "SECRET_KEY" not in os.environ and "SECRET_KEY_FILE" not in os.environ:
@@ -87,7 +94,7 @@ def _prepare_local_alembic_environment() -> None:
 
 _prepare_local_alembic_environment()
 
-from backend.core.config import settings  # noqa: E402
+from backend.config.settings import settings  # noqa: E402
 from backend.models.orm import Base  # noqa: E402
 
 # 这里的 import User 非常重要，没它 metadata 就是空的

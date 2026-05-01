@@ -10,13 +10,13 @@ import backend.core.secret_env  # noqa: F401
 from backend.api.v1.api import api_router
 from backend.config.llm import validate_llm_configs
 from backend.config.permissions import get_permission_policy
-from backend.core.config import settings
-from backend.core.database import init_db
+from backend.config.settings import settings
 from backend.core.exceptions import setup_exception_handlers
-from backend.core.logger import setup_logging
-from backend.core.redis import redis_client
-from backend.core.telemetry import setup_telemetry, shutdown_telemetry
+from backend.infra.database import init_db
+from backend.infra.redis import redis_client
 from backend.middleware.tracing import setup_tracing
+from backend.observability.logger import setup_logging
+from backend.observability.telemetry import setup_telemetry, shutdown_telemetry
 
 # 1. 初始化
 setup_logging()

@@ -10,9 +10,9 @@ import hashlib
 import uuid
 from typing import TypedDict
 
-from backend.core.trace_utils import set_span_attributes, trace_span
-from backend.domain.interfaces import AbstractRAGEmbedder, AbstractUnitOfWork
+from backend.contracts.interfaces import AbstractRAGEmbedder, AbstractUnitOfWork
 from backend.models.orm.chunk import ChunkSourceType, DocumentChunk
+from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.base import BaseService
 
 CHUNKING_VERSION = 1

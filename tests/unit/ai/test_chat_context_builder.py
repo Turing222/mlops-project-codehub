@@ -98,9 +98,7 @@ async def test_build_uses_rag_prompt_and_search_context_when_chunks_found():
         "meta_info": {"page_label": "1"},
     }
     assert result.search_context["refs"][0]["chunks"][1]["ref_id"] == "R1.2"
-    assert result.search_context["refs"][0]["chunks"][1]["chunk_id"] == str(
-        chunk_id_2
-    )
+    assert result.search_context["refs"][0]["chunks"][1]["chunk_id"] == str(chunk_id_2)
     assert result.search_context["chunks"][0]["ref_id"] == "R1.1"
     assert result.search_context["chunks"][0]["id"] == str(chunk_id)
     assert result.search_context["chunks"][0]["chunk_index"] == 3

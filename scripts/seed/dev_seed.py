@@ -89,8 +89,8 @@ def _prepare_local_environment() -> None:
 
 _prepare_local_environment()
 
-from backend.core.database import create_db_assets  # noqa: E402
 from backend.core.security import get_password_hash  # noqa: E402
+from backend.infra.database import create_db_assets  # noqa: E402
 from backend.models.orm.access import (  # noqa: E402
     AuditEvent,
     AuditOutcome,

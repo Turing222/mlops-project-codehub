@@ -104,6 +104,6 @@ def _embedding_provider_default_base_url(provider: str) -> str | None:
 
 
 def _get_settings():
-    from backend.core.config import settings
+    from backend.config.settings import settings
 
     return settings

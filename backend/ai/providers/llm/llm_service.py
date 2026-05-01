@@ -20,15 +20,15 @@ from openai.types.chat import (
 
 from backend.ai.core.token_counter import count_tokens
 from backend.config.llm import get_llm_model_config
-from backend.core.config import settings
+from backend.config.settings import settings
+from backend.contracts.interfaces import AbstractLLMService
 from backend.core.exceptions import AppException, app_service_error
-from backend.core.trace_utils import set_span_attributes, trace_span
-from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import (
     ConversationMessage,
     LLMQueryDTO,
     LLMResultDTO,
 )
+from backend.observability.trace_utils import set_span_attributes, trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,9 @@ class LLMService(AbstractLLMService):
         self.provider_name = provider_name
         self.base_url = base_url or profile.resolve_base_url() or settings.LLM_BASE_URL
         self.api_key = (
-            api_key if api_key is not None else profile.resolve_api_key() or settings.LLM_API_KEY
+            api_key
+            if api_key is not None
+            else profile.resolve_api_key() or settings.LLM_API_KEY
         )
         self.model_name = model_name or profile.model
         self.max_retries = max_retries

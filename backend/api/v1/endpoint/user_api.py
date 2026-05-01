@@ -98,7 +98,9 @@ async def update_user(
         metadata={"updated_fields": list(user_in.model_fields_set)},
     ):
         async with user_service.uow:
-            updated_user = await user_service.user_update(user_id=user_id, user_in=user_in)
+            updated_user = await user_service.user_update(
+                user_id=user_id, user_in=user_in
+            )
             if not updated_user:
                 raise app_not_found("用户不存在", code="USER_NOT_FOUND")
         return UserResponse.model_validate(updated_user)

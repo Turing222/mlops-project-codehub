@@ -3,8 +3,8 @@ from functools import lru_cache
 from fastapi import Depends
 
 from backend.api.deps.uow import get_uow
-from backend.core.config import settings
-from backend.domain.interfaces import AbstractUnitOfWork
+from backend.config.settings import settings
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.object_storage import ObjectStorage, create_object_storage
 from backend.services.session_query_service import SessionQueryService

@@ -23,9 +23,7 @@ async def test_upload_file_delegates_to_submit_workflow():
         file_status="uploaded",
         task_status="pending",
     )
-    upload_workflow = SimpleNamespace(
-        submit=AsyncMock(return_value=expected)
-    )
+    upload_workflow = SimpleNamespace(submit=AsyncMock(return_value=expected))
 
     result = await knowledge_api.upload_file(
         kb_id=kb_id,
@@ -53,9 +51,7 @@ async def test_upload_file_to_default_kb_delegates_to_submit_workflow():
         file_status="uploaded",
         task_status="pending",
     )
-    upload_workflow = SimpleNamespace(
-        submit=AsyncMock(return_value=expected)
-    )
+    upload_workflow = SimpleNamespace(submit=AsyncMock(return_value=expected))
 
     result = await knowledge_api.upload_file_to_default_kb(
         file=upload_file,

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import redis.asyncio as redis
 
-from backend.core.config import settings
-from backend.core.task_broker import broker
+from backend.config.settings import settings
+from backend.infra.task_broker import broker
 
 
 @broker.task(task_name="integration_echo")

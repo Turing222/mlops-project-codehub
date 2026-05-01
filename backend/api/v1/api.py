@@ -20,8 +20,12 @@ api_router.include_router(user_api.router, prefix="/users", tags=["users"])
 api_router.include_router(chat_api.router, prefix="/chat", tags=["chat"])
 api_router.include_router(knowledge_api.router, prefix="/knowledge", tags=["knowledge"])
 api_router.include_router(audit_api.router, prefix="/audit", tags=["audit"])
-api_router.include_router(workspace_api.router, prefix="/workspaces", tags=["workspaces"])
-api_router.include_router(permission_api.router, prefix="/permissions", tags=["permissions"])
+api_router.include_router(
+    workspace_api.router, prefix="/workspaces", tags=["workspaces"]
+)
+api_router.include_router(
+    permission_api.router, prefix="/permissions", tags=["permissions"]
+)
 api_router.include_router(
     health_check.router, prefix="/health_check", tags=["health_check"]
 )

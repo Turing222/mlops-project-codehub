@@ -4,7 +4,7 @@ import asyncio
 async def main() -> None:
     print("Testing imports...")
 
-    from backend.core.config import settings
+    from backend.config.settings import settings
     from backend.workflow.chat_workflow import ChatWorkflow
 
     print("Initializing ChatWorkflow...")

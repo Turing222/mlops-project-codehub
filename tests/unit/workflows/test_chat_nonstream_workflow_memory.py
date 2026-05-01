@@ -1,7 +1,7 @@
 import uuid
 from unittest.mock import MagicMock
 
-from backend.core.config import settings
+from backend.config.settings import settings
 from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
 
 

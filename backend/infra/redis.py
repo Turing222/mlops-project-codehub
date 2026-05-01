@@ -7,7 +7,7 @@
 
 import redis.asyncio as redis
 
-from backend.core.config import settings
+from backend.config.settings import settings
 
 
 class RedisClient:

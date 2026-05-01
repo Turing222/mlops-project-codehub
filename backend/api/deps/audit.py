@@ -1,7 +1,7 @@
 from fastapi import Depends, Request
 
 from backend.api.deps.uow import get_uow
-from backend.domain.interfaces import AbstractUnitOfWork
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.services.audit_service import AuditRequestContext, AuditService
 
 

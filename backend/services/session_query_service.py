@@ -8,8 +8,8 @@
 import logging
 import uuid
 
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import app_forbidden, app_not_found
-from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.schemas.chat_schema import (
     MessageResponse,
     SessionDetailResponse,
@@ -31,7 +31,9 @@ class SessionQueryService(BaseService[AbstractUnitOfWork]):
         skip: int = 0,
         limit: int = 20,
     ) -> SessionListResponse:
-        logger.debug("获取会话列表: user_id=%s, skip=%d, limit=%d", user_id, skip, limit)
+        logger.debug(
+            "获取会话列表: user_id=%s, skip=%d, limit=%d", user_id, skip, limit
+        )
 
         rows = await self.uow.chat_repo.get_user_sessions_with_total_tokens(
             user_id=user_id,
@@ -40,7 +42,10 @@ class SessionQueryService(BaseService[AbstractUnitOfWork]):
         )
         total = await self.uow.chat_repo.count_user_sessions(user_id)
 
-        items = [self._to_session_response(session, total_tokens) for session, total_tokens in rows]
+        items = [
+            self._to_session_response(session, total_tokens)
+            for session, total_tokens in rows
+        ]
         return SessionListResponse(
             items=items,
             total=total,

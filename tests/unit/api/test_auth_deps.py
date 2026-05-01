@@ -44,7 +44,9 @@ def auth_ctx():
 
 
 def _patch_auth(monkeypatch, auth_ctx, payload: dict):
-    monkeypatch.setattr("backend.api.deps.auth.jwt.decode", lambda *args, **kwargs: payload)
+    monkeypatch.setattr(
+        "backend.api.deps.auth.jwt.decode", lambda *args, **kwargs: payload
+    )
     monkeypatch.setattr(
         "backend.api.deps.auth.UserService",
         lambda uow: auth_ctx.fake_service,

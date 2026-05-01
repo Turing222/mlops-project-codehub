@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import jwt
 import pytest
 
-from backend.core.config import settings
+from backend.config.settings import settings
 from backend.core.security import (
     create_access_token,
     get_password_hash,

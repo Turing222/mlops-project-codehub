@@ -21,7 +21,7 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-from backend.core.config import settings
+from backend.config.settings import settings
 
 logger = logging.getLogger(__name__)
 _TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}

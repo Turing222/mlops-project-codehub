@@ -82,11 +82,7 @@ class AppYamlSettingsSource(PydanticBaseSettingsSource):
                 "AppYamlSettings: 以下配置键未被识别，已忽略（请检查拼写）: %s",
                 unknown_keys,
             )
-        return {
-            key: value
-            for key, value in config.items()
-            if key in known_fields
-        }
+        return {key: value for key, value in config.items() if key in known_fields}
 
 
 class Settings(BaseSettings):

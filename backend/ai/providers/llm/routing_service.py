@@ -10,8 +10,8 @@ import time
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 
+from backend.contracts.interfaces import AbstractLLMService
 from backend.core.exceptions import app_service_error
-from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 
 logger = logging.getLogger(__name__)

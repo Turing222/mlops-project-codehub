@@ -122,7 +122,9 @@ async def _resolve_or_create_kb_id(
     )
 
     engine = create_async_engine(db_url, pool_pre_ping=True)
-    session_factory = async_sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    session_factory = async_sessionmaker(
+        bind=engine, autoflush=False, expire_on_commit=False
+    )
     try:
         async with session_factory() as session:
             session.add(kb)

@@ -7,8 +7,8 @@
 
 import uuid
 
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import app_not_found
-from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.task import TaskJob, TaskStatus
 from backend.services.base import BaseService
 

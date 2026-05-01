@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from backend.config.loader import ConfigurationError
 from backend.config.prompts import PromptConfig, load_prompt_config
 from backend.config.schemas import PromptsConfig
-from backend.core.config import settings
+from backend.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,9 @@ class PromptResolver:
             with path.open("r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
         except yaml.YAMLError as exc:
-            raise ConfigurationError(f"Invalid YAML in prompt cache file: {path}") from exc
+            raise ConfigurationError(
+                f"Invalid YAML in prompt cache file: {path}"
+            ) from exc
 
         try:
             config = PromptsConfig.model_validate(data)

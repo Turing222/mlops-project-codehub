@@ -17,25 +17,25 @@ from backend.ai.core import PromptManager
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.core.token_counter import count_tokens
 from backend.config.llm import get_llm_model_config
+from backend.config.settings import settings
+from backend.contracts.interfaces import (
+    AbstractLLMService,
+    AbstractRAGService,
+    AbstractUnitOfWork,
+)
 from backend.core.concurrency import (
     db_concurrency_slot,
     get_db_semaphore,
     get_llm_semaphore,
 )
-from backend.core.config import settings
 from backend.core.exceptions import AppException, app_service_error
-from backend.core.redis import redis_client
-from backend.core.trace_utils import (
+from backend.infra.redis import redis_client
+from backend.models.schemas.chat_schema import LLMQueryDTO
+from backend.observability.trace_utils import (
     inject_trace_context,
     set_span_attributes,
     trace_span,
 )
-from backend.domain.interfaces import (
-    AbstractLLMService,
-    AbstractRAGService,
-    AbstractUnitOfWork,
-)
-from backend.models.schemas.chat_schema import LLMQueryDTO
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
 from backend.services.knowledge_service import DEFAULT_KNOWLEDGE_BASE_NAME
 from backend.tasks.llm_tasks import generate_llm_stream_task

@@ -43,7 +43,9 @@ class Workspace(Base, BaseIdModel, AuditMixin):
     __tablename__ = "workspaces"
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    slug: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
+    slug: Mapped[str] = mapped_column(
+        String(120), unique=True, index=True, nullable=False
+    )
     owner_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         index=True,
@@ -135,7 +137,9 @@ class AuditEvent(Base, BaseIdModel, AuditMixin):
     )
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
-    request_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    request_id: Mapped[str | None] = mapped_column(
+        String(64), index=True, nullable=True
+    )
     event_metadata: Mapped[dict] = mapped_column(
         "metadata",
         JSONB,

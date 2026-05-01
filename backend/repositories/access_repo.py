@@ -164,10 +164,7 @@ class AccessRepository:
             .limit(limit)
         )
         result = await self.session.execute(stmt)
-        return [
-            (user_role, user)
-            for user_role, user in result.all()
-        ]
+        return [(user_role, user) for user_role, user in result.all()]
 
     async def count_workspace_members(self, *, workspace_id: uuid.UUID) -> int:
         stmt = (
@@ -196,10 +193,7 @@ class AccessRepository:
             .limit(limit)
         )
         result = await self.session.execute(stmt)
-        return [
-            (workspace, WorkspaceRole(role))
-            for workspace, role in result.all()
-        ]
+        return [(workspace, WorkspaceRole(role)) for workspace, role in result.all()]
 
     async def count_workspaces_for_user(self, *, user_id: uuid.UUID) -> int:
         stmt = (

@@ -22,7 +22,7 @@ from backend.api.dependencies import (
     get_permission_service,
     get_session_query_service,
 )
-from backend.core.config import settings
+from backend.config.settings import settings
 from backend.middleware.rate_limit import RateLimiter
 from backend.models.orm.user import User
 from backend.models.schemas.chat_schema import (
@@ -140,7 +140,11 @@ async def query_stream(
                 client_request_id=request.client_request_id,
             ):
                 # 仅在首个 meta 事件时更新 audit resource_id（session_id / message_id）
-                if not meta_captured and isinstance(chunk, str) and chunk.startswith("data:"):
+                if (
+                    not meta_captured
+                    and isinstance(chunk, str)
+                    and chunk.startswith("data:")
+                ):
                     payload_str = chunk.removeprefix("data:").strip()
                     if payload_str and payload_str != "[DONE]":
                         try:
@@ -151,9 +155,9 @@ async def query_stream(
                                 _mid = payload.get("message_id")
                                 try:
                                     audit.set_resource(
-                                        resource_id=uuid.UUID(_mid) if _mid else (
-                                            uuid.UUID(_sid) if _sid else None
-                                        )
+                                        resource_id=uuid.UUID(_mid)
+                                        if _mid
+                                        else (uuid.UUID(_sid) if _sid else None)
                                     )
                                     audit.add_metadata(session_id=_sid)
                                 except (ValueError, AttributeError):

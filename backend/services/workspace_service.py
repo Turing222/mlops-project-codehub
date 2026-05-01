@@ -10,8 +10,8 @@ from collections.abc import Sequence
 
 from sqlalchemy.exc import IntegrityError
 
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import app_forbidden, app_not_found, app_validation_error
-from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.access import UserWorkspaceRole, Workspace, WorkspaceRole
 from backend.models.orm.user import User
 from backend.models.schemas.workspace_schema import (
@@ -133,7 +133,10 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
         workspace_id: uuid.UUID,
     ) -> None:
         workspace = await self._get_workspace_or_404(workspace_id)
-        if current_user.is_superuser and self.permission_service.policy.superuser_bypass:
+        if (
+            current_user.is_superuser
+            and self.permission_service.policy.superuser_bypass
+        ):
             # 超管也走软删除，保留 KB/File/ChatSession 的 workspace 外键关系。
             await self.uow.access_repo.soft_delete_workspace(workspace)
             return
@@ -339,7 +342,10 @@ class WorkspaceService(BaseService[AbstractUnitOfWork]):
         target_role: WorkspaceRole | None = None,
         existing_role: WorkspaceRole | None = None,
     ) -> None:
-        if current_user.is_superuser and self.permission_service.policy.superuser_bypass:
+        if (
+            current_user.is_superuser
+            and self.permission_service.policy.superuser_bypass
+        ):
             return
         if target_role != WorkspaceRole.OWNER and existing_role != WorkspaceRole.OWNER:
             return

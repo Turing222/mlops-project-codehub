@@ -15,13 +15,13 @@ from backend.core.exceptions import (
     app_dependency_unavailable,
     app_service_error,
 )
-from backend.core.trace_utils import (
+from backend.models.orm.knowledge import File, FileStatus
+from backend.models.schemas.knowledge_schema import KnowledgeUploadResponse
+from backend.observability.trace_utils import (
     inject_trace_context,
     set_span_attributes,
     trace_span,
 )
-from backend.models.orm.knowledge import File, FileStatus
-from backend.models.schemas.knowledge_schema import KnowledgeUploadResponse
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.task_service import TaskService
 from backend.tasks.knowledge_tasks import ingest_knowledge_file_task
@@ -137,12 +137,16 @@ class KnowledgeUploadWorkflow:
                 )
         except AppException as exc:
             await self._handle_ingestion_failure(
-                kb_id=kb_id, file_id=file_obj.id, exc=exc,
+                kb_id=kb_id,
+                file_id=file_obj.id,
+                exc=exc,
             )
             raise
         except Exception as exc:
             await self._handle_ingestion_failure(
-                kb_id=kb_id, file_id=file_obj.id, exc=exc,
+                kb_id=kb_id,
+                file_id=file_obj.id,
+                exc=exc,
             )
             raise app_service_error(
                 "创建知识处理任务失败，请稍后重试",
@@ -175,12 +179,18 @@ class KnowledgeUploadWorkflow:
                 )
         except AppException as exc:
             await self._handle_ingestion_failure(
-                kb_id=kb_id, file_id=file_obj.id, task_id=task.id, exc=exc,
+                kb_id=kb_id,
+                file_id=file_obj.id,
+                task_id=task.id,
+                exc=exc,
             )
             raise
         except Exception as exc:
             await self._handle_ingestion_failure(
-                kb_id=kb_id, file_id=file_obj.id, task_id=task.id, exc=exc,
+                kb_id=kb_id,
+                file_id=file_obj.id,
+                task_id=task.id,
+                exc=exc,
             )
             raise app_dependency_unavailable(
                 "任务投递失败，请稍后重试",
@@ -229,10 +239,15 @@ class KnowledgeUploadWorkflow:
         if isinstance(exc, AppException):
             logger.warning(
                 "知识库任务失败: kb_id=%s, file_id=%s, task_id=%s, error=%s",
-                kb_id, file_id, task_id, exc,
+                kb_id,
+                file_id,
+                task_id,
+                exc,
             )
         else:
             logger.exception(
                 "知识库任务失败: kb_id=%s, file_id=%s, task_id=%s",
-                kb_id, file_id, task_id,
+                kb_id,
+                file_id,
+                task_id,
             )

@@ -8,14 +8,14 @@
 import asyncio
 from collections.abc import AsyncGenerator
 
-from backend.core.trace_utils import set_span_attributes, trace_span
-from backend.domain.interfaces import AbstractLLMService
+from backend.contracts.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
+from backend.observability.trace_utils import set_span_attributes, trace_span
 
 
 class MockLLMService(AbstractLLMService):
     """用于本地和压测的确定性 LLM 实现。"""
-    
+
     async def stream_response(
         self,
         query: LLMQueryDTO,
@@ -32,7 +32,10 @@ class MockLLMService(AbstractLLMService):
         ) as span:
             await asyncio.sleep(0.2)
 
-            fake_response = "这是一段由 MockLLMService 自动生成的测试回复，用于极限压测场景，没有任何实际意义。祝压测顺利！" * 3
+            fake_response = (
+                "这是一段由 MockLLMService 自动生成的测试回复，用于极限压测场景，没有任何实际意义。祝压测顺利！"
+                * 3
+            )
 
             for char in fake_response:
                 await asyncio.sleep(0.01)

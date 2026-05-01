@@ -11,10 +11,10 @@ import openai
 from google import genai
 from google.genai import types
 
-from backend.core.config import settings
+from backend.config.settings import settings
+from backend.contracts.interfaces import AbstractRAGEmbedder
 from backend.core.exceptions import AppException, app_service_error
-from backend.core.trace_utils import set_span_attributes, trace_span
-from backend.domain.interfaces import AbstractRAGEmbedder
+from backend.observability.trace_utils import set_span_attributes, trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -47,19 +47,25 @@ class OpenAICompatibleEmbedder(AbstractRAGEmbedder):
     def encode_query(self, text: str) -> list[float]:
         payload = text.strip()
         if not payload:
-            raise app_service_error("RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY")
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
 
         return self._create_embeddings([payload])[0]
 
     def encode_documents(self, texts: list[str]) -> list[list[float]]:
         payloads = [text.strip() for text in texts]
         if not payloads or any(not payload for payload in payloads):
-            raise app_service_error("RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY")
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
         return self._create_embeddings(payloads)
 
     def _create_embeddings(self, payloads: list[str]) -> list[list[float]]:
         if not payloads:
-            raise app_service_error("RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY")
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
 
         request_kwargs: dict = {}
         if self.dimensions is not None:
@@ -166,7 +172,9 @@ class GoogleGenAIEmbedder(AbstractRAGEmbedder):
     def _embed(self, text: str, *, task_type: str) -> list[float]:
         payload = text.strip()
         if not payload:
-            raise app_service_error("RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY")
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
 
         config_kwargs: dict = {"task_type": task_type}
         if self.dimensions is not None:
@@ -237,19 +245,25 @@ class MockRAGEmbedder(AbstractRAGEmbedder):
     def encode_query(self, text: str) -> list[float]:
         payload = text.strip()
         if not payload:
-            raise app_service_error("RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY")
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
         return self._vector()
 
     def encode_document(self, text: str) -> list[float]:
         payload = text.strip()
         if not payload:
-            raise app_service_error("RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY")
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
         return self._vector()
 
     def encode_documents(self, texts: list[str]) -> list[list[float]]:
         payloads = [text.strip() for text in texts]
         if not payloads or any(not payload for payload in payloads):
-            raise app_service_error("RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY")
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
         return [self._vector() for _ in payloads]
 
     def _vector(self) -> list[float]:

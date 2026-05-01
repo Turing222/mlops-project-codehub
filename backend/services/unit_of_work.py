@@ -9,7 +9,7 @@ from types import TracebackType
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from backend.domain.interfaces import AbstractUnitOfWork
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.repositories.access_repo import AccessRepository
 from backend.repositories.chat_repo import ChatRepository
 from backend.repositories.knowledge_repo import KnowledgeRepository

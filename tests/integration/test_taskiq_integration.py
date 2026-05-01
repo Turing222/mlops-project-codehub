@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 import pytest
 import redis.asyncio as redis
 
-from backend.core.config import settings
+from backend.config.settings import settings
 from tests.integration.taskiq_test_tasks import integration_echo_task
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -57,7 +57,7 @@ def taskiq_worker():
         [
             str(TASKIQ_BIN),
             "worker",
-            "backend.core.task_broker:broker",
+            "backend.infra.task_broker:broker",
             "tests.integration.taskiq_test_tasks",
             "--workers",
             "1",

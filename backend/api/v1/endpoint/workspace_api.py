@@ -104,10 +104,7 @@ async def list_workspaces(
             limit=limit,
         )
         return WorkspaceListResponse(
-            items=[
-                _workspace_response(workspace, role)
-                for workspace, role in items
-            ],
+            items=[_workspace_response(workspace, role) for workspace, role in items],
             total=total,
             skip=skip,
             limit=limit,
@@ -193,10 +190,7 @@ async def list_workspace_members(
             limit=limit,
         )
         return WorkspaceMemberListResponse(
-            items=[
-                _member_response(user_role, user)
-                for user_role, user in items
-            ],
+            items=[_member_response(user_role, user) for user_role, user in items],
             total=total,
             skip=skip,
             limit=limit,

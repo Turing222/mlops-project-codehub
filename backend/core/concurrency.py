@@ -12,8 +12,8 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
-from backend.core.config import settings
-from backend.core.trace_utils import set_span_attributes, trace_span
+from backend.config.settings import settings
+from backend.observability.trace_utils import set_span_attributes, trace_span
 
 # 懒初始化可能跨线程触发，用线程锁保护同一进程内的单例。
 _llm_lock = threading.Lock()

@@ -13,10 +13,10 @@ from typing import cast
 
 from fastapi import Request
 
-from backend.core.config import settings
+from backend.config.settings import settings
 from backend.core.exceptions import app_too_many_requests
-from backend.core.redis import redis_client
-from backend.core.trace_utils import (
+from backend.infra.redis import redis_client
+from backend.observability.trace_utils import (
     set_current_span_attributes,
     set_span_attributes,
     trace_span,

@@ -26,7 +26,9 @@ async def test_llm_concurrency():
 
             mock_client.chat.completions.create = AsyncMock(side_effect=mock_stream)
 
-            query = LLMQueryDTO(session_id=uuid.uuid4(), query_text="hello", conversation_history=[])
+            query = LLMQueryDTO(
+                session_id=uuid.uuid4(), query_text="hello", conversation_history=[]
+            )
 
             start_time = time.time()
             tasks = [service.generate_response(query) for _ in range(4)]
@@ -38,13 +40,16 @@ async def test_llm_concurrency():
             assert len(results) == 4
             assert all(r.success for r in results)
 
+
 class MagicChunk:
     def __init__(self, content):
         self.choices = [Choice(content)]
 
+
 class Choice:
     def __init__(self, content):
         self.delta = Delta(content)
+
 
 class Delta:
     def __init__(self, content):

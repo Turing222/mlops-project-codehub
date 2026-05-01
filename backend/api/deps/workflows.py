@@ -8,7 +8,7 @@ from backend.api.deps.ai import (
 )
 from backend.api.deps.services import get_knowledge_service, get_task_service
 from backend.api.deps.uow import get_uow
-from backend.domain.interfaces import (
+from backend.contracts.interfaces import (
     AbstractLLMService,
     AbstractRAGService,
     AbstractUnitOfWork,

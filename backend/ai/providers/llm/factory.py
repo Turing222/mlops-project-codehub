@@ -6,8 +6,8 @@
 """
 
 from backend.config.llm import LLMProfile, get_llm_model_config
-from backend.core.config import settings
-from backend.domain.interfaces import AbstractLLMService
+from backend.config.settings import settings
+from backend.contracts.interfaces import AbstractLLMService
 
 from .llm_service import LLMService
 from .mock_provider import MockLLMService

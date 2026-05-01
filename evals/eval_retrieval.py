@@ -6,8 +6,8 @@ from pathlib import Path
 
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.config.llm import get_llm_model_config
-from backend.core.config import settings
-from backend.core.database import create_db_assets
+from backend.config.settings import settings
+from backend.infra.database import create_db_assets
 from backend.services.rag_service import RAGService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from evals.common import (

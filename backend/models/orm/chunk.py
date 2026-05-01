@@ -23,14 +23,21 @@ class ChunkSourceType(StrEnum):
 
 class DocumentChunk(Base, BaseIdModel):
     """RAG 切片表（支持知识库文件 & 历史对话等多态来源）"""
+
     __tablename__ = "document_chunks"
 
     # 区分来源
-    source_type: Mapped[ChunkSourceType] = mapped_column(String(20), index=True, server_default=ChunkSourceType.FILE)
+    source_type: Mapped[ChunkSourceType] = mapped_column(
+        String(20), index=True, server_default=ChunkSourceType.FILE
+    )
 
     # 用多外键的方式保留 DB 外键约束 (且保证总有一个不为空)
-    file_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("knowledge_files.id", ondelete="CASCADE"), index=True)
-    message_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True)
+    file_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("knowledge_files.id", ondelete="CASCADE"), index=True
+    )
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True
+    )
 
     # 原始切片内容
     content: Mapped[str] = mapped_column(Text)

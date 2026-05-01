@@ -28,7 +28,9 @@ def make_service_with_role(role: WorkspaceRole | None) -> PermissionService:
     access_repo = SimpleNamespace(get_workspace_role=AsyncMock(return_value=role))
     user = make_user()
     user_repo = SimpleNamespace(get=AsyncMock(return_value=user))
-    return PermissionService(uow=SimpleNamespace(access_repo=access_repo, user_repo=user_repo))
+    return PermissionService(
+        uow=SimpleNamespace(access_repo=access_repo, user_repo=user_repo)
+    )
 
 
 @pytest.mark.asyncio

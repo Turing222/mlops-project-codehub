@@ -19,13 +19,17 @@ class UserRepository:
     async def get(self, id: Any) -> User | None:
         return await self.crud.get(id)
 
-    async def get_multi(self, *, skip: int = 0, limit: int = 100) -> Sequence[User] | None:
+    async def get_multi(
+        self, *, skip: int = 0, limit: int = 100
+    ) -> Sequence[User] | None:
         return await self.crud.get_multi(skip=skip, limit=limit)
 
     async def create(self, *, obj_in: UserCreate | dict[str, Any]) -> User:
         return await self.crud.create(obj_in=obj_in)
 
-    async def update(self, *, db_obj: User, obj_in: UserUpdate | dict[str, Any]) -> User:
+    async def update(
+        self, *, db_obj: User, obj_in: UserUpdate | dict[str, Any]
+    ) -> User:
         return await self.crud.update(db_obj=db_obj, obj_in=obj_in)
 
     async def remove(self, *, id: Any) -> User | None:

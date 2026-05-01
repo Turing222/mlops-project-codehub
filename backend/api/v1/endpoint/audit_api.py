@@ -9,8 +9,8 @@ from backend.api.dependencies import (
     get_permission_service,
     get_uow,
 )
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import app_forbidden
-from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.access import AuditEvent, AuditOutcome
 from backend.models.orm.user import User
 from backend.models.schemas.audit_schema import (

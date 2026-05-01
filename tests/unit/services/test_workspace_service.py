@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import AppException
-from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.access import WorkspaceRole
 from backend.models.schemas.workspace_schema import (
     WorkspaceCreate,
@@ -74,7 +74,9 @@ def make_service(*, role: WorkspaceRole | None = WorkspaceRole.OWNER):
         update_workspace=AsyncMock(return_value=workspace),
         delete_workspace=AsyncMock(),
         soft_delete_workspace=AsyncMock(),  # R7: 软删除接口
-        list_workspaces_for_user=AsyncMock(return_value=[(workspace, role)] if role else []),
+        list_workspaces_for_user=AsyncMock(
+            return_value=[(workspace, role)] if role else []
+        ),
         count_workspaces_for_user=AsyncMock(return_value=1 if role else 0),
         get_workspace_role=AsyncMock(return_value=role),
         get_workspace_member=AsyncMock(return_value=member_role),
@@ -185,7 +187,9 @@ def test_workspace_member_create_defaults_to_member_role():
 
 @pytest.mark.asyncio
 async def test_add_workspace_member_uses_default_member_role():
-    service, access_repo, workspace, member_user, _ = make_service(role=WorkspaceRole.ADMIN)
+    service, access_repo, workspace, member_user, _ = make_service(
+        role=WorkspaceRole.ADMIN
+    )
     access_repo.get_workspace_member.return_value = None
 
     result, user = await service.add_workspace_member(
@@ -205,7 +209,9 @@ async def test_add_workspace_member_uses_default_member_role():
 
 @pytest.mark.asyncio
 async def test_admin_cannot_appoint_owner():
-    service, access_repo, workspace, member_user, _ = make_service(role=WorkspaceRole.ADMIN)
+    service, access_repo, workspace, member_user, _ = make_service(
+        role=WorkspaceRole.ADMIN
+    )
     access_repo.get_workspace_member.return_value = None
 
     with pytest.raises(AppException):

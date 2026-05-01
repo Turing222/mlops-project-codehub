@@ -9,8 +9,8 @@ import logging
 import time
 import uuid
 
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import app_forbidden, app_not_found
-from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
 from backend.services.base import BaseService
 from backend.services.permission_service import Permission, PermissionService

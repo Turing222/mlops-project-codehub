@@ -98,9 +98,9 @@ class ChatRepository:
 
     async def get_session_total_tokens(self, session_id: uuid.UUID) -> int:
         """计算会话消耗的总 Token 数"""
-        stmt = select(func.sum(ChatMessage.tokens_input + ChatMessage.tokens_output)).where(
-            ChatMessage.session_id == session_id
-        )
+        stmt = select(
+            func.sum(ChatMessage.tokens_input + ChatMessage.tokens_output)
+        ).where(ChatMessage.session_id == session_id)
         result = await self.session.execute(stmt)
         return result.scalar() or 0
 

@@ -13,25 +13,24 @@ from langfuse import get_client, observe
 
 from backend.ai.core import PromptManager
 from backend.ai.core.chat_context_builder import ChatContextBuilder
+from backend.config.settings import settings
+from backend.contracts.interfaces import (
+    AbstractLLMService,
+    AbstractRAGService,
+    AbstractUnitOfWork,
+)
 from backend.core.concurrency import (
     db_concurrency_slot,
     get_db_semaphore,
     get_llm_semaphore,
     llm_concurrency_slot,
 )
-from backend.core.config import settings
 from backend.core.exceptions import (
     AppException,
     app_service_error,
     app_validation_error,
 )
-from backend.core.redis import redis_client
-from backend.core.trace_utils import set_span_attributes, trace_span
-from backend.domain.interfaces import (
-    AbstractLLMService,
-    AbstractRAGService,
-    AbstractUnitOfWork,
-)
+from backend.infra.redis import redis_client
 from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat_schema import (
     ChatQueryResponse,
@@ -39,6 +38,7 @@ from backend.models.schemas.chat_schema import (
     LLMQueryDTO,
     MessageResponse,
 )
+from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
 from backend.services.knowledge_service import DEFAULT_KNOWLEDGE_BASE_NAME
 

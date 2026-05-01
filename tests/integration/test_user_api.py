@@ -69,7 +69,9 @@ def api_context():
     app.dependency_overrides[user_api.get_current_superuser] = lambda: super_user
     app.dependency_overrides[user_api.get_user_service] = lambda: user_service
     app.dependency_overrides[user_api.get_user_import_service] = lambda: import_service
-    app.dependency_overrides[user_api.get_permission_service] = lambda: SimpleNamespace()
+    app.dependency_overrides[user_api.get_permission_service] = lambda: (
+        SimpleNamespace()
+    )
     app.dependency_overrides[user_api.get_audit_service] = lambda: SimpleNamespace()
 
     ctx = SimpleNamespace(
@@ -178,7 +180,9 @@ async def test_update_user_not_found_returns_404(client, api_context):
 @pytest.mark.asyncio
 async def test_create_user_success(client, api_context):
     created = make_user(username="fresh_user", email="fresh@example.com")
-    api_context.user_service.user_register_with_personal_workspace.return_value = created
+    api_context.user_service.user_register_with_personal_workspace.return_value = (
+        created
+    )
 
     payload = {
         "username": "fresh_user",

@@ -11,15 +11,15 @@ from collections.abc import AsyncGenerator
 
 from backend.ai.core.token_counter import count_tokens
 from backend.config.llm import get_llm_model_config
-from backend.core.config import settings
+from backend.config.settings import settings
+from backend.contracts.interfaces import AbstractLLMService
 from backend.core.exceptions import AppException, app_service_error
-from backend.core.trace_utils import set_span_attributes, trace_span
-from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import (
     ConversationMessage,
     LLMQueryDTO,
     LLMResultDTO,
 )
+from backend.observability.trace_utils import set_span_attributes, trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,9 @@ class PydanticAILLMService(AbstractLLMService):
                     },
                 )
 
-            logger.info("Pydantic AI Gemini 流式请求完成: session_id=%s", query.session_id)
+            logger.info(
+                "Pydantic AI Gemini 流式请求完成: session_id=%s", query.session_id
+            )
         except AppException:
             raise
         except Exception as exc:
@@ -105,7 +107,9 @@ class PydanticAILLMService(AbstractLLMService):
         self,
         query: LLMQueryDTO,
     ) -> LLMResultDTO:
-        logger.info("Pydantic AI Gemini 开始非流式请求: session_id=%s", query.session_id)
+        logger.info(
+            "Pydantic AI Gemini 开始非流式请求: session_id=%s", query.session_id
+        )
         start = time.perf_counter()
 
         try:
@@ -211,7 +215,9 @@ class PydanticAILLMService(AbstractLLMService):
             current_query = query.query_text
             prior_messages = dialogue
 
-        prompt = cls._build_prompt(current_query=current_query, prior_messages=prior_messages)
+        prompt = cls._build_prompt(
+            current_query=current_query, prior_messages=prior_messages
+        )
         instructions = "\n\n".join(system_parts) if system_parts else None
         return instructions, prompt
 

@@ -61,12 +61,16 @@ async def test_idempotency():
         uow.__aenter__.return_value = uow
 
         try:
-            await workflow.handle_query(user_id, "hello", client_request_id=client_req_id)
+            await workflow.handle_query(
+                user_id, "hello", client_request_id=client_req_id
+            )
         except Exception:
             pass
 
         with pytest.raises(Exception, match="正在加速计算中"):
-            await workflow.handle_query(user_id, "hello", client_request_id=client_req_id)
+            await workflow.handle_query(
+                user_id, "hello", client_request_id=client_req_id
+            )
 
 
 async def test_token_quota():
@@ -145,8 +149,12 @@ async def test_token_recording():
     ):
         mock_updater = mock_updater_cls.return_value
         mock_updater.update_as_success = AsyncMock(return_value=assistant_msg)
-        uow.user_repo.get = AsyncMock(return_value=MagicMock(used_tokens=0, max_tokens=1000))
-        uow.user_repo.get_with_lock = AsyncMock(return_value=MagicMock(used_tokens=0, max_tokens=1000))
+        uow.user_repo.get = AsyncMock(
+            return_value=MagicMock(used_tokens=0, max_tokens=1000)
+        )
+        uow.user_repo.get_with_lock = AsyncMock(
+            return_value=MagicMock(used_tokens=0, max_tokens=1000)
+        )
         # 新接口：increment_used_tokens_guarded 返回 True（累加成功）
         uow.user_repo.increment_used_tokens = AsyncMock()
         uow.user_repo.increment_used_tokens_guarded = AsyncMock(return_value=True)

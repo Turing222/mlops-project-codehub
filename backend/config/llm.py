@@ -83,7 +83,9 @@ class LLMModelConfig:
             )
         return self.profiles[profile_name]
 
-    def resolve_route(self, provider_or_route: str | None = None) -> tuple[LLMProfile, ...]:
+    def resolve_route(
+        self, provider_or_route: str | None = None
+    ) -> tuple[LLMProfile, ...]:
         settings = _get_settings()
         raw_identifier = (
             provider_or_route or settings.LLM_PROVIDER or self.default_profile
@@ -206,6 +208,6 @@ def _split_api_key_value(value: str) -> list[str]:
 
 
 def _get_settings():
-    from backend.core.config import settings
+    from backend.config.settings import settings
 
     return settings

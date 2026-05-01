@@ -11,10 +11,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
-from backend.core.config import settings
-from backend.core.trace_utils import set_span_attributes, trace_span
-from backend.domain.interfaces import AbstractRAGService
+from backend.config.settings import settings
+from backend.contracts.interfaces import AbstractRAGService
 from backend.models.schemas.chat_schema import ConversationMessage
+from backend.observability.trace_utils import set_span_attributes, trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -184,24 +184,20 @@ class ChatContextBuilder:
 
         for round_msgs in rounds:
             user_text = cls._normalize_text(
-                " ".join(
-                    msg["content"]
-                    for msg in round_msgs
-                    if msg["role"] == "user"
-                )
+                " ".join(msg["content"] for msg in round_msgs if msg["role"] == "user")
             )
             assistant_text = cls._normalize_text(
                 " ".join(
-                    msg["content"]
-                    for msg in round_msgs
-                    if msg["role"] == "assistant"
+                    msg["content"] for msg in round_msgs if msg["role"] == "assistant"
                 )
             )
             if not user_text and not assistant_text:
                 continue
 
             user_excerpt = cls._truncate_text(user_text, snippet_limit) or "(空)"
-            assistant_excerpt = cls._truncate_text(assistant_text, snippet_limit) or "(空)"
+            assistant_excerpt = (
+                cls._truncate_text(assistant_text, snippet_limit) or "(空)"
+            )
             lines.append(f"- 用户: {user_excerpt} | 助手: {assistant_excerpt}")
 
         if not lines:

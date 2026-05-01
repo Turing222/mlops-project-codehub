@@ -7,14 +7,14 @@ from jwt.exceptions import InvalidTokenError
 from pydantic import ValidationError as PydanticValidationError
 
 from backend.api.deps.uow import get_uow
-from backend.core.config import settings
+from backend.config.settings import settings
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import (
     app_bad_request,
     app_forbidden,
     app_not_found,
     app_validation_error,
 )
-from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.user import User
 from backend.models.schemas.user_schema import UserLogin
 from backend.services.user_service import UserService
@@ -32,7 +32,9 @@ def get_login_data(
             password=form_data.password,
         )
     except PydanticValidationError as exc:
-        raise app_validation_error("请求参数校验失败", details={"errors": exc.errors()}) from exc
+        raise app_validation_error(
+            "请求参数校验失败", details={"errors": exc.errors()}
+        ) from exc
 
 
 async def get_current_user(

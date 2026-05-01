@@ -13,12 +13,12 @@ from typing import Any
 from pydantic import EmailStr
 from sqlalchemy.exc import IntegrityError
 
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import (
     app_not_found,
     app_validation_error,
 )
 from backend.core.security import get_password_hash, verify_password
-from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.access import WorkspaceRole
 from backend.models.orm.user import User
 from backend.models.schemas.user_schema import (
@@ -64,7 +64,9 @@ class UserService(BaseService[AbstractUnitOfWork]):
         )
 
         if await self.uow.user_repo.get_by_email(email=user_in.email):
-            raise app_validation_error("该邮箱已被注册", code="EMAIL_ALREADY_REGISTERED")
+            raise app_validation_error(
+                "该邮箱已被注册", code="EMAIL_ALREADY_REGISTERED"
+            )
         if await self.uow.user_repo.get_by_username(username=user_in.username):
             raise app_validation_error(
                 "该用户名已被注册",
@@ -75,9 +77,7 @@ class UserService(BaseService[AbstractUnitOfWork]):
         obj_in_data = user_in.model_dump()
         obj_in_data.pop("password")
         obj_in_data.pop("confirm_password")
-        obj_in_data["hashed_password"] = await get_password_hash(
-            user_in.password
-        )
+        obj_in_data["hashed_password"] = await get_password_hash(user_in.password)
 
         try:
             user = await self.uow.user_repo.create(obj_in=obj_in_data)
@@ -90,7 +90,9 @@ class UserService(BaseService[AbstractUnitOfWork]):
 
         return user
 
-    async def user_register_with_personal_workspace(self, user_in: UserCreate) -> User | None:
+    async def user_register_with_personal_workspace(
+        self, user_in: UserCreate
+    ) -> User | None:
         user = await self.user_register(user_in)
         if not user:
             return None

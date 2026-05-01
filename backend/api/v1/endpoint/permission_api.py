@@ -32,7 +32,9 @@ async def get_permission_policy_metadata(
         for permission, definition in config.permissions.items()
     ]
     role_permissions = {
-        role.value: sorted(policy.role_permissions.get(role, frozenset()), key=lambda item: item.value)
+        role.value: sorted(
+            policy.role_permissions.get(role, frozenset()), key=lambda item: item.value
+        )
         for role in WorkspaceRole
     }
 

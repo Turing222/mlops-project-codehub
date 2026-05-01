@@ -67,7 +67,9 @@ class UserCreate(UserBase):
 
     password: PasswordStr = Field(...)
     confirm_password: PasswordStr = Field(...)
-    max_tokens: int = Field(default=100000, ge=0, description="用户可使用的最大 Token 额度")
+    max_tokens: int = Field(
+        default=100000, ge=0, description="用户可使用的最大 Token 额度"
+    )
 
     # 2. 第二层：使用 @field_validator 处理特定字段逻辑
     @field_validator("username")

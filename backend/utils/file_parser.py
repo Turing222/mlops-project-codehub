@@ -52,9 +52,13 @@ def parse_csv_to_list(file_content: bytes) -> list[dict[str, Any]]:
             code="FILE_ENCODING_ERROR",
         ) from exc
     except csv.Error as exc:
-        raise app_validation_error(f"CSV 解析失败: {exc}", code="FILE_PARSE_ERROR") from exc
+        raise app_validation_error(
+            f"CSV 解析失败: {exc}", code="FILE_PARSE_ERROR"
+        ) from exc
     except Exception as exc:
-        raise app_validation_error(f"CSV 解析失败: {exc}", code="FILE_PARSE_ERROR") from exc
+        raise app_validation_error(
+            f"CSV 解析失败: {exc}", code="FILE_PARSE_ERROR"
+        ) from exc
 
 
 def parse_file(filename: str, file_content: bytes) -> list[dict[str, Any]]:

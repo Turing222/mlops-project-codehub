@@ -101,7 +101,9 @@ class ChatMessage(Base, BaseIdModel, AuditMixin):
     tokens_output: Mapped[int] = mapped_column(
         default=0, server_default=text("0"), comment="输出 Token 数"
     )
-    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 记录模型响应耗时
+    latency_ms: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )  # 记录模型响应耗时
 
     # 核心索引：确保按会话查询消息时，顺序是直接从索引读取的，无需内存排序
     __table_args__ = (

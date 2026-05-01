@@ -17,8 +17,8 @@ from backend.core.exceptions import (
     app_service_error,
     app_validation_error,
 )
-from backend.core.trace_utils import set_span_attributes, trace_span
 from backend.models.orm.knowledge import FileStatus
+from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chunking_service import ChunkingService
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.vector_index_service import VectorIndexService

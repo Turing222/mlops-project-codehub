@@ -49,7 +49,7 @@ def parse_args() -> argparse.Namespace:
 
 def check_llm(*, live: bool, prompt: str) -> bool:
     from backend.config.llm import get_llm_model_config
-    from backend.core.config import settings
+    from backend.config.settings import settings
 
     try:
         profile = get_llm_model_config().resolve_profile(settings.LLM_PROVIDER)
@@ -76,7 +76,7 @@ def check_llm(*, live: bool, prompt: str) -> bool:
 
 async def _run_llm_live_check(prompt: str):
     from backend.ai.providers.llm.factory import LLMProviderFactory
-    from backend.core.config import settings
+    from backend.config.settings import settings
     from backend.models.schemas.chat_schema import LLMQueryDTO
 
     service = LLMProviderFactory.create(settings.LLM_PROVIDER)
@@ -92,7 +92,7 @@ async def _run_llm_live_check(prompt: str):
 def check_embedding(*, live: bool, text: str) -> bool:
     from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
     from backend.config.llm import get_llm_model_config
-    from backend.core.config import settings
+    from backend.config.settings import settings
 
     try:
         profile = get_llm_model_config().resolve_embedding_profile(

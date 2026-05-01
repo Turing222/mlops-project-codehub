@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from backend.api.dependencies import get_audit_service, get_login_data, get_uow
-from backend.core.config import settings
+from backend.config.settings import settings
 from backend.core.exceptions import app_bad_request
 from backend.core.security import create_access_token
 from backend.models.orm.access import AuditOutcome

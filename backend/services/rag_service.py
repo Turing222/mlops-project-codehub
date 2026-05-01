@@ -8,14 +8,14 @@
 import logging
 import uuid
 
-from backend.core.exceptions import AppException
-from backend.core.trace_utils import set_span_attributes, trace_span
-from backend.domain.interfaces import (
+from backend.contracts.interfaces import (
     AbstractRAGEmbedder,
     AbstractRAGService,
     AbstractUnitOfWork,
 )
+from backend.core.exceptions import AppException
 from backend.models.orm.chunk import DocumentChunk
+from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.vector_index_service import VectorIndexService
 
 logger = logging.getLogger(__name__)

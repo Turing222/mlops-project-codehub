@@ -11,13 +11,13 @@ from pathlib import Path
 
 from fastapi import UploadFile
 
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import (
     AppException,
     app_not_found,
     app_service_error,
     app_validation_error,
 )
-from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.knowledge import File, FileStatus, KnowledgeBase
 from backend.services.object_storage import (
     LocalObjectStorage,
@@ -196,7 +196,9 @@ class KnowledgeService:
 
     def _validate_upload_file(self, upload_file: UploadFile) -> str:
         if not upload_file.filename:
-            raise app_validation_error("上传文件名不能为空", code="UPLOAD_FILENAME_EMPTY")
+            raise app_validation_error(
+                "上传文件名不能为空", code="UPLOAD_FILENAME_EMPTY"
+            )
 
         safe_filename = self._sanitize_filename(upload_file.filename)
         if upload_file.size and upload_file.size > self.max_upload_size_bytes:
@@ -223,11 +225,15 @@ class KnowledgeService:
         if get_kb is None:
             if kb:
                 return kb
-            raise app_not_found("知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND")
+            raise app_not_found(
+                "知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND"
+            )
 
         full_kb = kb or await get_kb(kb_id)
         if not full_kb:
-            raise app_not_found("知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND")
+            raise app_not_found(
+                "知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND"
+            )
 
         # workspace KB 必须按当前成员角色判断，避免历史 owner 身份绕过权限。
         if full_kb.workspace_id is not None:
@@ -237,7 +243,9 @@ class KnowledgeService:
                 permission=permission,
             ):
                 return full_kb
-            raise app_not_found("知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND")
+            raise app_not_found(
+                "知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND"
+            )
 
         # personal KB 没有 workspace 角色，只有 owner 可访问。
         if full_kb.user_id == user_id:

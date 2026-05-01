@@ -7,8 +7,8 @@ from backend.ai.providers.llm.routing_service import (
     LLMRouteCandidate,
     LLMRoutingService,
 )
+from backend.contracts.interfaces import AbstractLLMService
 from backend.core.exceptions import app_service_error
-from backend.domain.interfaces import AbstractLLMService
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 
 

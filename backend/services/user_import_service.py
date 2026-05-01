@@ -13,14 +13,14 @@ from typing import Any
 from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from backend.core.config import settings
+from backend.config.settings import settings
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import (
     AppException,
     app_service_error,
     app_validation_error,
 )
 from backend.core.security import get_password_hash
-from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.schemas.user_schema import UserImportResponse
 from backend.services.base import BaseService
 from backend.utils.file_parser import parse_file
@@ -88,7 +88,9 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
                 import_rows = await self._build_import_rows(batch)
                 await self.uow.user_repo.bulk_upsert(import_rows)
                 await self._after_import_batch_hook(import_rows)
-                logger.debug("批次 [%d/%d] 处理完成，本批 %d 条", idx, total_batches, len(batch))
+                logger.debug(
+                    "批次 [%d/%d] 处理完成，本批 %d 条", idx, total_batches, len(batch)
+                )
 
             logger.info("批量处理成功, 成功提交 %d 用户", total_records)
             return total_records
@@ -100,7 +102,9 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
                 code="DATABASE_OPERATION_ERROR",
             ) from exc
         except SQLAlchemyError as exc:
-            raise app_service_error("数据库操作执行失败", code="DATABASE_OPERATION_ERROR") from exc
+            raise app_service_error(
+                "数据库操作执行失败", code="DATABASE_OPERATION_ERROR"
+            ) from exc
         except Exception as exc:
             logger.exception("导入过程发生未知错误")
             raise app_service_error(
@@ -117,7 +121,9 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
         errors: list[str] = []
 
         for index, row in enumerate(raw_data):
-            mapped_row = {cls.HEADER_MAP[k]: v for k, v in row.items() if k in cls.HEADER_MAP}
+            mapped_row = {
+                cls.HEADER_MAP[k]: v for k, v in row.items() if k in cls.HEADER_MAP
+            }
             if mapped_row.get("username") and mapped_row.get("email"):
                 cleaned_schemas.append(mapped_row)
             else:
@@ -135,7 +141,9 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
             )
         return cleaned_schemas
 
-    async def _build_import_rows(self, user_maps: list[dict[str, Any]]) -> list[dict[str, str]]:
+    async def _build_import_rows(
+        self, user_maps: list[dict[str, Any]]
+    ) -> list[dict[str, str]]:
         """构造可入库数据行，并为临时密码生成哈希。"""
         rows: list[dict[str, str]] = []
         for user_map in user_maps:

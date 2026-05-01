@@ -28,10 +28,7 @@ async def ensure_live_environment(client: httpx.AsyncClient) -> None:
 
     body = response.json()
     if body.get("status") != "alive":
-        pytest.skip(
-            "Smoke live endpoint returned an unexpected payload: "
-            f"{body!r}"
-        )
+        pytest.skip(f"Smoke live endpoint returned an unexpected payload: {body!r}")
 
 
 async def register_user(

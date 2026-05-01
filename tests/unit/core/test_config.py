@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from backend.core.config import Settings
+from backend.config.settings import Settings
 
 
 def test_app_env_loads_layered_yaml_config(monkeypatch, tmp_path: Path):

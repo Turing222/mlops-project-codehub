@@ -37,7 +37,11 @@ def _default_database_url() -> str:
         # When this script runs on the host, service DNS names are not resolvable.
         host = "localhost"
 
-    auth = f"{quote(user, safe='')}:{quote(password, safe='')}@" if password else f"{quote(user, safe='')}@"
+    auth = (
+        f"{quote(user, safe='')}:{quote(password, safe='')}@"
+        if password
+        else f"{quote(user, safe='')}@"
+    )
     return f"postgresql+asyncpg://{auth}{host}:{port}/{database}"
 
 
@@ -53,7 +57,9 @@ async def _create_kb(
     from backend.models.orm.user import User
 
     engine = create_async_engine(database_url, pool_pre_ping=True)
-    session_factory = async_sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    session_factory = async_sessionmaker(
+        bind=engine, autoflush=False, expire_on_commit=False
+    )
     try:
         async with session_factory() as session:
             stmt = select(User)

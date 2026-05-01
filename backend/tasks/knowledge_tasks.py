@@ -12,16 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.config.llm import get_llm_model_config
-from backend.core.config import settings
-from backend.core.database import create_db_assets
+from backend.config.settings import settings
+from backend.contracts.interfaces import AbstractRAGEmbedder
 from backend.core.exceptions import (
     AppException,
     app_service_error,
     app_validation_error,
 )
-from backend.core.task_broker import broker
-from backend.core.trace_utils import set_span_attributes, trace_span, use_trace_context
-from backend.domain.interfaces import AbstractRAGEmbedder
+from backend.infra.database import create_db_assets
+from backend.infra.task_broker import broker
+from backend.observability.trace_utils import (
+    set_span_attributes,
+    trace_span,
+    use_trace_context,
+)
 from backend.services.chunking_service import ChunkingService
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.object_storage import ObjectStorage, create_object_storage

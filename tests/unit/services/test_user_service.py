@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import AppException
-from backend.domain.interfaces import AbstractUnitOfWork
 from backend.models.orm.access import WorkspaceRole
 from backend.models.schemas.user_schema import UserCreate, UserLogin, UserUpdate
 from backend.services.user_service import UserService
@@ -30,7 +30,9 @@ def service_ctx():
         create_workspace=AsyncMock(),
         add_workspace_role=AsyncMock(),
     )
-    uow = cast(AbstractUnitOfWork, SimpleNamespace(user_repo=repo, access_repo=access_repo))
+    uow = cast(
+        AbstractUnitOfWork, SimpleNamespace(user_repo=repo, access_repo=access_repo)
+    )
     service = UserService(uow=uow)
     return SimpleNamespace(service=service, repo=repo, access_repo=access_repo)
 
@@ -174,7 +176,9 @@ async def test_authenticate_returns_none_when_user_missing(service_ctx):
 
 
 @pytest.mark.asyncio
-async def test_authenticate_returns_none_when_password_invalid(service_ctx, monkeypatch):
+async def test_authenticate_returns_none_when_password_invalid(
+    service_ctx, monkeypatch
+):
     user = SimpleNamespace(id=uuid.uuid4(), hashed_password="hashed")
     service_ctx.repo.get_by_username.return_value = user
 

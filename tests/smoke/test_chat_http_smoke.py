@@ -42,6 +42,8 @@ async def _collect_sse_payloads(
                 break
 
     return payloads
+
+
 @pytest.mark.asyncio
 async def test_chat_query_sent_over_http(smoke_client: httpx.AsyncClient):
     ready_response = await smoke_client.get(SMOKE_READY_PATH)
@@ -102,11 +104,7 @@ async def test_chat_query_stream_over_http_uses_task_worker(
     assert payloads
     assert payloads[-1] == "[DONE]"
 
-    events = [
-        json.loads(item)
-        for item in payloads
-        if item != "[DONE]"
-    ]
+    events = [json.loads(item) for item in payloads if item != "[DONE]"]
     meta_events = [event for event in events if event["type"] == "meta"]
     chunk_events = [event for event in events if event["type"] == "chunk"]
     error_events = [event for event in events if event["type"] == "error"]

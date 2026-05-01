@@ -13,7 +13,7 @@ from fastapi.concurrency import run_in_threadpool
 from pwdlib import PasswordHash
 from pwdlib.exceptions import PwdlibError
 
-from backend.core.config import settings
+from backend.config.settings import settings
 
 password_hasher = PasswordHash.recommended()
 

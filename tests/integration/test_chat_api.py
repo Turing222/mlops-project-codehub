@@ -11,7 +11,7 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.ai.core import token_counter
 from backend.api.v1.endpoint import chat_api
-from backend.core.config import settings
+from backend.config.settings import settings
 from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
@@ -202,9 +202,7 @@ class FakeChatRepo:
 class FakeKnowledgeRepo:
     """knowledge_repo 仳制，防止 Workflow 内 getattr 失败。"""
 
-    async def get_kb_by_name_for_user(
-        self, *, name: str, user_id: uuid.UUID
-    ):
+    async def get_kb_by_name_for_user(self, *, name: str, user_id: uuid.UUID):
         return None
 
     async def get_kb(self, kb_id: uuid.UUID):
@@ -306,7 +304,9 @@ def api_context():
         session_factory=None,  # 测试不写审计库
         request_context=AuditRequestContext(),
     )
-    app.dependency_overrides[get_permission_service] = lambda: PermissionService(uow=uow)  # type: ignore[arg-type]
+    app.dependency_overrides[get_permission_service] = lambda: PermissionService(
+        uow=uow
+    )  # type: ignore[arg-type]
 
     ctx = SimpleNamespace(
         app=app,
@@ -319,7 +319,6 @@ def api_context():
     )
     yield ctx
     app.dependency_overrides.clear()
-
 
 
 @pytest.fixture
@@ -412,7 +411,9 @@ async def test_query_sent_uses_memory_summary_and_updates_tokens(
     assert api_context.user_repo.increment_calls == [
         updated_assistant.tokens_input + updated_assistant.tokens_output
     ]
-    assert api_context.current_user.used_tokens == api_context.user_repo.increment_calls[0]
+    assert (
+        api_context.current_user.used_tokens == api_context.user_repo.increment_calls[0]
+    )
 
 
 @pytest.mark.asyncio
