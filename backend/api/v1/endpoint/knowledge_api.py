@@ -8,7 +8,6 @@ from backend.api.dependencies import (
     get_current_active_user,
     get_knowledge_service,
     get_knowledge_upload_workflow,
-    get_permission_service,
     get_task_service,
 )
 from backend.core.exceptions import app_not_found
@@ -20,7 +19,6 @@ from backend.models.schemas.knowledge_schema import (
 from backend.models.schemas.task_schema import TaskResponse
 from backend.services.audit_service import AuditAction, AuditService, capture_audit
 from backend.services.knowledge_service import KnowledgeService
-from backend.services.permission_service import PermissionService
 from backend.services.task_service import TaskService
 from backend.workflow.knowledge_upload_workflow import KnowledgeUploadWorkflow
 
@@ -81,7 +79,6 @@ async def upload_file(
     file: UpFile,
     current_user: CurrentUser,
     upload_workflow: KnowledgeUploadWorkflowDep,
-    permission_service: PermissionService = Depends(get_permission_service),
     audit_service: AuditService = Depends(get_audit_service),
 ) -> KnowledgeUploadResponse:
     async with capture_audit(
@@ -106,7 +103,6 @@ async def get_task_status(
     task_id: uuid.UUID,
     current_user: CurrentUser,
     task_service: TaskServiceDep,
-    permission_service: PermissionService = Depends(get_permission_service),
 ) -> TaskResponse:
     async with task_service.uow:
         task = await task_service.get_by_id(task_id=task_id)
@@ -122,7 +118,6 @@ async def get_file_status(
     file_id: uuid.UUID,
     current_user: CurrentUser,
     service: KnowledgeServiceDep,
-    permission_service: PermissionService = Depends(get_permission_service),
 ) -> KnowledgeFileResponse:
     async with service.uow:
         knowledge_file = await service.get_file(file_id=file_id)

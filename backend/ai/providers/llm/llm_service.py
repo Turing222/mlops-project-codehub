@@ -22,6 +22,7 @@ from backend.ai.core.token_counter import count_tokens
 from backend.config.llm import get_llm_model_config
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractLLMService
+from backend.core.circuit_breaker import CircuitBreaker
 from backend.core.exceptions import AppException, app_service_error
 from backend.models.schemas.chat_schema import (
     ConversationMessage,
@@ -56,6 +57,11 @@ class LLMService(AbstractLLMService):
         self.model_name = model_name or profile.model
         self.max_retries = max_retries
         self._client: openai.AsyncOpenAI | None = None
+        self._circuit = CircuitBreaker(
+            name="llm",
+            failure_threshold=settings.LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+            cooldown_seconds=settings.LLM_CIRCUIT_BREAKER_COOLDOWN_SECONDS,
+        )
 
     @staticmethod
     def _to_openai_messages(
@@ -129,12 +135,16 @@ class LLMService(AbstractLLMService):
                 },
             ) as span:
                 client = self._create_client()
+                await self._circuit.acquire()
 
                 response = await client.chat.completions.create(
                     model=self.model_name,
                     messages=messages,
                     stream=True,
                 )
+
+                # API 连接成功，标记断路器恢复。
+                await self._circuit.on_success()
 
                 chunk_count = 0
                 char_count = 0
@@ -156,6 +166,7 @@ class LLMService(AbstractLLMService):
         except AppException:
             raise
         except Exception as e:
+            await self._circuit.on_failure()
             logger.error(
                 "LLM 流式请求失败: session_id=%s, error=%s",
                 query.session_id,

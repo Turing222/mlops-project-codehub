@@ -28,11 +28,12 @@ class RAGService(AbstractRAGService):
         self,
         uow: AbstractUnitOfWork,
         embedder: AbstractRAGEmbedder,
+        vector_index_service: VectorIndexService,
         top_k: int = 4,
     ) -> None:
         self.uow = uow
         self.embedder = embedder
-        self.vector_index_service = VectorIndexService(uow=uow, embedder=embedder)
+        self.vector_index_service = vector_index_service
         self.top_k = top_k
 
     async def retrieve(

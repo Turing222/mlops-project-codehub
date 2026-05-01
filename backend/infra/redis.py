@@ -5,6 +5,8 @@
 副作用：连接会在首次 init 时建立，应用关闭时应调用 close。
 """
 
+import asyncio
+
 import redis.asyncio as redis
 
 from backend.config.settings import settings
@@ -15,14 +17,19 @@ class RedisClient:
 
     def __init__(self) -> None:
         self.client: redis.Redis | None = None
+        self._init_lock = asyncio.Lock()
 
     async def init(self) -> redis.Redis:
-        if not self.client:
+        if self.client is not None:
+            return self.client
+        async with self._init_lock:
+            if self.client is not None:
+                return self.client
             self.client = redis.from_url(
                 settings.redis_url,
                 decode_responses=True,
             )
-        return self.client
+            return self.client
 
     async def close(self) -> None:
         if self.client:

@@ -33,20 +33,6 @@ def get_rag_embedder() -> AbstractRAGEmbedder:
     )
 
 
-def get_rag_service(
-    uow: AbstractUnitOfWork = Depends(get_uow),
-    embedder: AbstractRAGEmbedder = Depends(get_rag_embedder),
-) -> AbstractRAGService:
-    return RAGService(uow=uow, embedder=embedder, top_k=settings.RAG_TOP_K)
-
-
-def get_chunking_service() -> ChunkingService:
-    return ChunkingService(
-        chunk_size=settings.KNOWLEDGE_CHUNK_SIZE,
-        chunk_overlap=settings.KNOWLEDGE_CHUNK_OVERLAP,
-    )
-
-
 def get_vector_index_service(
     uow: AbstractUnitOfWork = Depends(get_uow),
     embedder: AbstractRAGEmbedder = Depends(get_rag_embedder),
@@ -55,4 +41,24 @@ def get_vector_index_service(
         uow=uow,
         embedder=embedder,
         embed_batch_size=settings.RAG_EMBED_BATCH_SIZE,
+    )
+
+
+def get_rag_service(
+    uow: AbstractUnitOfWork = Depends(get_uow),
+    embedder: AbstractRAGEmbedder = Depends(get_rag_embedder),
+    vector_index_service: VectorIndexService = Depends(get_vector_index_service),
+) -> AbstractRAGService:
+    return RAGService(
+        uow=uow,
+        embedder=embedder,
+        vector_index_service=vector_index_service,
+        top_k=settings.RAG_TOP_K,
+    )
+
+
+def get_chunking_service() -> ChunkingService:
+    return ChunkingService(
+        chunk_size=settings.KNOWLEDGE_CHUNK_SIZE,
+        chunk_overlap=settings.KNOWLEDGE_CHUNK_OVERLAP,
     )

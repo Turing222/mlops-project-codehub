@@ -2,6 +2,7 @@ from functools import lru_cache
 
 from fastapi import Depends
 
+from backend.api.deps.permissions import get_permission_service
 from backend.api.deps.uow import get_uow
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractUnitOfWork
@@ -27,12 +28,13 @@ def get_object_storage() -> ObjectStorage:
 def get_knowledge_service(
     uow: AbstractUnitOfWork = Depends(get_uow),
     storage: ObjectStorage = Depends(get_object_storage),
+    permission_service: PermissionService = Depends(get_permission_service),
 ) -> KnowledgeService:
     return KnowledgeService(
         uow=uow,
         storage=storage,
         max_upload_size_mb=settings.KNOWLEDGE_MAX_UPLOAD_SIZE_MB,
-        permission_service=PermissionService(uow),
+        permission_service=permission_service,
     )
 
 
@@ -62,5 +64,6 @@ def get_user_import_service(
 
 def get_workspace_service(
     uow: AbstractUnitOfWork = Depends(get_uow),
+    permission_service: PermissionService = Depends(get_permission_service),
 ) -> WorkspaceService:
-    return WorkspaceService(uow=uow)
+    return WorkspaceService(uow=uow, permission_service=permission_service)

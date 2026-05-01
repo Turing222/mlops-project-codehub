@@ -5,7 +5,6 @@
 失败处理：任一阶段失败会清理幂等锁并回写助手消息失败状态。
 """
 
-import asyncio
 import logging
 import uuid
 
@@ -19,12 +18,7 @@ from backend.contracts.interfaces import (
     AbstractRAGService,
     AbstractUnitOfWork,
 )
-from backend.core.concurrency import (
-    db_concurrency_slot,
-    get_db_semaphore,
-    get_llm_semaphore,
-    llm_concurrency_slot,
-)
+from backend.core.concurrency import db_concurrency_slot, llm_concurrency_slot
 from backend.core.exceptions import (
     AppException,
     app_service_error,
@@ -47,14 +41,6 @@ logger = logging.getLogger(__name__)
 
 class ChatNonStreamWorkflow:
     """非流式对话编排器。"""
-
-    @staticmethod
-    def _get_llm_semaphore() -> asyncio.Semaphore:
-        return get_llm_semaphore()
-
-    @staticmethod
-    def _get_db_semaphore() -> asyncio.Semaphore:
-        return get_db_semaphore()
 
     def __init__(
         self,

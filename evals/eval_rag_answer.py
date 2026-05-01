@@ -18,6 +18,7 @@ from backend.infra.database import create_db_assets
 from backend.models.schemas.chat_schema import LLMQueryDTO
 from backend.services.rag_service import RAGService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
+from backend.services.vector_index_service import VectorIndexService
 from evals.common import (
     VALID_RETRIEVAL_MODES,
     ensure_parent_dir,
@@ -138,7 +139,13 @@ async def run(
             api_key=embedding_profile.resolve_api_key(),
             dimensions=embedding_profile.dimensions,
         )
-        rag_service = RAGService(uow=uow, embedder=embedder, top_k=top_k)
+        vector_index_service = VectorIndexService(uow=uow, embedder=embedder)
+        rag_service = RAGService(
+            uow=uow,
+            embedder=embedder,
+            vector_index_service=vector_index_service,
+            top_k=top_k,
+        )
         llm = MockLLMService() if llm_mode == "mock" else LLMService()
         prompt_manager = PromptManager(system_template=RAG_SYSTEM_TEMPLATE)
 

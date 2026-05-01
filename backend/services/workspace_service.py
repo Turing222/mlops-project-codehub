@@ -27,9 +27,13 @@ from backend.services.permission_service import Permission, PermissionService
 class WorkspaceService(BaseService[AbstractUnitOfWork]):
     """工作区和成员管理服务。"""
 
-    def __init__(self, uow: AbstractUnitOfWork) -> None:
+    def __init__(
+        self,
+        uow: AbstractUnitOfWork,
+        permission_service: PermissionService,
+    ) -> None:
         super().__init__(uow)
-        self.permission_service = PermissionService(uow)
+        self.permission_service = permission_service
 
     async def create_workspace(
         self,

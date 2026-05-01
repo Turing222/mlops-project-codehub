@@ -23,11 +23,7 @@ from backend.contracts.interfaces import (
     AbstractRAGService,
     AbstractUnitOfWork,
 )
-from backend.core.concurrency import (
-    db_concurrency_slot,
-    get_db_semaphore,
-    get_llm_semaphore,
-)
+from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import AppException, app_service_error
 from backend.infra.redis import redis_client
 from backend.models.schemas.chat_schema import LLMQueryDTO
@@ -45,14 +41,6 @@ logger = logging.getLogger(__name__)
 
 class ChatWorkflow:
     """流式对话编排器。"""
-
-    @staticmethod
-    def _get_llm_semaphore() -> asyncio.Semaphore:
-        return get_llm_semaphore()
-
-    @staticmethod
-    def _get_db_semaphore() -> asyncio.Semaphore:
-        return get_db_semaphore()
 
     def __init__(
         self,
@@ -325,7 +313,19 @@ class ChatWorkflow:
                     break
 
                 if not done_received:
-                    async for message in stream_iter:
+                    while True:
+                        try:
+                            message = await asyncio.wait_for(
+                                anext(stream_iter),
+                                timeout=settings.CHAT_STREAM_MESSAGE_TIMEOUT_SECONDS,
+                            )
+                        except TimeoutError as exc:
+                            raise app_service_error(
+                                "LLM 流式消息间超时，请稍后重试",
+                                code="LLM_STREAM_MESSAGE_TIMEOUT",
+                            ) from exc
+                        except StopAsyncIteration:
+                            break
                         payload = _read_stream_payload(message)
                         if payload is None:
                             continue

@@ -187,6 +187,11 @@ def validate_llm_configs() -> None:
     """启动时校验 prompt 和模型配置能被加载。"""
     get_prompt_config()
     get_llm_model_config()
+    s = _get_settings()
+    if s.LLM_PROVIDER.strip().lower() != "mock" and not s.LLM_API_KEY:
+        raise ValueError(
+            f"LLM_PROVIDER='{s.LLM_PROVIDER}' 要求设置 LLM_API_KEY，当前为空。"
+        )
 
 
 def _provider_default_base_url(provider: str) -> str | None:

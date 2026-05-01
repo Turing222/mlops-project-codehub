@@ -15,6 +15,7 @@ from backend.models.schemas.workspace_schema import (
     WorkspaceMemberUpdate,
     WorkspaceUpdate,
 )
+from backend.services.permission_service import Permission
 from backend.services.workspace_service import WorkspaceService
 
 
@@ -91,7 +92,29 @@ def make_service(*, role: WorkspaceRole | None = WorkspaceRole.OWNER):
         AbstractUnitOfWork,
         SimpleNamespace(access_repo=access_repo, user_repo=user_repo),
     )
-    service = WorkspaceService(uow=uow)
+    require_perm_mock = AsyncMock()
+
+    async def _require_perm_side_effect(*, permission, **_):
+        manage_perms = {Permission.WORKSPACE_MANAGE, Permission.ROLE_MANAGE}
+        if role is None and permission in manage_perms:
+            from backend.core.exceptions import app_forbidden
+
+            raise app_forbidden("权限不足", code="PERMISSION_DENIED")
+        if role == WorkspaceRole.MEMBER and permission in manage_perms:
+            from backend.core.exceptions import app_forbidden
+
+            raise app_forbidden("权限不足", code="PERMISSION_DENIED")
+        return None
+
+    require_perm_mock.side_effect = _require_perm_side_effect
+
+    permission_service = SimpleNamespace(
+        get_workspace_role=AsyncMock(return_value=role),
+        require_permission=require_perm_mock,
+        has_permission_for_user_id=AsyncMock(return_value=True),
+        policy=SimpleNamespace(superuser_bypass=True),
+    )
+    service = WorkspaceService(uow=uow, permission_service=permission_service)
     return service, access_repo, workspace, member_user, member_role
 
 

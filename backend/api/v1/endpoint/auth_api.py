@@ -62,7 +62,7 @@ async def login(
                     "reason": "inactive_user",
                 },
             )
-            raise app_bad_request("账户未激活", code="USER_INACTIVE")
+            raise app_bad_request("用户名或密码错误", code="BAD_CREDENTIALS")
 
     # 2. 发放 Token (Token 生成是纯 CPU 计算，无需 await)
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)

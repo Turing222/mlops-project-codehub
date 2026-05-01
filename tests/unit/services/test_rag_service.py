@@ -8,13 +8,12 @@ from backend.services.rag_service import RAGService
 
 
 def _build_service() -> RAGService:
-    service = RAGService(
+    return RAGService(
         uow=MagicMock(),
         embedder=MagicMock(),
+        vector_index_service=MagicMock(),
         top_k=4,
     )
-    service.vector_index_service = MagicMock()
-    return service
 
 
 @pytest.mark.asyncio
