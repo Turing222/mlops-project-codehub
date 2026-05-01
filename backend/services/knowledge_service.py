@@ -49,6 +49,7 @@ class KnowledgeService:
         storage: ObjectStorage | None = None,
         storage_root: Path | None = None,
         max_upload_size_mb: int = 20,
+        permission_service: PermissionService | None = None,
     ) -> None:
         self.uow = uow
         if storage is None:
@@ -58,6 +59,8 @@ class KnowledgeService:
         self.storage = storage
         self.max_upload_size_mb = max(1, max_upload_size_mb)
         self.max_upload_size_bytes = self.max_upload_size_mb * 1024 * 1024
+        # 显式注入，避免内部隐式构造隐藏依赖关系；兜底以保持向后兼容。
+        self._permission_service = permission_service or PermissionService(uow)
 
     async def save_upload_file(
         self,
@@ -237,7 +240,7 @@ class KnowledgeService:
 
         # workspace KB 必须按当前成员角色判断，避免历史 owner 身份绕过权限。
         if full_kb.workspace_id is not None:
-            if await PermissionService(self.uow).has_permission_for_user_id(
+            if await self._permission_service.has_permission_for_user_id(
                 user_id=user_id,
                 workspace_id=full_kb.workspace_id,
                 permission=permission,

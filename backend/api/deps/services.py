@@ -7,6 +7,7 @@ from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.object_storage import ObjectStorage, create_object_storage
+from backend.services.permission_service import PermissionService
 from backend.services.session_query_service import SessionQueryService
 from backend.services.task_service import TaskService
 from backend.services.user_import_service import UserImportService
@@ -31,6 +32,7 @@ def get_knowledge_service(
         uow=uow,
         storage=storage,
         max_upload_size_mb=settings.KNOWLEDGE_MAX_UPLOAD_SIZE_MB,
+        permission_service=PermissionService(uow),
     )
 
 
