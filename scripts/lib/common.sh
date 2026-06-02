@@ -109,6 +109,21 @@ llm_needs_bifrost_profile() {
     [[ "$(llm_secret_provider "$1")" == "bifrost" ]]
 }
 
+storage_needs_s3_profile() {
+    [[ "${1,,}" == "s3" ]]
+}
+
+append_profile_arg() {
+    local profile="$1"
+    local existing
+    for existing in "${profile_args[@]}"; do
+        if [[ "$existing" == "$profile" ]]; then
+            return
+        fi
+    done
+    profile_args+=(--profile "$profile")
+}
+
 generate_smoke_secret() {
     if command -v openssl >/dev/null 2>&1; then
         openssl rand -base64 48
@@ -211,14 +226,20 @@ compose_smoke() {
     require_smoke_env_file
     local profile_args=()
     local subcmd="${1:-}"
-    # For down, always include bifrost profile to ensure orphan cleanup.
+    # For down, include optional profiles so profile-gated services are cleaned up.
     if [[ "$subcmd" == "down" ]]; then
-        profile_args=(--profile bifrost)
+        append_profile_arg "bifrost"
+        append_profile_arg "s3"
     elif [[ -f "$smoke_env_path" ]]; then
         local llm_provider
-        llm_provider="$(sed -n 's/^LLM_PROVIDER=//p' "$smoke_env_path" 2>/dev/null | head -1)" || true
+        local storage_backend
+        llm_provider="$(smoke_env_value "LLM_PROVIDER" "")"
+        storage_backend="$(smoke_env_value "STORAGE_BACKEND" "local")"
         if llm_needs_bifrost_profile "$llm_provider"; then
-            profile_args=(--profile bifrost)
+            append_profile_arg "bifrost"
+        fi
+        if storage_needs_s3_profile "$storage_backend"; then
+            append_profile_arg "s3"
         fi
     fi
     SMOKE_ENV_FILE="$smoke_env_path" docker compose --env-file "$smoke_env_path" -f "$SMOKE_COMPOSE_FILE" "${profile_args[@]}" "$@"

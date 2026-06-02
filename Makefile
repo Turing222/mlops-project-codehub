@@ -4,14 +4,11 @@ DOCKER_IMAGE_NAME_WEB ?= dewflow-backend:2.0.0-web
 DOCKER_IMAGE_NAME_AI ?= dewflow-backend:2.0.0-ai
 DOCKER_IMAGE_NAME_FRONTEND ?= dewflow-frontend:2.0.0
 SMOKE_COMPOSE_FILE ?= docker-compose.db.yml
-DEBUG_COMPOSE_FILE ?= docker-compose.debug.yml
 SMOKE_ENV_FILE ?= .env.smoke
 SMOKE_ENV_TEMPLATE ?= .env.smoke.template
 SMOKE_BASE_URL ?= http://localhost:8000
 SMOKE_LIVE_PATH ?= /api/v1/health_check/live
 SMOKE_READY_PATH ?= /api/v1/health_check/db_ready
-BACKEND_LOG_LEVEL ?= info
-BIFROST_LOG_LEVEL ?= info
 FRONTEND_DIR ?= frontend
 FRONTEND_APP ?= admin
 UNIT_TARGETS ?= tests/unit
@@ -30,13 +27,11 @@ PYTEST_ARGS ?=
 
 export DOCKER_IMAGE_NAME_WEB DOCKER_IMAGE_NAME_AI DOCKER_IMAGE_NAME_FRONTEND
 export SMOKE_COMPOSE_FILE
-export DEBUG_COMPOSE_FILE
 export SMOKE_ENV_FILE
 export SMOKE_ENV_TEMPLATE
 export SMOKE_BASE_URL
 export SMOKE_LIVE_PATH
 export SMOKE_READY_PATH
-export BACKEND_LOG_LEVEL BIFROST_LOG_LEVEL
 export EVAL_DATASET EVAL_OUTPUT EVAL_API_OUTPUT EVAL_RETRIEVAL_OUTPUT
 export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 
@@ -46,8 +41,7 @@ export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all \
-	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
-	env-debug-up env-debug-down env-debug-logs env-debug-services \
+	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-up-debug env-smoke-wait env-smoke-down env-smoke-logs \
 	set-llm seed-dev \
 	pr-report \
 	verify-smoke \
@@ -96,13 +90,9 @@ help:
 		'  env-smoke-prepare    Generate the smoke env file from template' \
 		'  env-smoke-check      Run preflight checks for smoke environment (API keys)' \
 		'  env-smoke-up         Start the smoke environment' \
+		'  env-smoke-up-debug   Start the smoke environment with debug logs' \
 		'  env-smoke-wait       Wait until the smoke environment is reachable' \
-		'  env-smoke-create-kb  Create a manual/smoke knowledge base for an existing user' \
-		'  env-debug-up         Start Docker dependencies for VS Code debugging' \
-		'  env-debug-down       Stop Docker debug dependencies' \
-		'  env-debug-logs       Show recent Docker debug dependency logs' \
-		'  env-debug-services   List services enabled by the debug compose stack' \
-		'  set-llm              Set API key securely (Usage: make set-llm PROVIDER=bifrost [MODEL_ROUTING=true])' \
+		'  set-llm              Advanced: configure smoke LLM secrets/env' \
 		'  seed-dev             Seed fixed local data for admin/permission testing' \
 		'  pr-report            Generate a local PR readiness Markdown report' \
 		'  verify-smoke         Run smoke HTTP checks against the running stack' \
@@ -233,11 +223,11 @@ env-smoke-check:
 env-smoke-up: env-smoke-check
 	bash scripts/smoke/up.sh
 
+env-smoke-up-debug:
+	BACKEND_LOG_LEVEL=debug BIFROST_LOG_LEVEL=debug $(MAKE) env-smoke-up
+
 env-smoke-wait:
 	bash scripts/smoke/wait.sh
-
-env-smoke-create-kb:
-	bash scripts/smoke/create_kb.sh $(ARGS)
 
 set-llm:
 	@MODEL_ROUTING="$(or $(MODEL_ROUTING),)" \
@@ -259,18 +249,6 @@ env-smoke-down:
 
 env-smoke-logs:
 	SMOKE_ENV_FILE="$(SMOKE_ENV_FILE)" docker compose --env-file "$(SMOKE_ENV_FILE)" -f "$(SMOKE_COMPOSE_FILE)" logs --tail=200
-
-env-debug-up:
-	SMOKE_ENV_FILE="$(SMOKE_ENV_FILE)" docker compose --env-file "$(SMOKE_ENV_FILE)" -f "$(SMOKE_COMPOSE_FILE)" -f "$(DEBUG_COMPOSE_FILE)" up -d --remove-orphans
-
-env-debug-down:
-	SMOKE_ENV_FILE="$(SMOKE_ENV_FILE)" docker compose --env-file "$(SMOKE_ENV_FILE)" -f "$(SMOKE_COMPOSE_FILE)" -f "$(DEBUG_COMPOSE_FILE)" down
-
-env-debug-logs:
-	SMOKE_ENV_FILE="$(SMOKE_ENV_FILE)" docker compose --env-file "$(SMOKE_ENV_FILE)" -f "$(SMOKE_COMPOSE_FILE)" -f "$(DEBUG_COMPOSE_FILE)" logs --tail=200
-
-env-debug-services:
-	SMOKE_ENV_FILE="$(SMOKE_ENV_FILE)" docker compose --env-file "$(SMOKE_ENV_FILE)" -f "$(SMOKE_COMPOSE_FILE)" -f "$(DEBUG_COMPOSE_FILE)" config --services
 
 verify-smoke:
 	bash scripts/smoke/test.sh

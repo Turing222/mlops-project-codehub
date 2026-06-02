@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 import uuid
 from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 import pytest
@@ -187,7 +189,7 @@ async def _fetch_file_chunks(file_id: str) -> list[dict]:
         await engine.dispose()
 
 
-async def _fetch_file_path(file_id: str) -> str | None:
+async def _fetch_file_storage_record(file_id: str) -> dict[str, Any] | None:
     db_url = _smoke_database_url()
     if not db_url:
         return None
@@ -196,13 +198,63 @@ async def _fetch_file_path(file_id: str) -> str | None:
     try:
         async with engine.connect() as conn:
             result = await conn.execute(
-                text("SELECT file_path FROM knowledge_files WHERE id = :file_id"),
+                text(
+                    """
+                    SELECT
+                        file_path,
+                        storage_backend,
+                        storage_bucket,
+                        storage_key
+                    FROM knowledge_files
+                    WHERE id = :file_id
+                    """
+                ),
                 {"file_id": uuid.UUID(file_id)},
             )
             row = result.fetchone()
-            return row[0] if row else None
+            return dict(row._mapping) if row else None
     finally:
         await engine.dispose()
+
+
+def _host_s3_endpoint_url() -> str:
+    endpoint = _read_smoke_env_value("S3_ENDPOINT_URL")
+    if endpoint:
+        parsed = urlparse(endpoint)
+        if parsed.hostname == "minio":
+            port = _read_smoke_env_value("MINIO_API_PORT") or str(parsed.port or 9000)
+            return urlunparse(parsed._replace(netloc=f"localhost:{port}"))
+        return endpoint
+    return f"http://localhost:{_read_smoke_env_value('MINIO_API_PORT') or '9000'}"
+
+
+def _read_s3_text_object(*, bucket: str, key: str) -> str:
+    import boto3
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=_host_s3_endpoint_url(),
+        region_name=_read_smoke_env_value("S3_REGION") or "us-east-1",
+        aws_access_key_id=_read_smoke_env_value("S3_ACCESS_KEY_ID") or "minioadmin",
+        aws_secret_access_key=(
+            _read_smoke_env_value("S3_SECRET_ACCESS_KEY") or "minioadmin"
+        ),
+    )
+    response = client.get_object(Bucket=bucket, Key=key)
+    return response["Body"].read().decode("utf-8")
+
+
+def _storage_backend_is_s3() -> bool:
+    return (_read_smoke_env_value("STORAGE_BACKEND") or "local").lower() == "s3"
+
+
+async def test_host_s3_endpoint_url_maps_minio_to_host_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("S3_ENDPOINT_URL", "http://minio:9000/minio-path")
+    monkeypatch.setenv("MINIO_API_PORT", "19000")
+
+    assert _host_s3_endpoint_url() == "http://localhost:19000/minio-path"
 
 
 @pytest.mark.asyncio
@@ -260,9 +312,24 @@ async def test_knowledge_upload_over_http_reaches_ready_state(
     assert all(
         chunk["meta_info"]["filename"] == f"smoke_{suffix}.md" for chunk in chunks
     )
-    db_file_path = await _fetch_file_path(file_id)
+    storage_record = await _fetch_file_storage_record(file_id)
+    assert storage_record is not None
+    db_file_path = storage_record["file_path"]
     assert db_file_path is not None
     assert all(chunk["meta_info"]["path"] == db_file_path for chunk in chunks)
+
+    if _storage_backend_is_s3():
+        assert storage_record["storage_backend"] == "s3"
+        assert storage_record["storage_bucket"]
+        assert storage_record["storage_key"]
+        assert storage_record["file_path"] == (
+            f"s3://{storage_record['storage_bucket']}/{storage_record['storage_key']}"
+        )
+        stored_text = _read_s3_text_object(
+            bucket=storage_record["storage_bucket"],
+            key=storage_record["storage_key"],
+        )
+        assert f"CHUNK_SPLIT_PROBE_{suffix}_1" in stored_text
 
     indexed_text = "\n".join(chunk["content"] for chunk in chunks)
     for index in range(1, 6):

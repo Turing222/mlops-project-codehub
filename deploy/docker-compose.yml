@@ -4,6 +4,20 @@ x-logging: &default-logging
   options:
     max-size: "10m"
     max-file: "3"
+
+# AWS-like runtime defaults for backend containers.
+# Keep S3_ENDPOINT_URL and static credentials empty so boto3 uses real AWS S3
+# and the default credential chain, preferably an EC2 instance profile.
+x-backend-aws-env: &backend-aws-env
+  APP_ENV: ${APP_ENV:-prod}
+  STORAGE_BACKEND: ${STORAGE_BACKEND:-s3}
+  S3_BUCKET: ${S3_BUCKET:-}
+  S3_PREFIX: ${S3_PREFIX:-knowledge_files}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+  POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-disable}
 services:
 
   postgres:
@@ -64,9 +78,10 @@ services:
     env_file:
       - ../.env
     environment:
-      - PYTHONMALLOC=default
-      - WEB_CONCURRENCY=1
-      - LOCAL_STORAGE_ROOT=/data/knowledge_files
+      <<: *backend-aws-env
+      PYTHONMALLOC: default
+      WEB_CONCURRENCY: "1"
+      LOCAL_STORAGE_ROOT: /data/knowledge_files
     cap_add:
       - SYS_PTRACE
     restart: unless-stopped
@@ -236,6 +251,8 @@ services:
     command: alembic upgrade head
     env_file:
       - ../.env
+    environment:
+      <<: *backend-aws-env
     networks:
       - app_net
     deploy:
@@ -275,8 +292,9 @@ services:
     env_file:
       - ../.env
     environment:
-      - TASKIQ_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
-      - LOCAL_STORAGE_ROOT=/data/knowledge_files
+      <<: *backend-aws-env
+      TASKIQ_REDIS_URL: ${TASKIQ_REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/1}
+      LOCAL_STORAGE_ROOT: /data/knowledge_files
     command: taskiq worker backend.infra.task_broker:broker backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks --workers 2 --wait-tasks-timeout 105 --shutdown-timeout 10
     restart: unless-stopped
     logging: *default-logging

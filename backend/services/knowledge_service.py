@@ -12,6 +12,7 @@ import uuid
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.contracts.uploads import UploadFileLike
@@ -29,6 +30,7 @@ from backend.services.object_storage import (
     ObjectStorage,
     StoredObject,
     UploadSizeLimitExceeded,
+    safe_storage_filename,
 )
 from backend.services.permission_service import Permission, PermissionService
 
@@ -100,6 +102,8 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
         try:
             stored_object = await self.storage.save_upload_stream(
                 kb_id=kb_id,
+                owner_id=user_id,
+                workspace_id=getattr(kb, "workspace_id", None),
                 filename=safe_filename,
                 upload_file=upload_file,
                 max_size_bytes=self.max_upload_size_bytes,
@@ -241,21 +245,16 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
             permission=Permission.FILE_WRITE,
         )
 
-        if file_obj.storage_key:
-            stored_obj = StoredObject(
-                backend=file_obj.storage_backend or "local",
-                bucket=file_obj.storage_bucket,
-                key=file_obj.storage_key,
-                uri=file_obj.file_path,
-                size=file_obj.file_size,
-                sha256=file_obj.content_sha256 or "",
-            )
+        stored_obj = self._stored_object_from_file(file_obj)
+        if stored_obj is not None:
             try:
                 await self.storage.delete(stored_obj)
             except Exception:
                 logger.warning(
-                    "Storage delete failed for key=%s",
-                    file_obj.storage_key,
+                    "Storage delete failed for backend=%s key=%s uri=%s",
+                    stored_obj.backend,
+                    stored_obj.key,
+                    stored_obj.uri,
                     exc_info=True,
                 )
 
@@ -264,11 +263,36 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
 
     @staticmethod
     def _sanitize_filename(filename: str) -> str:
-        base = Path(filename).name.strip()
-        if not base:
-            return "unnamed.md"
-        base = base.replace("\x00", "")
-        return base
+        return safe_storage_filename(filename)
+
+    @staticmethod
+    def _stored_object_from_file(file_obj: File) -> StoredObject | None:
+        file_path = file_obj.file_path or ""
+        storage_key = file_obj.storage_key or ""
+        storage_bucket = file_obj.storage_bucket
+        storage_backend = file_obj.storage_backend or (
+            "s3" if file_path.startswith("s3://") else "local"
+        )
+
+        if storage_backend == "s3" and not storage_key:
+            parsed = urlparse(file_path)
+            if parsed.scheme == "s3":
+                storage_bucket = storage_bucket or parsed.netloc
+                storage_key = parsed.path.lstrip("/")
+
+        if storage_backend == "s3" and not storage_key:
+            return None
+        if storage_backend == "local" and not storage_key and not file_path:
+            return None
+
+        return StoredObject(
+            backend=storage_backend,
+            bucket=storage_bucket,
+            key=storage_key,
+            uri=file_path,
+            size=file_obj.file_size,
+            sha256=file_obj.content_sha256 or "",
+        )
 
     def _validate_upload_file(self, upload_file: UploadFileLike) -> str:
         if not upload_file.filename:
