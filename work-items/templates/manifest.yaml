@@ -1,0 +1,23 @@
+slug: example-task-slug
+title: Human-readable task title
+status: active
+goal: One sentence describing the stable goal.
+completion_chain:
+  - First durable completion condition.
+  - Second durable completion condition.
+current_checkpoint:
+  name: scope-aligned
+  state: planned
+  summary: Brief note about the current checkpoint.
+next_choices:
+  - id: A
+    label: Recommended next choice
+    note: Why this is the best next move.
+  - id: B
+    label: Alternative next choice
+    note: Trade-off or uncertainty.
+lightweight_dependencies: []
+attached_artifacts:
+  task_plan: task-plan.md
+  reviews: []
+  debug: []

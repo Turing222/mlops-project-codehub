@@ -18,4 +18,4 @@ Use this skill to gather evidence and answer without changing files.
 ## Progressive Disclosure
 
 - Read [references/read-only.md](references/read-only.md) for investigation boundaries, evidence rules, and answer shape.
-- Read [../project/references/task-mode.md](../project/references/task-mode.md) when the request is ambiguous between read, write, edit, add-tests, and plan.
+- Read [../project/references/task-mode.md](../project/references/task-mode.md) when the request is ambiguous between read, task-plan, write, edit, and add-tests.

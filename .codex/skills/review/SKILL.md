@@ -5,7 +5,7 @@ description: "Multi-angle code review against Dewflow project skill conventions.
 
 # Code Review
 
-Review the full current workspace change set by default, including staged changes, unstaged tracked changes, and untracked files. If the user specifies files, a commit, a PR, or a diff range, review only that requested scope.
+Review the full current workspace change set by default, including staged changes, unstaged tracked changes, and untracked files. If the user specifies files, a commit, a PR, a diff range, or an explicit task slug/path, review only that requested scope or attach the results to that existing work item.
 
 ## Scope Gathering
 
@@ -87,6 +87,14 @@ Scope: staged + unstaged + untracked files from `git status --short`.
    问题：`PromptTemplateDefinition.content` 使用了会返回 `strip()` 后内容的 validator，会改变 prompt 模板首尾空白。
    修复建议：保留非空校验，但返回原始字符串。
 ```
+
+## Work-Item Attachment
+
+- If the user gives an explicit `work-items/active/<task-slug>/` path or task slug, attach persisted review output to that existing task.
+- If there is exactly one clear active-task match, you may attach to it.
+- If there are multiple plausible matches, ask the user which task to use.
+- If no task exists yet, do not create one from `review` alone; suggest using `task-plan` when durable tracking is needed.
+- Persist the concrete review checkpoint output only; keep review methodology in this skill file, not inside `work-items/`.
 
 ## Rules
 

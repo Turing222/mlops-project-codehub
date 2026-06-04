@@ -1,4 +1,0 @@
-interface:
-  display_name: "Plan"
-  short_description: "Dependency-aware task planning"
-  default_prompt: "Break a request into clear tasks with dependencies and parallel work called out."

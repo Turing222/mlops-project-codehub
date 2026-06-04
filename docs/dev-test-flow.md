@@ -188,7 +188,7 @@ GrowthBook feature flag 使用后端白名单出口。新增 flag 时：
 
 1. 在 GrowthBook 控制台创建 boolean feature，key 使用 `kebab-case`。
 2. 在 `FeatureFlagService` 注册 key、scope 和代码兜底默认值。
-3. 系统级开关通过 `/api/v1/auth/config` 输出，用户级开关通过 `/api/v1/users/me.features` 输出。
+3. 系统级开关通过 `/api/v1/auth/config` 输出，用户级开关通过 `/api/v1/users/me` 响应中的 `features` 字段输出。
 4. 前端只通过 `useFeatureFlag()` 或 `FeatureGate` 消费，不直接连接 GrowthBook。
 5. 补充 `tests/unit/services/test_feature_flag_service.py` 覆盖默认兜底和云端定义后的 SDK 判定。
 

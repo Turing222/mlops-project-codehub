@@ -23,9 +23,9 @@ Use this skill as the shared project map. Load only the reference needed for the
 After loading the relevant project reference, load exactly one task-mode skill unless the user request clearly needs more:
 
 - `read` for read-only analysis.
+- `task-plan` for durable work-item alignment, dependency-aware checkpointing, and syncing approved `/plan` conclusions into `work-items/`.
 - `write` for new files or new capability surfaces.
 - `edit` for modifying existing files.
 - `add-tests` for pytest coverage.
-- `plan` for task breakdowns and dependency-aware planning.
 
 After `write` or `edit`, consider `add-tests` if behavior changed or coverage gaps exist.
