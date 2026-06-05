@@ -84,7 +84,7 @@ def _prepare_local_environment() -> None:
         os.environ["POSTGRES_SERVER"] = "localhost"
 
     if "SECRET_KEY" not in os.environ and "SECRET_KEY_FILE" not in os.environ:
-        os.environ["SECRET_KEY"] = "dev-seed-local-secret"
+        os.environ["SECRET_KEY"] = "dev-seed-local-secret-with-at-least-32-chars"
 
 
 _prepare_local_environment()

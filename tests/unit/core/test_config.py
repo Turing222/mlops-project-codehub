@@ -14,10 +14,14 @@ from backend.config.web_settings import DEFAULT_SECRET_KEY, get_web_settings
 from backend.core.secret_env import load_secret_env
 from scripts.qa.config_check import run_checks
 
+TEST_SECRET_KEY = "test-secret-key-with-at-least-32-chars"
+PROD_SECRET_KEY = "prod-secret-key-with-at-least-32-chars"
+
 
 def test_settings_can_load_without_explicit_secret_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("APP_ENV", "local")
     monkeypatch.setenv("DEBUG", "false")
     monkeypatch.delenv("SECRET_KEY", raising=False)
     monkeypatch.delenv("SECRET_KEY_FILE", raising=False)
@@ -128,6 +132,40 @@ def test_non_local_web_config_rejects_default_secret_key(
     assert "SECRET_KEY must not use the local default outside local" in captured.out
 
 
+def test_production_settings_reject_default_secret_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("SECRET_KEY", DEFAULT_SECRET_KEY)
+
+    with pytest.raises(
+        ValueError,
+        match="SECRET_KEY must not use the local default outside local",
+    ):
+        Settings(_env_file=None)
+
+
+def test_non_local_settings_reject_short_secret_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("SECRET_KEY", "short-secret")
+
+    with pytest.raises(ValueError, match="SECRET_KEY is short"):
+        Settings(_env_file=None)
+
+
+def test_production_settings_reject_sms_mock_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("SECRET_KEY", PROD_SECRET_KEY)
+    monkeypatch.setenv("SMS_MOCK_MODE", "true")
+
+    with pytest.raises(ValueError, match="SMS_MOCK_MODE must be False in production"):
+        Settings(_env_file=None)
+
+
 def test_cors_defaults_are_wildcard_for_local(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -148,7 +186,7 @@ def test_cors_defaults_are_restricted_for_production(
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.delenv("BACKEND_CORS_METHODS", raising=False)
     monkeypatch.delenv("BACKEND_CORS_HEADERS", raising=False)
-    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+    monkeypatch.setenv("SECRET_KEY", PROD_SECRET_KEY)
     monkeypatch.setenv("GOOGLE_ALLOWED_REDIRECT_URIS", "https://example.com/callback")
 
     settings = Settings(_env_file=None)
@@ -165,7 +203,7 @@ def test_google_oauth_can_be_disabled_in_production(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("APP_ENV", "prod")
-    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+    monkeypatch.setenv("SECRET_KEY", PROD_SECRET_KEY)
     monkeypatch.setenv("GOOGLE_OAUTH_ENABLED", "false")
     monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
     monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
@@ -181,7 +219,7 @@ def test_google_oauth_enabled_requires_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("APP_ENV", "prod")
-    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+    monkeypatch.setenv("SECRET_KEY", PROD_SECRET_KEY)
     monkeypatch.setenv("GOOGLE_OAUTH_ENABLED", "true")
     monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
     monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
@@ -195,7 +233,7 @@ def test_cors_env_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("BACKEND_CORS_METHODS", "GET,POST")
     monkeypatch.setenv("BACKEND_CORS_HEADERS", "Authorization,Content-Type")
-    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+    monkeypatch.setenv("SECRET_KEY", PROD_SECRET_KEY)
     monkeypatch.setenv("GOOGLE_ALLOWED_REDIRECT_URIS", "https://example.com/callback")
 
     settings = Settings(_env_file=None)
@@ -215,7 +253,7 @@ def test_cors_defaults_follow_yaml_app_env(
 
     monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.setenv("CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+    monkeypatch.setenv("SECRET_KEY", PROD_SECRET_KEY)
     monkeypatch.setenv("GOOGLE_ALLOWED_REDIRECT_URIS", "https://example.com/callback")
 
     settings = Settings()
@@ -247,7 +285,7 @@ def test_app_env_loads_layered_yaml_config(
 
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
 
     settings = Settings()
 
@@ -273,7 +311,7 @@ def test_environment_overrides_app_yaml(
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("CONFIG_DIR", str(config_dir))
     monkeypatch.setenv("LOCAL_STORAGE_ROOT", "env-files")
-    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
 
     settings = Settings()
 
@@ -283,7 +321,7 @@ def test_environment_overrides_app_yaml(
 def test_database_url_overrides_postgres_parts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
 
     settings = Settings(
         DATABASE_URL="postgresql+asyncpg://db-user:db-pass@rdc.example.com:5432/prod",
@@ -322,7 +360,7 @@ def test_cors_whitespace_comma_parses_correctly(
 def test_rate_limit_settings_load_from_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
     monkeypatch.setenv("AUTH_REGISTER_RATE_LIMIT_TIMES", "101")
     monkeypatch.setenv("AUTH_REGISTER_RATE_LIMIT_SECONDS", "61")
     monkeypatch.setenv("AUTH_LOGIN_RATE_LIMIT_TIMES", "102")
@@ -347,7 +385,7 @@ def test_rate_limit_settings_load_from_env(
 def test_rag_refusal_settings_can_load_from_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
     monkeypatch.setenv("RAG_MIN_HIT_COUNT", "2")
     monkeypatch.setenv("RAG_MIN_RELEVANCE_SCORE", "0.35")
     monkeypatch.setenv("RAG_MIN_RERANK_SCORE", "6.5")
@@ -379,7 +417,7 @@ def test_rag_planner_enabled_default_from_yaml(
 
     monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.setenv("CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
 
     settings = Settings()
 

@@ -18,26 +18,39 @@ DEFAULT_SECRET_KEY = "local-dev-secret"  # noqa: S105
 PRODUCTION_APP_ENVS = {"prod", "production"}
 PRODUCTION_CORS_METHODS = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 PRODUCTION_CORS_HEADERS = ["Authorization", "Content-Type", "X-Request-ID"]
+MIN_NON_LOCAL_SECRET_KEY_LENGTH = 32
+
+
+def normalize_app_env(app_env: str | None) -> str:
+    return (app_env or "local").strip().lower() or "local"
+
+
+def is_local_app_env(app_env: str | None) -> bool:
+    return normalize_app_env(app_env) == "local"
+
+
+def is_production_app_env(app_env: str | None) -> bool:
+    return normalize_app_env(app_env) in PRODUCTION_APP_ENVS
 
 
 def _current_app_env() -> str:
-    return os.getenv("APP_ENV", "local").strip().lower() or "local"
+    return normalize_app_env(os.getenv("APP_ENV"))
 
 
 def _default_cors_methods() -> list[str]:
-    if _current_app_env() in PRODUCTION_APP_ENVS:
+    if is_production_app_env(_current_app_env()):
         return PRODUCTION_CORS_METHODS.copy()
     return ["*"]
 
 
 def _default_cors_headers() -> list[str]:
-    if _current_app_env() in PRODUCTION_APP_ENVS:
+    if is_production_app_env(_current_app_env()):
         return PRODUCTION_CORS_HEADERS.copy()
     return ["*"]
 
 
 def _cors_defaults_for_env(app_env: str) -> tuple[list[str], list[str]]:
-    if app_env.strip().lower() in PRODUCTION_APP_ENVS:
+    if is_production_app_env(app_env):
         return PRODUCTION_CORS_METHODS.copy(), PRODUCTION_CORS_HEADERS.copy()
     return ["*"], ["*"]
 
@@ -46,6 +59,7 @@ class WebSettings(BaseSettings):
     """Web API 配置 —— 路由、鉴权、限流。"""
 
     # ── App Metadata ──────────────────────────────────────────────
+    APP_ENV: str = Field(default_factory=_current_app_env)
     PROJECT_NAME: str = "Dewflow AI"
     VERSION: str = "2.0.0"
     DEBUG: bool = False
@@ -154,8 +168,18 @@ class WebSettings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "WebSettings":
-        app_env = _current_app_env()
-        if app_env in PRODUCTION_APP_ENVS:
+        if not is_local_app_env(self.APP_ENV):
+            secret_key = self.SECRET_KEY.strip()
+            if secret_key == DEFAULT_SECRET_KEY:
+                raise ValueError(
+                    "SECRET_KEY must not use the local default outside local"
+                )
+            if len(secret_key) < MIN_NON_LOCAL_SECRET_KEY_LENGTH:
+                raise ValueError(
+                    f"SECRET_KEY is short ({len(secret_key)} chars); "
+                    "use >=32 chars for non-local environments"
+                )
+        if is_production_app_env(self.APP_ENV):
             if self.SMS_MOCK_MODE:
                 raise ValueError("SMS_MOCK_MODE must be False in production")
         if self.GOOGLE_OAUTH_ENABLED:

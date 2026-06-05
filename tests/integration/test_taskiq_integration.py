@@ -81,7 +81,7 @@ def taskiq_worker():
         value = os.environ.get(key)
         if value is not None:
             env[key] = value
-    env.setdefault("SECRET_KEY", "test-secret")
+    env.setdefault("SECRET_KEY", "test-secret-key-with-at-least-32-chars")
 
     proc = subprocess.Popen(
         [

@@ -224,7 +224,12 @@ def _validate_settings(factory: Callable[[], object], label: str) -> CheckResult
 
 def _check_web_requirements() -> CheckResult:
     """Web-specific: SECRET_KEY must be set and non-trivial in non-local env."""
-    from backend.config.web_settings import DEFAULT_SECRET_KEY, get_web_settings
+    from backend.config.web_settings import (
+        DEFAULT_SECRET_KEY,
+        MIN_NON_LOCAL_SECRET_KEY_LENGTH,
+        get_web_settings,
+        is_local_app_env,
+    )
 
     try:
         settings = get_web_settings()
@@ -233,18 +238,19 @@ def _check_web_requirements() -> CheckResult:
 
     errors: list[str] = []
     warnings: list[str] = []
-    app_env = os.getenv("APP_ENV", "local").strip().lower()
+    app_env = settings.APP_ENV
 
-    if app_env != "local":
+    if not is_local_app_env(app_env):
         secret_key = settings.SECRET_KEY.strip()
         if not secret_key:
             errors.append("SECRET_KEY must be set for non-local web environments")
         elif secret_key == DEFAULT_SECRET_KEY:
             errors.append("SECRET_KEY must not use the local default outside local")
-        elif len(secret_key) < 32:
+        elif len(secret_key) < MIN_NON_LOCAL_SECRET_KEY_LENGTH:
             errors.append(
                 f"SECRET_KEY is short ({len(secret_key)} chars); "
-                "use >=32 chars for non-local environments"
+                f"use >={MIN_NON_LOCAL_SECRET_KEY_LENGTH} chars for non-local "
+                "environments"
             )
         if settings.ACCESS_TOKEN_EXPIRE_MINUTES > 60:
             warnings.append(

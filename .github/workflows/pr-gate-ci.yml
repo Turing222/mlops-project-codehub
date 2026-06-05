@@ -47,7 +47,7 @@ jobs:
 
     env:
       APP_ENV: test
-      SECRET_KEY: ci-test-secret
+      SECRET_KEY: ci-test-secret-key-with-at-least-32-chars
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dewflow_test
       REDIS_URL: redis://localhost:6379/0
       TASKIQ_REDIS_URL: redis://localhost:6379/1

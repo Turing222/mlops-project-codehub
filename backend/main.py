@@ -14,6 +14,7 @@ from backend.api.v1.api import api_router
 from backend.config.llm import validate_llm_configs
 from backend.config.permissions import get_permission_policy
 from backend.config.settings import settings
+from backend.config.web_settings import is_production_app_env
 from backend.core.exception_handlers import setup_exception_handlers
 from backend.infra.database import init_db
 from backend.infra.redis import redis_client
@@ -24,6 +25,12 @@ from backend.observability.logger import setup_logging
 from backend.observability.telemetry import setup_telemetry, shutdown_telemetry
 
 logger = logging.getLogger(__name__)
+
+
+def _api_docs_urls(app_env: str) -> tuple[str | None, str | None, str | None]:
+    if is_production_app_env(app_env):
+        return None, None, None
+    return "/docs", "/redoc", "/openapi.json"
 
 
 # 1. 定义生命周期（DBA 关心的资源管理）
@@ -48,11 +55,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("系统已关闭")
 
 
+_docs_url, _redoc_url, _openapi_url = _api_docs_urls(settings.APP_ENV)
+
 app = FastAPI(
     root_path=settings.API_ROOT_PATH,
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     lifespan=lifespan,
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
+    openapi_url=_openapi_url,
 )
 
 # 全局异常处理
