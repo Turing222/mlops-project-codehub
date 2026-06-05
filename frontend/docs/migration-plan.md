@@ -11,20 +11,22 @@
 已完成：
 
 - 只保留 `apps/admin`
-- `lint`、`test`、`build` 已通过
-- 前端基础 smoke test 已建立
+- `lint`、`test`、`build`、mock e2e 已纳入前端校验链路
 - API 前缀问题已修正
 - `zod` schema 已接入关键 API 边界
 - 统一 HTTP client / trace id / 错误归一化已接入
 - 聊天 `client_request_id` 已迁到公共幂等 helper
+- `zustand + persist` 已成为认证状态来源，`AuthContext` 保留为 provider 包装层
+- `TanStack Query` 已接入查询、mutation、缓存失效和错误上报基础设施
+- 聊天流已迁入 `src/streams/chat-stream.ts`，页面侧只保留 UI 与状态编排
+- 前端架构文档、标准文档、Make target 和 CI 校验已经建立
 
-当前待改造点：
+当前剩余收口点：
 
-- 仍然使用 `AuthContext`
-- `zustand` / `persist` 还未接入
-- `TanStack Query` 还未接入
-- 上传等 mutation 还未统一接入幂等策略
-- 缺少服务端状态缓存层
+- 前端 render/global/promise/stream failure 可观测性还未形成完整 telemetry 语义
+- Web Vitals 与 bundle composition 还缺少测量基线
+- 上传等 mutation 已有幂等入口，但仍可继续按业务链路补齐策略说明
+- 日期展示收口和模板化沉淀仍按需推进
 
 ## 阶段 1：网络基建与 Schema 基建
 
@@ -87,6 +89,14 @@
 2. `bootstrap auth` helper
 3. 统一 logout/unauthorized 清理逻辑
 
+当前状态：已完成核心目标
+
+本阶段结果：
+
+- `src/stores/auth-store.ts` 已集中管理 token、用户态和认证 bootstrap。
+- `AuthContext` 仍存在，但职责已经收敛为 provider/兼容包装层。
+- 401/403 清理逻辑已通过统一 HTTP/auth 边界触发。
+
 验收标准：
 
 - token 来源唯一
@@ -118,6 +128,14 @@
 先不要接入：
 
 - SSE 主聊天流
+
+当前状态：已完成核心目标
+
+本阶段结果：
+
+- `src/query/query-client.ts` 已配置全局 query/mutation 策略和 HTTP 5xx telemetry 上报。
+- `src/query/hooks/` 与 `src/query/keys/` 已覆盖 auth、users、chat、credits、repo-analysis 等主要服务端状态。
+- SSE 主聊天流继续由 stream client 管理，没有强行塞进 Query。
 
 验收标准：
 
@@ -152,6 +170,18 @@
 - POST：默认不 retry
 - 带幂等 key 的 POST：可按策略 retry
 
+当前状态：核心入口已完成，业务链路策略继续按需补齐
+
+本阶段结果：
+
+- `src/lib/http/idempotency.ts` 已提供幂等 key 生成与复用。
+- 聊天普通/流式请求已复用 `client_request_id` 与 `X-Idempotency-Key`。
+- Query mutation 默认不自动 retry，避免非幂等 POST 静默重复提交。
+
+后续收口：
+
+- 上传、批量导入、任务触发等 mutation 可继续补充链路级策略说明和测试。
+
 验收标准：
 
 - 至少聊天和上传两条链路有明确幂等策略
@@ -173,6 +203,18 @@
   - retry cache
   - meta 事件处理
  逐步迁出
+
+当前状态：已完成核心目标
+
+本阶段结果：
+
+- `src/streams/chat-stream.ts` 已集中负责 fetch、ReadableStream 读取、SSE `data:` 解析和 Zod event 校验。
+- `features/chat/use-chat-controller.ts` 负责当前会话、消息、streaming text、abort 和 retry cache 编排。
+- `pages/Chat/index.tsx` 保持页面布局与组件组合职责。
+
+后续收口：
+
+- 失败可观测性、自动重连或 resume 不属于本迁移阶段，按独立任务处理。
 
 验收标准：
 
@@ -220,17 +262,26 @@
 - `frontend/docs/standards/`
 - `frontend/templates/` 或内部样例文件
 
+当前状态：CI 与标准文档已完成，模板化继续按需沉淀
+
+本阶段结果：
+
+- `frontend/docs/architecture.md` 与 `frontend/docs/standards/` 已成为前端工程约定入口。
+- `make frontend-lint`、`frontend-typecheck`、`frontend-test`、`frontend-build`、`frontend-e2e-mock`、`frontend-check` 已建立。
+- Static CI 和 PR Gate CI 已覆盖前端静态检查、构建和 mock e2e。
+
+后续收口：
+
+- 新页面、新 API、新 query、新 schema 的模板可在新增功能时按真实重复度沉淀。
+
 ## 推荐执行顺序
 
-推荐严格按这个顺序推进：
+迁移基线已经基本完成。后续不再按阶段重跑迁移，改为按缺口推进：
 
-1. 阶段 1：HTTP client + Zod
-2. 阶段 2：Auth store
-3. 阶段 3：TanStack Query
-4. 阶段 4：幂等与 retry
-5. 阶段 5：聊天流重构
-6. 阶段 6：Dayjs 按需引入
-7. 阶段 7：CI 与模板化
+1. 前端 telemetry 语义：区分 API error、client error、chat stream failure 和 Web Vitals metrics。
+2. 客户端错误可观测性：补齐 render crash、global error、unhandled promise 和 stream failure 上报。
+3. 测量基线：增加 bundle visualizer 和 Web Vitals baseline。
+4. 小范围收口：按真实业务需求补充上传幂等策略、日期展示工具或模板化样例。
 
 ## 每阶段通用验收
 
@@ -255,3 +306,4 @@ pnpm --dir frontend --filter admin lint
 - 为了“统一”先把 SSE 也改进 Query
 - 在没有日期复杂度前先全量铺 `dayjs`
 - 在没有幂等约定前给所有 mutation 加自动 retry
+- 在没有事件语义前把 Web Vitals 混入错误 telemetry

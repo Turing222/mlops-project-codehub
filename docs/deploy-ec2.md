@@ -86,6 +86,8 @@ make deploy-ec2-secrets-prepare
 
 真实 secret 文件不会提交到 Git。
 
+> 各 key 对应哪个功能、缺失或上游故障时如何告警与降级，见 [api-keys-and-degradation.md](api-keys-and-degradation.md)。
+
 ## Makefile 入口
 
 手动部署统一通过根目录 [Makefile](../Makefile) 暴露以下命令：
