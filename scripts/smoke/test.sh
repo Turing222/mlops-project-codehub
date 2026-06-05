@@ -11,15 +11,22 @@ require_cmd docker
 require_cmd uv
 
 log_section "Verifying smoke environment"
-compose_smoke ps
+
+if [[ "${SMOKE_PRINT_STACK_STATUS:-true}" == "true" ]]; then
+    compose_smoke ps
+fi
 
 if ! wait_for_http_ok "${SMOKE_BASE_URL}${SMOKE_LIVE_PATH}"; then
-    print_smoke_logs
+    if [[ "${SMOKE_PRINT_STACK_STATUS:-true}" == "true" ]]; then
+        print_smoke_logs
+    fi
     exit 1
 fi
 
 if ! wait_for_http_ok "${SMOKE_BASE_URL}${SMOKE_READY_PATH}"; then
-    print_smoke_logs
+    if [[ "${SMOKE_PRINT_STACK_STATUS:-true}" == "true" ]]; then
+        print_smoke_logs
+    fi
     exit 1
 fi
 

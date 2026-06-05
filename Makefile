@@ -9,6 +9,14 @@ SMOKE_ENV_TEMPLATE ?= .env.smoke.template
 SMOKE_BASE_URL ?= http://localhost:8000
 SMOKE_LIVE_PATH ?= /api/v1/health_check/live
 SMOKE_READY_PATH ?= /api/v1/health_check/db_ready
+DEPLOY_COMPOSE_FILE ?= deploy/docker-compose.yml
+DEPLOY_ENV_FILE ?= deploy/.env.ec2
+DEPLOY_BASE_URL ?= http://localhost
+DEPLOY_FRONTEND_HEALTH_PATH ?= /healthz
+DEPLOY_API_LIVE_PATH ?= /api/v1/health_check/live
+DEPLOY_API_READY_PATH ?= /api/v1/health_check/db_ready
+DEPLOY_ENABLE_OBSERVABILITY ?= false
+DEPLOY_LOG_TAIL ?= 200
 FRONTEND_DIR ?= frontend
 FRONTEND_APP ?= admin
 UNIT_TARGETS ?= tests/unit
@@ -32,6 +40,9 @@ export SMOKE_ENV_TEMPLATE
 export SMOKE_BASE_URL
 export SMOKE_LIVE_PATH
 export SMOKE_READY_PATH
+export DEPLOY_COMPOSE_FILE DEPLOY_ENV_FILE DEPLOY_BASE_URL
+export DEPLOY_FRONTEND_HEALTH_PATH DEPLOY_API_LIVE_PATH DEPLOY_API_READY_PATH
+export DEPLOY_ENABLE_OBSERVABILITY DEPLOY_LOG_TAIL
 export EVAL_DATASET EVAL_OUTPUT EVAL_API_OUTPUT EVAL_RETRIEVAL_OUTPUT
 export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 
@@ -41,6 +52,7 @@ export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all \
+	deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-up-debug env-smoke-wait env-smoke-down env-smoke-logs \
 	set-llm seed-dev \
 	pr-report \
@@ -87,6 +99,12 @@ help:
 		'  image-build          Build the backend Docker image' \
 		'  frontend-image-build  Build the frontend Docker image' \
 		'  image-build-all       Build all Docker images (backend + frontend)' \
+		'  deploy-ec2-check     Validate EC2 deploy env and compose config' \
+		'  deploy-ec2-up        Pull images and start the EC2 deploy stack' \
+		'  deploy-ec2-wait      Wait until the EC2 deploy endpoints are reachable' \
+		'  deploy-ec2-verify    Run remote-safe smoke checks against the EC2 deploy stack' \
+		'  deploy-ec2-logs      Show recent EC2 deploy logs' \
+		'  deploy-ec2-down      Stop the EC2 deploy stack' \
 		'  env-smoke-prepare    Generate the smoke env file from template' \
 		'  env-smoke-check      Run preflight checks for smoke environment (API keys)' \
 		'  env-smoke-up         Start the smoke environment' \
@@ -214,6 +232,24 @@ frontend-image-build:
 
 image-build-all: image-build frontend-image-build
 
+deploy-ec2-check:
+	bash scripts/deploy/ec2-check.sh
+
+deploy-ec2-up:
+	bash scripts/deploy/ec2-up.sh
+
+deploy-ec2-wait:
+	bash scripts/deploy/ec2-wait.sh
+
+deploy-ec2-verify:
+	bash scripts/deploy/ec2-verify.sh
+
+deploy-ec2-logs:
+	bash scripts/deploy/ec2-logs.sh $(ARGS)
+
+deploy-ec2-down:
+	bash scripts/deploy/ec2-down.sh
+
 env-smoke-prepare:
 	bash scripts/smoke/prepare_env.sh
 
@@ -231,12 +267,12 @@ env-smoke-wait:
 
 set-llm:
 	@MODEL_ROUTING="$(or $(MODEL_ROUTING),)" \
-	ROUTING_LLM_PROVIDER="$(or $(ROUTING_LLM_PROVIDER),)" \
-	FAST_PROVIDER="$(or $(FAST_PROVIDER),)" \
-	BALANCED_PROVIDER="$(or $(BALANCED_PROVIDER),)" \
-	REASONING_PROVIDER="$(or $(REASONING_PROVIDER),)" \
-	MIN_CONFIDENCE="$(or $(MIN_CONFIDENCE),)" \
-	bash scripts/smoke/set_llm.sh "$(PROVIDER)" "$(or $(EMBED_PROVIDER),)"
+		ROUTING_LLM_PROVIDER="$(or $(ROUTING_LLM_PROVIDER),)" \
+		FAST_PROVIDER="$(or $(FAST_PROVIDER),)" \
+		BALANCED_PROVIDER="$(or $(BALANCED_PROVIDER),)" \
+		REASONING_PROVIDER="$(or $(REASONING_PROVIDER),)" \
+		MIN_CONFIDENCE="$(or $(MIN_CONFIDENCE),)" \
+		bash scripts/smoke/set_llm.sh "$(PROVIDER)" "$(or $(EMBED_PROVIDER),)"
 
 seed-dev:
 	uv run python scripts/seed/dev_seed.py $(ARGS)

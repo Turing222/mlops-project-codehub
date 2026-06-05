@@ -22,6 +22,17 @@ SMOKE_REQUIRED_VOLUME_NAMES=(
     prod_db_volume_test
     knowledge_files_volume_test
 )
+DEPLOY_COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-deploy/docker-compose.yml}"
+DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-deploy/.env.ec2}"
+DEPLOY_BASE_URL="${DEPLOY_BASE_URL:-http://localhost}"
+DEPLOY_FRONTEND_HEALTH_PATH="${DEPLOY_FRONTEND_HEALTH_PATH:-/healthz}"
+DEPLOY_API_LIVE_PATH="${DEPLOY_API_LIVE_PATH:-/api/v1/health_check/live}"
+DEPLOY_API_READY_PATH="${DEPLOY_API_READY_PATH:-/api/v1/health_check/db_ready}"
+DEPLOY_SMOKE_PYTEST_TARGETS="${DEPLOY_SMOKE_PYTEST_TARGETS:-\
+ tests/smoke/test_core_api_flow_smoke.py \
+ tests/smoke/test_chat_http_smoke.py \
+ tests/smoke/test_rag_http_smoke.py}"
+DEPLOY_LOG_TAIL="${DEPLOY_LOG_TAIL:-200}"
 
 log_section() {
     printf '\n==> %s\n' "$1"
@@ -245,11 +256,127 @@ compose_smoke() {
     SMOKE_ENV_FILE="$smoke_env_path" docker compose --env-file "$smoke_env_path" -f "$SMOKE_COMPOSE_FILE" "${profile_args[@]}" "$@"
 }
 
+require_deploy_env_file() {
+    local deploy_env_path
+    deploy_env_path="$(resolve_project_path "$DEPLOY_ENV_FILE")"
+    if [[ ! -f "$deploy_env_path" ]]; then
+        log_error "Missing deploy env file: $deploy_env_path"
+        log_info "Copy deploy/.env.ec2.template to deploy/.env.ec2 and fill in the required values"
+        exit 1
+    fi
+}
+
+deploy_env_value() {
+    local name="$1"
+    local default_value="$2"
+    local deploy_env_path
+    local value
+
+    deploy_env_path="$(resolve_project_path "$DEPLOY_ENV_FILE")"
+    if [[ -f "$deploy_env_path" ]]; then
+        if value="$(
+            awk -F= -v key="$name" '
+                $0 !~ /^[[:space:]]*#/ && $1 == key {
+                    sub(/^[^=]*=/, "")
+                    print
+                    found = 1
+                    exit
+                }
+                END {
+                    if (!found) {
+                        exit 1
+                    }
+                }
+            ' "$deploy_env_path"
+        )"; then
+            value="${value%\"}"
+            value="${value#\"}"
+            value="${value%\'}"
+            value="${value#\'}"
+            printf '%s\n' "$value"
+            return
+        fi
+    fi
+
+    if [[ -n "${!name:-}" ]]; then
+        printf '%s\n' "${!name}"
+        return
+    fi
+
+    printf '%s\n' "$default_value"
+}
+
+deploy_control_env_value() {
+    local name="$1"
+    local default_value="$2"
+
+    if [[ -n "${!name:-}" ]]; then
+        printf '%s\n' "${!name}"
+        return
+    fi
+
+    deploy_env_value "$name" "$default_value"
+}
+
+load_deploy_env() {
+    require_deploy_env_file
+
+    DEPLOY_BASE_URL="$(deploy_control_env_value "DEPLOY_BASE_URL" "$DEPLOY_BASE_URL")"
+    DEPLOY_FRONTEND_HEALTH_PATH="$(deploy_control_env_value "DEPLOY_FRONTEND_HEALTH_PATH" "$DEPLOY_FRONTEND_HEALTH_PATH")"
+    DEPLOY_API_LIVE_PATH="$(deploy_control_env_value "DEPLOY_API_LIVE_PATH" "$DEPLOY_API_LIVE_PATH")"
+    DEPLOY_API_READY_PATH="$(deploy_control_env_value "DEPLOY_API_READY_PATH" "$DEPLOY_API_READY_PATH")"
+    DEPLOY_ENABLE_OBSERVABILITY="$(deploy_control_env_value "DEPLOY_ENABLE_OBSERVABILITY" "${DEPLOY_ENABLE_OBSERVABILITY:-false}")"
+    DEPLOY_PULL_IMAGES="$(deploy_control_env_value "DEPLOY_PULL_IMAGES" "${DEPLOY_PULL_IMAGES:-false}")"
+    DEPLOY_LOG_TAIL="$(deploy_control_env_value "DEPLOY_LOG_TAIL" "$DEPLOY_LOG_TAIL")"
+    DEPLOY_SMOKE_PYTEST_TARGETS="$(deploy_control_env_value "DEPLOY_SMOKE_PYTEST_TARGETS" "$DEPLOY_SMOKE_PYTEST_TARGETS")"
+    DOCKER_IMAGE_NAME_WEB="$(deploy_control_env_value "DOCKER_IMAGE_NAME_WEB" "${DOCKER_IMAGE_NAME_WEB:-dewflow-backend:2.0.0-web}")"
+    DOCKER_IMAGE_NAME_AI="$(deploy_control_env_value "DOCKER_IMAGE_NAME_AI" "${DOCKER_IMAGE_NAME_AI:-dewflow-backend:2.0.0-ai}")"
+    DOCKER_IMAGE_NAME_FRONTEND="$(deploy_control_env_value "DOCKER_IMAGE_NAME_FRONTEND" "${DOCKER_IMAGE_NAME_FRONTEND:-dewflow-frontend:2.0.0}")"
+
+    export DEPLOY_BASE_URL
+    export DEPLOY_FRONTEND_HEALTH_PATH
+    export DEPLOY_API_LIVE_PATH
+    export DEPLOY_API_READY_PATH
+    export DEPLOY_ENABLE_OBSERVABILITY
+    export DEPLOY_PULL_IMAGES
+    export DEPLOY_LOG_TAIL
+    export DEPLOY_SMOKE_PYTEST_TARGETS
+    export DOCKER_IMAGE_NAME_WEB
+    export DOCKER_IMAGE_NAME_AI
+    export DOCKER_IMAGE_NAME_FRONTEND
+}
+
+compose_deploy() {
+    local deploy_env_path
+    local deploy_compose_path
+    local profile_args=()
+    local subcmd="${1:-}"
+
+    deploy_env_path="$(resolve_project_path "$DEPLOY_ENV_FILE")"
+    deploy_compose_path="$(resolve_project_path "$DEPLOY_COMPOSE_FILE")"
+    require_deploy_env_file
+
+    if [[ "$subcmd" == "down" ]]; then
+        append_profile_arg "observability"
+    elif [[ "${DEPLOY_ENABLE_OBSERVABILITY:-false}" == "true" ]]; then
+        append_profile_arg "observability"
+    fi
+
+    DEPLOY_SERVICE_ENV_FILE="$deploy_env_path" docker compose --env-file "$deploy_env_path" -f "$deploy_compose_path" "${profile_args[@]}" "$@"
+}
+
 print_smoke_logs() {
     log_warn "Smoke environment status:"
     compose_smoke ps || true
     log_warn "Recent Smoke logs:"
     compose_smoke logs --tail=200 || true
+}
+
+print_deploy_logs() {
+    log_warn "Deploy environment status:"
+    compose_deploy ps || true
+    log_warn "Recent deploy logs:"
+    compose_deploy logs --tail="$DEPLOY_LOG_TAIL" || true
 }
 
 wait_for_http_ok() {

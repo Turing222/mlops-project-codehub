@@ -26,6 +26,7 @@ mlartifacts/
 .env.smoke
 key.env
 *.env
+deploy/.env.ec2
 
 # 忽略 Jupyter 的检查点备份
 .ipynb_checkpoints/

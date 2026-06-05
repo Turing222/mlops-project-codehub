@@ -74,6 +74,8 @@ make flow-local             # 本地完整验证：flow-fast + smoke stack + int
 make frontend-check         # 前端 lint + typecheck + test + build
 make qa-test-unit           # 后端单元测试
 make qa-test-integration    # 后端集成测试
+make deploy-ec2-check       # EC2 手动部署前置检查
+make deploy-ec2-verify      # 对已部署的 EC2 栈执行远端 smoke 验证
 make qa-eval-rag            # RAG 检索/回答评测
 make qa-perf-chat           # 标准化 chat API 压测
 ```
@@ -97,6 +99,7 @@ make qa-perf-chat           # 标准化 chat API 压测
 - [frontend/docs/README.md](frontend/docs/README.md) — 前端架构、迁移计划与标准索引
 
 ### 部署与运行
+- [docs/deploy-ec2.md](docs/deploy-ec2.md) — 单台 EC2 手动部署入口与后续自动 CD 对接方式
 - [deploy/k8s/README.md](deploy/k8s/README.md) — Kubernetes 接入示例
 - [deploy/k8s/local-scaling/README.md](deploy/k8s/local-scaling/README.md) — 本地 worker 自动扩缩容演示
 - [secrets/smoke/README.md](secrets/smoke/README.md) — smoke secrets 使用说明

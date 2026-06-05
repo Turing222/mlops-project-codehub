@@ -27,9 +27,10 @@
 4. [../deploy/k8s/README.md](../deploy/k8s/README.md)
 
 ### 做部署 / 扩缩容相关工作的人
-1. [k8s-scaling-strategy.md](k8s-scaling-strategy.md)
-2. [../deploy/k8s/README.md](../deploy/k8s/README.md)
-3. [../deploy/k8s/local-scaling/README.md](../deploy/k8s/local-scaling/README.md)
+1. [deploy-ec2.md](deploy-ec2.md)
+2. [k8s-scaling-strategy.md](k8s-scaling-strategy.md)
+3. [../deploy/k8s/README.md](../deploy/k8s/README.md)
+4. [../deploy/k8s/local-scaling/README.md](../deploy/k8s/local-scaling/README.md)
 
 ## 文档分类索引
 
@@ -53,6 +54,7 @@
 
 ## Platform / Deployment Notes
 
+- [deploy-ec2.md](deploy-ec2.md) — 单台 EC2 的手动部署入口与后续自动 CD 对接方式。
 - [k8s-scaling-strategy.md](k8s-scaling-strategy.md) — API / worker 扩缩容策略说明。
 - [../deploy/k8s/README.md](../deploy/k8s/README.md) — Kubernetes 接入与部署示例。
 - [../deploy/k8s/local-scaling/README.md](../deploy/k8s/local-scaling/README.md) — 本地 worker 扩缩容演示。

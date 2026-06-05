@@ -5,6 +5,9 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+x-deploy-env-file: &deploy-env-file
+  - ${DEPLOY_SERVICE_ENV_FILE:-./.env.ec2}
+
 # AWS-like runtime defaults for backend containers.
 # Keep S3_ENDPOINT_URL and static credentials empty so boto3 uses real AWS S3
 # and the default credential chain, preferably an EC2 instance profile.
@@ -18,27 +21,22 @@ x-backend-aws-env: &backend-aws-env
   S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
   S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
   POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-disable}
+
 services:
 
   postgres:
     image: pgvector/pgvector:0.8.1-pg17-bookworm
     container_name: postgres
-    env_file:
-      - ../.env
-    # 1. 在服务内挂载卷
+    env_file: *deploy-env-file
     volumes:
       - pg_data_v17:/var/lib/postgresql/data
-      - ./scripts/pgsql_backup.sh:/usr/local/bin/pg_backup.sh:ro
-      - pg_backups:/backup
     logging: *default-logging
-    #entrypoint: [ "/bin/sh", "/usr/local/bin/pg_backup.sh" ]
     deploy:
       resources:
         limits:
           memory: 1024M
-          #共享缓冲区 工作内存 维护工作内存 有效缓存预测 最大连接数
     command: >
-      postgres -c shared_buffers=256MB   -c work_mem=32MB   -c maintenance_work_mem=128MB  -c effective_cache_size=768MB -c max_connections=200 -c logging_collector=off
+      postgres -c shared_buffers=256MB -c work_mem=32MB -c maintenance_work_mem=128MB -c effective_cache_size=768MB -c max_connections=200 -c logging_collector=off
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 10s
@@ -50,16 +48,14 @@ services:
   redis:
     image: redis:7.4-alpine
     container_name: redis
-    env_file:
-      - ../.env # 确保路径正确，读取刚才定义的变量
+    env_file: *deploy-env-file
     deploy:
       resources:
         limits:
           memory: 512M
     logging: *default-logging
-    # 通过 --requirepass 参数启用密码
     command: >
-      redis-server  --maxmemory 384mb  --maxmemory-policy allkeys-lru  --requirepass "${REDIS_PASSWORD}"
+      redis-server --maxmemory 384mb --maxmemory-policy allkeys-lru --requirepass "${REDIS_PASSWORD}"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -67,16 +63,16 @@ services:
       retries: 5
     networks:
       - app_net
+
   api:
-    image: dewflow-backend:2.0.0-web
+    image: ${DOCKER_IMAGE_NAME_WEB:-dewflow-backend:2.0.0-web}
     container_name: api
     stop_grace_period: 40s
     volumes:
       - knowledge_files_volume:/data/knowledge_files
     logging: *default-logging
-    user: "${CURRENT_UID}:${CURRENT_GID}"
-    env_file:
-      - ../.env
+    user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
+    env_file: *deploy-env-file
     environment:
       <<: *backend-aws-env
       PYTHONMALLOC: default
@@ -99,8 +95,6 @@ services:
         condition: service_healthy
       db_migrator:
         condition: service_completed_successfully
-      vector:
-        condition: service_started
     healthcheck:
       test: [ "CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/v1/health_check/live\", timeout=5)' || exit 1" ]
       interval: 30s
@@ -111,6 +105,7 @@ services:
     networks:
       - app_net
       - monitor_net
+
   frontend:
     image: ${DOCKER_IMAGE_NAME_FRONTEND:-dewflow-frontend:2.0.0}
     container_name: frontend
@@ -119,7 +114,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "80:8080"
+      - "${FRONTEND_PUBLIC_PORT:-80}:8080"
     networks:
       - app_net
     deploy:
@@ -132,12 +127,11 @@ services:
   prometheus:
     image: prom/prometheus:v3.1.0
     container_name: prometheus
-    # 移除 profile 使其默认启动，它是监控系统的核心
+    profiles: [ "observability" ]
     logging: *default-logging
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
-      # 限制数据只保留 7 天，防止硬盘撑爆
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.retention.time=7d'
@@ -154,8 +148,8 @@ services:
   postgres_exporter:
     image: prometheuscommunity/postgres-exporter:v0.17.1
     container_name: postgres_exporter
+    profiles: [ "observability" ]
     environment:
-      # 连接字符串，指向同网络下的 postgres 服务
       - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
     depends_on:
       postgres:
@@ -171,8 +165,8 @@ services:
   redis_exporter:
     image: oliver006/redis_exporter:v1.67.0
     container_name: redis_exporter
+    profiles: [ "observability" ]
     environment:
-      # 指向同网络下的 redis 服务，并传入密码
       - REDIS_ADDR=redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     depends_on:
@@ -189,10 +183,11 @@ services:
   grafana:
     image: grafana/grafana-oss:11.5.8-ubuntu
     container_name: grafana
+    profiles: [ "observability" ]
     logging: *default-logging
     environment:
-      - GF_ANALYTICS_REPORTING_ENABLED=false # 禁用统计上报
-      - GF_AUTH_ANONYMOUS_ENABLED=false # 生产环境必须关闭匿名访问
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
     deploy:
       resources:
         limits:
@@ -206,11 +201,10 @@ services:
     networks:
       - monitor_net
 
-  # 2. 日志中转 (Vector)
   vector:
     image: timberio/vector:0.50.0-debian
-    # 移除 profile 使其默认启动
     container_name: vector
+    profiles: [ "observability" ]
     volumes:
       - ./logging/vector.yaml:/etc/vector/vector.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -224,11 +218,10 @@ services:
         reservations:
           memory: 64M
 
-  # 3. 日志存储 (Loki)
   loki:
     image: grafana/loki:3.4.0
     container_name: loki
-    # 移除 profile 使其默认启动
+    profiles: [ "observability" ]
     volumes:
       - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
@@ -240,17 +233,14 @@ services:
           memory: 512M
         reservations:
           memory: 128M
-  # 1. 专门负责“更新数据库”的工具人
 
   db_migrator:
-    image: dewflow-backend:2.0.0-web
+    image: ${DOCKER_IMAGE_NAME_WEB:-dewflow-backend:2.0.0-web}
     depends_on:
       postgres:
         condition: service_healthy
-    # 覆盖默认启动命令，只跑迁移
     command: alembic upgrade head
-    env_file:
-      - ../.env
+    env_file: *deploy-env-file
     environment:
       <<: *backend-aws-env
     networks:
@@ -262,14 +252,13 @@ services:
         reservations:
           memory: 64M
 
-  # 4. 压力测试 (Locust)
   locust:
     image: locustio/locust:2.33.0
     container_name: locust
     volumes:
-      - ../tests:/mnt/locust # 挂载测试脚本目录
+      - ../tests:/mnt/locust
     command: -f /mnt/locust/performance/locustfile.py --host http://api:8000
-    profiles: [ "debug" ] # 设置为 debug 模式启动，默认不开启
+    profiles: [ "debug" ]
     ports:
       - "8089:8089"
     networks:
@@ -282,15 +271,13 @@ services:
         reservations:
           memory: 128M
 
-  # 5. 异步长连接任务队列 Taskiq Worker
   task_worker:
-    image: dewflow-backend:2.0.0-ai
+    image: ${DOCKER_IMAGE_NAME_AI:-dewflow-backend:2.0.0-ai}
     container_name: task_worker
     stop_grace_period: 120s
     volumes:
       - knowledge_files_volume:/data/knowledge_files
-    env_file:
-      - ../.env
+    env_file: *deploy-env-file
     environment:
       <<: *backend-aws-env
       TASKIQ_REDIS_URL: ${TASKIQ_REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/1}
@@ -321,7 +308,5 @@ volumes:
     name: prod_db_volume
   loki_data:
     name: loki_data_volume
-  pg_backups:
-    name: pg_backups_volume
   knowledge_files_volume:
     name: knowledge_files_volume
