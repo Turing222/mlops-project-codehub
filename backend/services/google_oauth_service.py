@@ -26,13 +26,19 @@ class GoogleOAuthService:
 
     def __init__(
         self,
+        google_oauth_enabled: bool,
         google_client_id: str,
         google_client_secret: str,
         allowed_redirect_uris: list[str] | None = None,
     ) -> None:
+        self._google_oauth_enabled = google_oauth_enabled
         self._google_client_id = google_client_id
         self._google_client_secret = google_client_secret
         self._allowed_redirect_uris = allowed_redirect_uris or []
+
+    def _require_enabled(self) -> None:
+        if not self._google_oauth_enabled:
+            raise app_bad_request("Google 登录暂未开放", code="GOOGLE_OAUTH_DISABLED")
 
     def _validate_redirect_uri(self, redirect_uri: str) -> str:
         """Validate redirect_uri against the whitelist."""
@@ -52,6 +58,7 @@ class GoogleOAuthService:
 
     def get_authorization_url(self, redirect_uri: str) -> str:
         """构建 Google OAuth2 授权跳转 URL。"""
+        self._require_enabled()
         redirect_uri = self._validate_redirect_uri(redirect_uri)
         params = {
             "client_id": self._google_client_id,
@@ -69,6 +76,7 @@ class GoogleOAuthService:
         Returns:
             包含 sub、email、name 等字段的字典。
         """
+        self._require_enabled()
         redirect_uri = self._validate_redirect_uri(redirect_uri)
         async with httpx.AsyncClient(timeout=10) as client:
             # 1. 用授权码换令牌

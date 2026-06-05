@@ -58,6 +58,7 @@ class WebSettings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # ── Google OAuth ──────────────────────────────────────────────
+    GOOGLE_OAUTH_ENABLED: bool = Field(False, description="Enable Google OAuth2 login")
     GOOGLE_CLIENT_ID: str = Field("", description="Google OAuth2 Client ID")
     GOOGLE_CLIENT_SECRET: str = Field("", description="Google OAuth2 Client Secret")
     GOOGLE_ALLOWED_REDIRECT_URIS: Annotated[list[str], NoDecode] = Field(
@@ -157,9 +158,18 @@ class WebSettings(BaseSettings):
         if app_env in PRODUCTION_APP_ENVS:
             if self.SMS_MOCK_MODE:
                 raise ValueError("SMS_MOCK_MODE must be False in production")
+        if self.GOOGLE_OAUTH_ENABLED:
+            if not self.GOOGLE_CLIENT_ID.strip():
+                raise ValueError(
+                    "GOOGLE_CLIENT_ID must be set when Google OAuth is enabled"
+                )
+            if not self.GOOGLE_CLIENT_SECRET.strip():
+                raise ValueError(
+                    "GOOGLE_CLIENT_SECRET must be set when Google OAuth is enabled"
+                )
             if not self.GOOGLE_ALLOWED_REDIRECT_URIS:
                 raise ValueError(
-                    "GOOGLE_ALLOWED_REDIRECT_URIS must be set in production"
+                    "GOOGLE_ALLOWED_REDIRECT_URIS must be set when Google OAuth is enabled"
                 )
         return self
 

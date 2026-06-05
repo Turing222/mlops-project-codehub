@@ -17,8 +17,10 @@ pytestmark = pytest.mark.asyncio
 def _make_service(
     *,
     allowed_redirect_uris: list[str] | None = None,
+    google_oauth_enabled: bool = True,
 ) -> GoogleOAuthService:
     return GoogleOAuthService(
+        google_oauth_enabled=google_oauth_enabled,
         google_client_id="client-id",
         google_client_secret="client-secret",
         allowed_redirect_uris=allowed_redirect_uris,
@@ -85,3 +87,12 @@ def test_get_authorization_url_allows_any_uri_when_whitelist_empty() -> None:
 
     url = service.get_authorization_url("https://any-domain.com/callback")
     assert "redirect_uri=https" in url
+
+
+def test_get_authorization_url_rejects_when_google_oauth_disabled() -> None:
+    service = _make_service(google_oauth_enabled=False)
+
+    with pytest.raises(AppException) as exc_info:
+        service.get_authorization_url("https://any-domain.com/callback")
+
+    assert exc_info.value.code == "GOOGLE_OAUTH_DISABLED"

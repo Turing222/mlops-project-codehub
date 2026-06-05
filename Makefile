@@ -15,6 +15,7 @@ DEPLOY_BASE_URL ?= http://localhost
 DEPLOY_FRONTEND_HEALTH_PATH ?= /healthz
 DEPLOY_API_LIVE_PATH ?= /api/v1/health_check/live
 DEPLOY_API_READY_PATH ?= /api/v1/health_check/db_ready
+DEPLOY_ENABLE_BIFROST ?= false
 DEPLOY_ENABLE_OBSERVABILITY ?= false
 DEPLOY_LOG_TAIL ?= 200
 FRONTEND_DIR ?= frontend
@@ -41,8 +42,9 @@ export SMOKE_BASE_URL
 export SMOKE_LIVE_PATH
 export SMOKE_READY_PATH
 export DEPLOY_COMPOSE_FILE DEPLOY_ENV_FILE DEPLOY_BASE_URL
+export DEPLOY_EXTRA_COMPOSE_FILES
 export DEPLOY_FRONTEND_HEALTH_PATH DEPLOY_API_LIVE_PATH DEPLOY_API_READY_PATH
-export DEPLOY_ENABLE_OBSERVABILITY DEPLOY_LOG_TAIL
+export DEPLOY_ENABLE_BIFROST DEPLOY_ENABLE_OBSERVABILITY DEPLOY_LOG_TAIL
 export EVAL_DATASET EVAL_OUTPUT EVAL_API_OUTPUT EVAL_RETRIEVAL_OUTPUT
 export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 
@@ -52,7 +54,8 @@ export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all \
-	deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down \
+	deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down \
+	deploy-local-prod-secrets-prepare deploy-local-prod-check deploy-local-prod-up deploy-local-prod-wait deploy-local-prod-verify deploy-local-prod-logs deploy-local-prod-down \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-up-debug env-smoke-wait env-smoke-down env-smoke-logs \
 	set-llm seed-dev \
 	pr-report \
@@ -99,12 +102,15 @@ help:
 		'  image-build          Build the backend Docker image' \
 		'  frontend-image-build  Build the frontend Docker image' \
 		'  image-build-all       Build all Docker images (backend + frontend)' \
+		'  deploy-ec2-secrets-prepare  Create EC2 deploy secret files under secrets/ec2' \
 		'  deploy-ec2-check     Validate EC2 deploy env and compose config' \
 		'  deploy-ec2-up        Pull images and start the EC2 deploy stack' \
 		'  deploy-ec2-wait      Wait until the EC2 deploy endpoints are reachable' \
 		'  deploy-ec2-verify    Run remote-safe smoke checks against the EC2 deploy stack' \
 		'  deploy-ec2-logs      Show recent EC2 deploy logs' \
 		'  deploy-ec2-down      Stop the EC2 deploy stack' \
+		'  deploy-local-prod-up Start local production-shape rehearsal stack with MinIO S3' \
+		'  deploy-local-prod-down Stop local production-shape rehearsal stack' \
 		'  env-smoke-prepare    Generate the smoke env file from template' \
 		'  env-smoke-check      Run preflight checks for smoke environment (API keys)' \
 		'  env-smoke-up         Start the smoke environment' \
@@ -232,6 +238,9 @@ frontend-image-build:
 
 image-build-all: image-build frontend-image-build
 
+deploy-ec2-secrets-prepare:
+	bash scripts/deploy/ec2-secrets-prepare.sh
+
 deploy-ec2-check:
 	bash scripts/deploy/ec2-check.sh
 
@@ -249,6 +258,27 @@ deploy-ec2-logs:
 
 deploy-ec2-down:
 	bash scripts/deploy/ec2-down.sh
+
+deploy-local-prod-secrets-prepare:
+	DEPLOY_SECRET_DIR=secrets/local-prod bash scripts/deploy/local-prod-secrets-prepare.sh
+
+deploy-local-prod-check:
+	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-s3.yml FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod bash scripts/deploy/ec2-check.sh
+
+deploy-local-prod-up:
+	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-s3.yml FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod bash scripts/deploy/ec2-up.sh
+
+deploy-local-prod-wait:
+	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-s3.yml FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod bash scripts/deploy/ec2-wait.sh
+
+deploy-local-prod-verify:
+	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-s3.yml FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod bash scripts/deploy/ec2-verify.sh
+
+deploy-local-prod-logs:
+	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-s3.yml FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod bash scripts/deploy/ec2-logs.sh $(ARGS)
+
+deploy-local-prod-down:
+	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-s3.yml FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod bash scripts/deploy/ec2-down.sh
 
 env-smoke-prepare:
 	bash scripts/smoke/prepare_env.sh

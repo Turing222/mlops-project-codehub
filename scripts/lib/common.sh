@@ -23,6 +23,7 @@ SMOKE_REQUIRED_VOLUME_NAMES=(
     knowledge_files_volume_test
 )
 DEPLOY_COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-deploy/docker-compose.yml}"
+DEPLOY_EXTRA_COMPOSE_FILES="${DEPLOY_EXTRA_COMPOSE_FILES:-}"
 DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-deploy/.env.ec2}"
 DEPLOY_BASE_URL="${DEPLOY_BASE_URL:-http://localhost}"
 DEPLOY_FRONTEND_HEALTH_PATH="${DEPLOY_FRONTEND_HEALTH_PATH:-/healthz}"
@@ -33,6 +34,38 @@ DEPLOY_SMOKE_PYTEST_TARGETS="${DEPLOY_SMOKE_PYTEST_TARGETS:-\
  tests/smoke/test_chat_http_smoke.py \
  tests/smoke/test_rag_http_smoke.py}"
 DEPLOY_LOG_TAIL="${DEPLOY_LOG_TAIL:-200}"
+DEPLOY_SECRET_DIR="${DEPLOY_SECRET_DIR:-secrets/ec2}"
+DEPLOY_SECRET_FILE_ENV_NAMES=(
+    DEPLOY_SECRET_KEY_FILE
+    DEPLOY_POSTGRES_PASSWORD_FILE
+    DEPLOY_REDIS_PASSWORD_FILE
+    DEPLOY_OPENAI_API_KEY_FILE
+    DEPLOY_DASHSCOPE_API_KEY_FILE
+    DEPLOY_DASHSCOPE_API_KEY_2_FILE
+    DEPLOY_GEMINI_API_KEY_FILE
+    DEPLOY_GOOGLE_API_KEY_FILE
+    DEPLOY_GOOGLE_CLIENT_SECRET_FILE
+    DEPLOY_GITHUB_TOKEN_FILE
+    DEPLOY_GROWTHBOOK_SDK_KEY_FILE
+    DEPLOY_DEEPSEEK_API_KEY_FILE
+    DEPLOY_DEEPSEEK_API_KEY_2_FILE
+    DEPLOY_COHERE_API_KEY_FILE
+    DEPLOY_COHERE_API_KEY_2_FILE
+    DEPLOY_BIFROST_API_KEY_FILE
+    DEPLOY_BIFROST_ENCRYPTION_KEY_FILE
+    DEPLOY_LLM_API_KEY_FILE
+    DEPLOY_RAG_EMBED_API_KEY_FILE
+    DEPLOY_LANGFUSE_PUBLIC_KEY_FILE
+    DEPLOY_LANGFUSE_SECRET_KEY_FILE
+    DEPLOY_S3_ACCESS_KEY_ID_FILE
+    DEPLOY_S3_SECRET_ACCESS_KEY_FILE
+    DEPLOY_TAVILY_API_KEY_FILE
+)
+DEPLOY_REQUIRED_SECRET_FILE_ENV_NAMES=(
+    DEPLOY_SECRET_KEY_FILE
+    DEPLOY_POSTGRES_PASSWORD_FILE
+    DEPLOY_REDIS_PASSWORD_FILE
+)
 
 log_section() {
     printf '\n==> %s\n' "$1"
@@ -120,6 +153,11 @@ llm_needs_bifrost_profile() {
     [[ "$(llm_secret_provider "$1")" == "bifrost" ]]
 }
 
+provider_needs_bifrost_profile() {
+    local value="${1,,}"
+    [[ "$value" == bifrost* || "$value" == gateway-* || "$value" == llm-gateway || "$value" == ai-gateway ]]
+}
+
 storage_needs_s3_profile() {
     [[ "${1,,}" == "s3" ]]
 }
@@ -191,6 +229,7 @@ ensure_smoke_required_secrets() {
     ensure_smoke_secret_file "SMOKE_DASHSCOPE_API_KEY_2_FILE" "./secrets/smoke/dashscope_api_key_2.txt" "empty"
     ensure_smoke_secret_file "SMOKE_GEMINI_API_KEY_FILE" "./secrets/smoke/gemini_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_GOOGLE_API_KEY_FILE" "./secrets/smoke/google_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_GOOGLE_CLIENT_SECRET_FILE" "./secrets/smoke/google_client_secret.txt" "empty"
     ensure_smoke_secret_file "SMOKE_GITHUB_TOKEN_FILE" "./secrets/smoke/github_token.txt" "empty"
     ensure_smoke_secret_file "SMOKE_GROWTHBOOK_SDK_KEY_FILE" "./secrets/smoke/growthbook_sdk_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_DEEPSEEK_API_KEY_FILE" "./secrets/smoke/deepseek_api_key.txt" "empty"
@@ -318,13 +357,24 @@ deploy_control_env_value() {
     deploy_env_value "$name" "$default_value"
 }
 
+deploy_secret_file_path() {
+    local env_name="$1"
+    local file_name="$2"
+    local default_path="${DEPLOY_SECRET_DIR%/}/$file_name"
+
+    resolve_project_path "$(deploy_control_env_value "$env_name" "$default_path")"
+}
+
 load_deploy_env() {
     require_deploy_env_file
 
+    DEPLOY_SECRET_DIR="$(deploy_control_env_value "DEPLOY_SECRET_DIR" "$DEPLOY_SECRET_DIR")"
+    DEPLOY_EXTRA_COMPOSE_FILES="$(deploy_control_env_value "DEPLOY_EXTRA_COMPOSE_FILES" "$DEPLOY_EXTRA_COMPOSE_FILES")"
     DEPLOY_BASE_URL="$(deploy_control_env_value "DEPLOY_BASE_URL" "$DEPLOY_BASE_URL")"
     DEPLOY_FRONTEND_HEALTH_PATH="$(deploy_control_env_value "DEPLOY_FRONTEND_HEALTH_PATH" "$DEPLOY_FRONTEND_HEALTH_PATH")"
     DEPLOY_API_LIVE_PATH="$(deploy_control_env_value "DEPLOY_API_LIVE_PATH" "$DEPLOY_API_LIVE_PATH")"
     DEPLOY_API_READY_PATH="$(deploy_control_env_value "DEPLOY_API_READY_PATH" "$DEPLOY_API_READY_PATH")"
+    DEPLOY_ENABLE_BIFROST="$(deploy_control_env_value "DEPLOY_ENABLE_BIFROST" "${DEPLOY_ENABLE_BIFROST:-false}")"
     DEPLOY_ENABLE_OBSERVABILITY="$(deploy_control_env_value "DEPLOY_ENABLE_OBSERVABILITY" "${DEPLOY_ENABLE_OBSERVABILITY:-false}")"
     DEPLOY_PULL_IMAGES="$(deploy_control_env_value "DEPLOY_PULL_IMAGES" "${DEPLOY_PULL_IMAGES:-false}")"
     DEPLOY_LOG_TAIL="$(deploy_control_env_value "DEPLOY_LOG_TAIL" "$DEPLOY_LOG_TAIL")"
@@ -332,11 +382,38 @@ load_deploy_env() {
     DOCKER_IMAGE_NAME_WEB="$(deploy_control_env_value "DOCKER_IMAGE_NAME_WEB" "${DOCKER_IMAGE_NAME_WEB:-dewflow-backend:2.0.0-web}")"
     DOCKER_IMAGE_NAME_AI="$(deploy_control_env_value "DOCKER_IMAGE_NAME_AI" "${DOCKER_IMAGE_NAME_AI:-dewflow-backend:2.0.0-ai}")"
     DOCKER_IMAGE_NAME_FRONTEND="$(deploy_control_env_value "DOCKER_IMAGE_NAME_FRONTEND" "${DOCKER_IMAGE_NAME_FRONTEND:-dewflow-frontend:2.0.0}")"
+    DEPLOY_SECRET_KEY_FILE="$(deploy_secret_file_path "DEPLOY_SECRET_KEY_FILE" "secret_key.txt")"
+    DEPLOY_POSTGRES_PASSWORD_FILE="$(deploy_secret_file_path "DEPLOY_POSTGRES_PASSWORD_FILE" "postgres_password.txt")"
+    DEPLOY_REDIS_PASSWORD_FILE="$(deploy_secret_file_path "DEPLOY_REDIS_PASSWORD_FILE" "redis_password.txt")"
+    DEPLOY_OPENAI_API_KEY_FILE="$(deploy_secret_file_path "DEPLOY_OPENAI_API_KEY_FILE" "openai_api_key.txt")"
+    DEPLOY_DASHSCOPE_API_KEY_FILE="$(deploy_secret_file_path "DEPLOY_DASHSCOPE_API_KEY_FILE" "dashscope_api_key.txt")"
+    DEPLOY_DASHSCOPE_API_KEY_2_FILE="$(deploy_secret_file_path "DEPLOY_DASHSCOPE_API_KEY_2_FILE" "dashscope_api_key_2.txt")"
+    DEPLOY_GEMINI_API_KEY_FILE="$(deploy_secret_file_path "DEPLOY_GEMINI_API_KEY_FILE" "gemini_api_key.txt")"
+    DEPLOY_GOOGLE_API_KEY_FILE="$(deploy_secret_file_path "DEPLOY_GOOGLE_API_KEY_FILE" "google_api_key.txt")"
+    DEPLOY_GOOGLE_CLIENT_SECRET_FILE="$(deploy_secret_file_path "DEPLOY_GOOGLE_CLIENT_SECRET_FILE" "google_client_secret.txt")"
+    DEPLOY_GITHUB_TOKEN_FILE="$(deploy_secret_file_path "DEPLOY_GITHUB_TOKEN_FILE" "github_token.txt")"
+    DEPLOY_GROWTHBOOK_SDK_KEY_FILE="$(deploy_secret_file_path "DEPLOY_GROWTHBOOK_SDK_KEY_FILE" "growthbook_sdk_key.txt")"
+    DEPLOY_DEEPSEEK_API_KEY_FILE="$(deploy_secret_file_path "DEPLOY_DEEPSEEK_API_KEY_FILE" "deepseek_api_key.txt")"
+    DEPLOY_DEEPSEEK_API_KEY_2_FILE="$(deploy_secret_file_path "DEPLOY_DEEPSEEK_API_KEY_2_FILE" "deepseek_api_key_2.txt")"
+    DEPLOY_COHERE_API_KEY_FILE="$(deploy_secret_file_path "DEPLOY_COHERE_API_KEY_FILE" "cohere_api_key.txt")"
+    DEPLOY_COHERE_API_KEY_2_FILE="$(deploy_secret_file_path "DEPLOY_COHERE_API_KEY_2_FILE" "cohere_api_key_2.txt")"
+    DEPLOY_BIFROST_API_KEY_FILE="$(deploy_secret_file_path "DEPLOY_BIFROST_API_KEY_FILE" "bifrost_api_key.txt")"
+    DEPLOY_BIFROST_ENCRYPTION_KEY_FILE="$(deploy_secret_file_path "DEPLOY_BIFROST_ENCRYPTION_KEY_FILE" "bifrost_encryption_key.txt")"
+    DEPLOY_LLM_API_KEY_FILE="$(deploy_secret_file_path "DEPLOY_LLM_API_KEY_FILE" "llm_api_key.txt")"
+    DEPLOY_RAG_EMBED_API_KEY_FILE="$(deploy_secret_file_path "DEPLOY_RAG_EMBED_API_KEY_FILE" "rag_embed_api_key.txt")"
+    DEPLOY_LANGFUSE_PUBLIC_KEY_FILE="$(deploy_secret_file_path "DEPLOY_LANGFUSE_PUBLIC_KEY_FILE" "langfuse_public_key.txt")"
+    DEPLOY_LANGFUSE_SECRET_KEY_FILE="$(deploy_secret_file_path "DEPLOY_LANGFUSE_SECRET_KEY_FILE" "langfuse_secret_key.txt")"
+    DEPLOY_S3_ACCESS_KEY_ID_FILE="$(deploy_secret_file_path "DEPLOY_S3_ACCESS_KEY_ID_FILE" "s3_access_key_id.txt")"
+    DEPLOY_S3_SECRET_ACCESS_KEY_FILE="$(deploy_secret_file_path "DEPLOY_S3_SECRET_ACCESS_KEY_FILE" "s3_secret_access_key.txt")"
+    DEPLOY_TAVILY_API_KEY_FILE="$(deploy_secret_file_path "DEPLOY_TAVILY_API_KEY_FILE" "tavily_api_key.txt")"
 
+    export DEPLOY_SECRET_DIR
+    export DEPLOY_EXTRA_COMPOSE_FILES
     export DEPLOY_BASE_URL
     export DEPLOY_FRONTEND_HEALTH_PATH
     export DEPLOY_API_LIVE_PATH
     export DEPLOY_API_READY_PATH
+    export DEPLOY_ENABLE_BIFROST
     export DEPLOY_ENABLE_OBSERVABILITY
     export DEPLOY_PULL_IMAGES
     export DEPLOY_LOG_TAIL
@@ -344,25 +421,119 @@ load_deploy_env() {
     export DOCKER_IMAGE_NAME_WEB
     export DOCKER_IMAGE_NAME_AI
     export DOCKER_IMAGE_NAME_FRONTEND
+    export DEPLOY_SECRET_KEY_FILE
+    export DEPLOY_POSTGRES_PASSWORD_FILE
+    export DEPLOY_REDIS_PASSWORD_FILE
+    export DEPLOY_OPENAI_API_KEY_FILE
+    export DEPLOY_DASHSCOPE_API_KEY_FILE
+    export DEPLOY_DASHSCOPE_API_KEY_2_FILE
+    export DEPLOY_GEMINI_API_KEY_FILE
+    export DEPLOY_GOOGLE_API_KEY_FILE
+    export DEPLOY_GOOGLE_CLIENT_SECRET_FILE
+    export DEPLOY_GITHUB_TOKEN_FILE
+    export DEPLOY_GROWTHBOOK_SDK_KEY_FILE
+    export DEPLOY_DEEPSEEK_API_KEY_FILE
+    export DEPLOY_DEEPSEEK_API_KEY_2_FILE
+    export DEPLOY_COHERE_API_KEY_FILE
+    export DEPLOY_COHERE_API_KEY_2_FILE
+    export DEPLOY_BIFROST_API_KEY_FILE
+    export DEPLOY_BIFROST_ENCRYPTION_KEY_FILE
+    export DEPLOY_LLM_API_KEY_FILE
+    export DEPLOY_RAG_EMBED_API_KEY_FILE
+    export DEPLOY_LANGFUSE_PUBLIC_KEY_FILE
+    export DEPLOY_LANGFUSE_SECRET_KEY_FILE
+    export DEPLOY_S3_ACCESS_KEY_ID_FILE
+    export DEPLOY_S3_SECRET_ACCESS_KEY_FILE
+    export DEPLOY_TAVILY_API_KEY_FILE
+}
+
+ensure_deploy_secret_file() {
+    local file_env_name="$1"
+    local mode="${2:-empty}"
+    local secret_path="${!file_env_name}"
+    local secret_dir
+
+    secret_dir="$(dirname "$secret_path")"
+    mkdir -p "$secret_dir"
+
+    if [[ -s "$secret_path" ]]; then
+        chmod 600 "$secret_path"
+        return
+    fi
+    if [[ -f "$secret_path" && "$mode" == "empty" ]]; then
+        chmod 600 "$secret_path"
+        return
+    fi
+
+    (
+        umask 077
+        if [[ "$mode" == "empty" ]]; then
+            touch "$secret_path"
+            log_info "Created empty deploy secret file: $secret_path"
+        else
+            generate_smoke_secret >"$secret_path"
+            log_info "Generated deploy secret: $secret_path"
+        fi
+        chmod 600 "$secret_path"
+    )
+}
+
+ensure_deploy_secret_files() {
+    local file_env_name
+    local mode
+
+    load_deploy_env
+
+    for file_env_name in "${DEPLOY_SECRET_FILE_ENV_NAMES[@]}"; do
+        mode="empty"
+        case "$file_env_name" in
+            DEPLOY_SECRET_KEY_FILE|DEPLOY_POSTGRES_PASSWORD_FILE|DEPLOY_REDIS_PASSWORD_FILE)
+                mode="random"
+                ;;
+        esac
+        ensure_deploy_secret_file "$file_env_name" "$mode"
+    done
 }
 
 compose_deploy() {
     local deploy_env_path
     local deploy_compose_path
+    local compose_file_args=()
+    local extra_compose_file
     local profile_args=()
     local subcmd="${1:-}"
+    local provider_var
+    local provider_value
 
     deploy_env_path="$(resolve_project_path "$DEPLOY_ENV_FILE")"
     deploy_compose_path="$(resolve_project_path "$DEPLOY_COMPOSE_FILE")"
     require_deploy_env_file
+    compose_file_args=(-f "$deploy_compose_path")
+    for extra_compose_file in $DEPLOY_EXTRA_COMPOSE_FILES; do
+        compose_file_args+=(-f "$(resolve_project_path "$extra_compose_file")")
+    done
 
     if [[ "$subcmd" == "down" ]]; then
+        append_profile_arg "bifrost"
         append_profile_arg "observability"
     elif [[ "${DEPLOY_ENABLE_OBSERVABILITY:-false}" == "true" ]]; then
         append_profile_arg "observability"
     fi
+    if [[ "$subcmd" != "down" ]]; then
+        if [[ "${DEPLOY_ENABLE_BIFROST:-false}" == "true" ]]; then
+            append_profile_arg "bifrost"
+        else
+            for provider_var in LLM_PROVIDER LLM_MODEL_ROUTE_FAST_PROVIDER LLM_MODEL_ROUTE_BALANCED_PROVIDER LLM_MODEL_ROUTE_REASONING_PROVIDER RAG_EMBED_PROVIDER RAG_PLANNER_PROVIDER RAG_RERANK_PROVIDER; do
+                provider_value="$(deploy_control_env_value "$provider_var" "")"
+                if provider_needs_bifrost_profile "$provider_value"; then
+                    append_profile_arg "bifrost"
+                    break
+                fi
+            done
+        fi
+    fi
 
-    DEPLOY_SERVICE_ENV_FILE="$deploy_env_path" docker compose --env-file "$deploy_env_path" -f "$deploy_compose_path" "${profile_args[@]}" "$@"
+    DEPLOY_SERVICE_ENV_FILE="$deploy_env_path" docker compose --env-file "$deploy_env_path" "${compose_file_args[@]}" "${profile_args[@]}" "$@"
 }
 
 print_smoke_logs() {

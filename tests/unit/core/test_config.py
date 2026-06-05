@@ -79,6 +79,22 @@ def test_github_token_loads_from_secret_file(
     assert settings.GITHUB_TOKEN == "github-token-from-file"
 
 
+def test_google_client_secret_loads_from_secret_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    secret_file = tmp_path / "google_client_secret.txt"
+    secret_file.write_text("google-client-secret-from-file\n", encoding="utf-8")
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET_FILE", str(secret_file))
+
+    load_secret_env()
+
+    settings = Settings(_env_file=None)
+
+    assert settings.GOOGLE_CLIENT_SECRET == "google-client-secret-from-file"
+
+
 def test_tavily_api_key_loads_from_secret_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -143,6 +159,36 @@ def test_cors_defaults_are_restricted_for_production(
         "Content-Type",
         "X-Request-ID",
     ]
+
+
+def test_google_oauth_can_be_disabled_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+    monkeypatch.setenv("GOOGLE_OAUTH_ENABLED", "false")
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("GOOGLE_ALLOWED_REDIRECT_URIS", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.GOOGLE_OAUTH_ENABLED is False
+    assert settings.GOOGLE_ALLOWED_REDIRECT_URIS == []
+
+
+def test_google_oauth_enabled_requires_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+    monkeypatch.setenv("GOOGLE_OAUTH_ENABLED", "true")
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("GOOGLE_ALLOWED_REDIRECT_URIS", raising=False)
+
+    with pytest.raises(ValueError, match="GOOGLE_CLIENT_ID"):
+        Settings(_env_file=None)
 
 
 def test_cors_env_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:

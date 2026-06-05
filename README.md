@@ -74,8 +74,10 @@ make flow-local             # 本地完整验证：flow-fast + smoke stack + int
 make frontend-check         # 前端 lint + typecheck + test + build
 make qa-test-unit           # 后端单元测试
 make qa-test-integration    # 后端集成测试
+make deploy-ec2-secrets-prepare # 准备 EC2 专用 secret 文件
 make deploy-ec2-check       # EC2 手动部署前置检查
 make deploy-ec2-verify      # 对已部署的 EC2 栈执行远端 smoke 验证
+make deploy-local-prod-up   # 本地生产形态演练栈（MinIO 模拟 S3）
 make qa-eval-rag            # RAG 检索/回答评测
 make qa-perf-chat           # 标准化 chat API 压测
 ```

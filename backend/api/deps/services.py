@@ -89,6 +89,7 @@ def get_sms_service() -> SMSService:
 def get_google_oauth_service() -> GoogleOAuthService:
     ws = get_web_settings()
     return GoogleOAuthService(
+        google_oauth_enabled=ws.GOOGLE_OAUTH_ENABLED,
         google_client_id=ws.GOOGLE_CLIENT_ID,
         google_client_secret=ws.GOOGLE_CLIENT_SECRET,
         allowed_redirect_uris=ws.GOOGLE_ALLOWED_REDIRECT_URIS,
