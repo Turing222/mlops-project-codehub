@@ -1,4 +1,4 @@
 interface:
   display_name: "Task Plan"
-  short_description: "Durable work-item alignment and checkpoint tracking"
-  default_prompt: "Create or update a durable work item, summarize confirmed conclusions, track lightweight dependencies, and update the current checkpoint and next choices."
+  short_description: "Durable planning for complex work-items"
+  default_prompt: "Create or update a durable work item for complex or multi-stage work, summarize confirmed conclusions, track dependencies, and update checkpoint and next choices."

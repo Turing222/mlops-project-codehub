@@ -62,6 +62,12 @@ deploy/k8s/local-scaling/secret.local.yaml
 secrets/smoke/*
 !secrets/smoke/README.md
 !secrets/smoke/.gitkeep
+secrets/ec2/*
+!secrets/ec2/README.md
+!secrets/ec2/.gitkeep
+secrets/local-prod/*
+!secrets/local-prod/README.md
+!secrets/local-prod/.gitkeep
 #本地测试
 tests/test_demo.py
 .traces/
@@ -86,3 +92,6 @@ htmlcov/
 tools/
 test-debug-agent/
 .claude/plans/*
+
+#coding agent产物
+work-items/*

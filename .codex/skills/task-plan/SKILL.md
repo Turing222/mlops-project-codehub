@@ -1,6 +1,6 @@
 ---
 name: task-plan
-description: Create or update durable work-item artifacts for Dewflow. Use when the user wants to align a long-running task, persist approved `/plan` conclusions, track lightweight dependencies, update checkpoints, resume paused work, or attach the current request to an existing task slug/path.
+description: Create or update durable work-item artifacts for Dewflow. Use when the user wants to align a long-running task, persist approved `/plan` conclusions, track lightweight dependencies, update checkpoints, resume paused work, attach the current request to an existing task slug/path, or plan multi-stage/multi-PR work such as layered security, deployment, CI, monitoring, performance, or architecture changes.
 ---
 
 # Task Plan
@@ -12,6 +12,19 @@ Use this skill to maintain durable task artifacts under `work-items/` without co
 - Prefer built-in `/plan` for broad, ambiguous, architectural, or long-running planning.
 - Skip this skill for simple work that can be executed directly without durable tracking.
 - Use this skill when the work needs a stable task identity, cross-conversation handoff, dependency tracking, or checkpoint updates.
+- For multi-stage or multi-PR plans, load this skill and ask whether to persist the plan if the user has not already said to write `work-items/` artifacts.
+
+## Complex Task Gate
+
+Treat a request as complex enough to offer durable tracking when it has two or more signals:
+
+- multiple PRs, workstreams, layers, or phases;
+- security, deployment, CI, monitoring, migration, performance, or architecture scope;
+- cross-day or cross-conversation follow-up;
+- explicit dependencies, checkpoints, acceptance criteria, or rollout sequencing;
+- wording such as "方案", "计划", "里程碑", "分层修复", "后续推进", "roadmap", or "PR 拆分".
+
+If the task looks complex but persistence is not explicit, ask one concise question before creating files: "这个方案只在对话里确认，还是创建 `work-items/active/<slug>/` 持久化跟踪？"
 
 ## Core Flow
 
