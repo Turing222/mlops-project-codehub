@@ -7,8 +7,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-pytestmark = pytest.mark.requires_taskiq
-
 
 @pytest.fixture(autouse=True)
 def reset_worker_container() -> None:
@@ -153,11 +151,11 @@ async def test_get_rerank_service_lazy_init(monkeypatch) -> None:
 
     fake_reranker = AsyncMock()
     monkeypatch.setattr(
-        "backend.worker.dependencies.ai_settings.RAG_RERANK_PROVIDER", "some-provider"
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_PROVIDER", "dashscope"
     )
     monkeypatch.setattr(
         "backend.worker.dependencies.RerankProviderFactory.create",
-        lambda provider: fake_reranker,
+        lambda *args, **kwargs: fake_reranker,
     )
 
     container = WorkerContainer()
@@ -180,6 +178,54 @@ def test_get_rerank_service_returns_none_when_no_provider(monkeypatch) -> None:
 
     container = WorkerContainer()
     assert container.get_rerank_service() is None
+
+
+def test_get_rerank_service_degrades_to_none_on_create_failure(
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """构造失败（如缺少 provider key）时降级为 None，而不是把异常抛给生成任务。"""
+    from backend.worker import dependencies
+    from backend.worker.dependencies import WorkerContainer
+
+    create_calls = 0
+
+    def _raise_create(*args: object, **kwargs: object) -> object:
+        nonlocal create_calls
+        create_calls += 1
+        raise ValueError("DashScope rerank 配置不完整，请检查 DASHSCOPE_API_KEY")
+
+    caplog.set_level("WARNING", logger=dependencies.__name__)
+    monkeypatch.setattr(
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_PROVIDER", "dashscope"
+    )
+    monkeypatch.setattr(
+        "backend.worker.dependencies.RerankProviderFactory.create",
+        _raise_create,
+    )
+
+    container = WorkerContainer()
+    assert container.get_rerank_service() is None
+    assert container._rerank_service is None
+    assert container._rerank_init_failed is True
+
+    assert container.get_rerank_service() is None
+    assert create_calls == 1
+
+    records = [
+        item
+        for item in caplog.records
+        if getattr(item, "event", None) == "worker_rerank_init_degraded"
+    ]
+    assert len(records) == 1
+    record = records[0]
+    assert record.rerank_provider == "dashscope"
+    assert record.degradation_mode == "disabled"
+    assert record.error == "DashScope rerank 配置不完整，请检查 DASHSCOPE_API_KEY"
+    assert (
+        record.getMessage()
+        == "Worker rerank initialization degraded; rerank disabled for this worker process"
+    )
 
 
 def test_get_llm_service_for_provider_caches_services(monkeypatch) -> None:
@@ -233,11 +279,11 @@ async def test_get_rag_service_prefers_reranker_over_llm(monkeypatch) -> None:
 
     fake_reranker = AsyncMock()
     monkeypatch.setattr(
-        "backend.worker.dependencies.ai_settings.RAG_RERANK_PROVIDER", "some-provider"
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_PROVIDER", "dashscope"
     )
     monkeypatch.setattr(
         "backend.worker.dependencies.RerankProviderFactory.create",
-        lambda provider: fake_reranker,
+        lambda *args, **kwargs: fake_reranker,
     )
     monkeypatch.setattr("backend.worker.dependencies.ai_settings.RAG_TOP_K", 4)
     monkeypatch.setattr(

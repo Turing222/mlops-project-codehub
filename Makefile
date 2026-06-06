@@ -47,11 +47,12 @@ export DEPLOY_FRONTEND_HEALTH_PATH DEPLOY_API_LIVE_PATH DEPLOY_API_READY_PATH
 export DEPLOY_ENABLE_BIFROST DEPLOY_ENABLE_OBSERVABILITY DEPLOY_LOG_TAIL
 export EVAL_DATASET EVAL_OUTPUT EVAL_API_OUTPUT EVAL_RETRIEVAL_OUTPUT
 export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
+QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
+	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-standards-fast qa-claude-fast qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all \
 	deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down \
@@ -91,6 +92,8 @@ help:
 		'  qa-perf-chat-locust  Run exploratory chat load test with Locust' \
 		'  qa-agent-flow        Reserved entrypoint for agent/C2C flow tests' \
 		'  qa-checks            Run lint and typecheck via scripts' \
+		'  qa-standards-fast    Run fast standards checks for files or default project paths' \
+		'  qa-claude-fast       Alias for qa-standards-fast (kept for Claude hook wiring)' \
 		'  frontend-lint        Run frontend ESLint checks' \
 		'  frontend-typecheck   Run frontend TypeScript checks' \
 		'  frontend-test        Run the frontend unit/smoke tests' \
@@ -202,6 +205,11 @@ qa-agent-flow:
 
 qa-checks:
 	bash scripts/qa/run_checks.sh
+
+qa-standards-fast:
+	uv run python scripts/qa/check_claude_fast.py $(if $(strip $(FILES)),$(FILES),$(QA_STANDARDS_FAST_TARGETS))
+
+qa-claude-fast: qa-standards-fast
 
 frontend-lint:
 	pnpm --dir "$(FRONTEND_DIR)" --filter "$(FRONTEND_APP)" lint

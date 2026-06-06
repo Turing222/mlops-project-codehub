@@ -93,5 +93,8 @@ tools/
 test-debug-agent/
 .claude/plans/*
 
-#coding agent产物
+# coding agent 产物：忽略临时工作区，但追踪结构化任务卡与模板
 work-items/*
+!work-items/active/
+!work-items/README.md
+!work-items/templates/

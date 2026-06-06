@@ -60,6 +60,9 @@ jobs:
       - name: Alembic check
         run: make qa-alembic-check
 
+      - name: Fast standards audit
+        run: make qa-standards-fast
+
       - name: Unit tests
         run: make qa-test-unit
 

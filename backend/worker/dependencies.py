@@ -4,6 +4,8 @@
 边界：Web/FastAPI 依赖仍由 backend.api.deps 提供；本模块只服务 worker。
 """
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
@@ -29,6 +31,8 @@ from backend.services.rag_service import RAGService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.vector_index_service import VectorIndexService
 
+logger = logging.getLogger(__name__)
+
 
 class WorkerContainer:
     """Cache worker dependencies and release process-scoped resources."""
@@ -41,6 +45,7 @@ class WorkerContainer:
         self._llm_service_errors_by_provider: dict[str, Exception] = {}
         self._embedder: AbstractRAGEmbedder | None = None
         self._rerank_service: AbstractRerankService | None = None
+        self._rerank_init_failed = False
         self._rag_service: AbstractRAGService | None = None
         self._rag_planning_service: RAGPlanningService | None = None
         self._external_context_provider: AbstractExternalContextProvider | None = None
@@ -93,16 +98,37 @@ class WorkerContainer:
         return self._embedder
 
     def get_rerank_service(self) -> AbstractRerankService | None:
-        """Return the cached worker-side rerank service when configured."""
+        """Return the cached worker-side rerank service when configured.
+
+        Degrade to no rerank when provider initialization fails so generation
+        tasks keep running, matching the web path and RAG call-layer fallback.
+        """
+        if self._rerank_init_failed:
+            return None
         if self._rerank_service is None:
             provider = ai_settings.RAG_RERANK_PROVIDER
             if provider:
-                config = get_llm_model_config()
-                if config.rerank_profiles:
-                    profile = config.resolve_rerank_profile(provider)
-                    self._rerank_service = RerankProviderFactory.create(profile=profile)
-                else:
-                    self._rerank_service = RerankProviderFactory.create(provider)
+                try:
+                    config = get_llm_model_config()
+                    if config.rerank_profiles:
+                        profile = config.resolve_rerank_profile(provider)
+                        self._rerank_service = RerankProviderFactory.create(
+                            profile=profile
+                        )
+                    else:
+                        self._rerank_service = RerankProviderFactory.create(provider)
+                except Exception as exc:
+                    logger.warning(
+                        "Worker rerank initialization degraded; rerank disabled for this worker process",
+                        extra={
+                            "event": "worker_rerank_init_degraded",
+                            "rerank_provider": provider,
+                            "degradation_mode": "disabled",
+                            "error": str(exc),
+                        },
+                    )
+                    self._rerank_init_failed = True
+                    return None
         return self._rerank_service
 
     def get_rag_service(
@@ -186,6 +212,7 @@ class WorkerContainer:
         self._llm_service_errors_by_provider = {}
         self._embedder = None
         self._rerank_service = None
+        self._rerank_init_failed = False
         self._rag_planning_service = None
         self._external_context_provider = None
         self._object_storage = None

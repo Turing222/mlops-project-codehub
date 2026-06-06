@@ -46,8 +46,12 @@ class CircuitBreaker:
                 if time.monotonic() - self._last_failure_time >= self.cooldown_seconds:
                     self._state = CircuitState.HALF_OPEN
                     logger.info(
-                        "断路器进入半开状态(name=%s)，尝试探测恢复",
-                        self.name,
+                        "Circuit breaker entered half-open state; probing recovery",
+                        extra={
+                            "event": "circuit_breaker_half_open",
+                            "service": self.name,
+                            "circuit_state": CircuitState.HALF_OPEN.value,
+                        },
                     )
                     return  # 半开状态允许请求通过以探测恢复
                 raise app_service_error(
@@ -66,8 +70,12 @@ class CircuitBreaker:
         async with self._lock:
             if self._state != CircuitState.CLOSED:
                 logger.info(
-                    "断路器恢复(name=%s): 探测成功，关闭断路器",
-                    self.name,
+                    "Circuit breaker recovered and closed after a successful probe",
+                    extra={
+                        "event": "circuit_breaker_recovered",
+                        "service": self.name,
+                        "circuit_state": CircuitState.CLOSED.value,
+                    },
                 )
             self._state = CircuitState.CLOSED
             self._failure_count = 0
@@ -80,8 +88,13 @@ class CircuitBreaker:
             if self._state == CircuitState.HALF_OPEN:
                 self._state = CircuitState.OPEN
                 logger.warning(
-                    "断路器重新打开(name=%s): 半开探测失败",
-                    self.name,
+                    "Circuit breaker reopened after a failed half-open probe",
+                    extra={
+                        "event": "circuit_breaker_reopened",
+                        "service": self.name,
+                        "failure_count": self._failure_count,
+                        "circuit_state": CircuitState.OPEN.value,
+                    },
                 )
             elif (
                 self._state == CircuitState.CLOSED
@@ -89,7 +102,12 @@ class CircuitBreaker:
             ):
                 self._state = CircuitState.OPEN
                 logger.warning(
-                    "断路器打开(name=%s): 连续失败 %d 次",
-                    self.name,
-                    self._failure_count,
+                    "Circuit breaker opened after reaching the failure threshold",
+                    extra={
+                        "event": "circuit_breaker_opened",
+                        "service": self.name,
+                        "failure_count": self._failure_count,
+                        "failure_threshold": self.failure_threshold,
+                        "circuit_state": CircuitState.OPEN.value,
+                    },
                 )
