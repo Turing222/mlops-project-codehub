@@ -1,0 +1,63 @@
+slug: security-operability-baseline
+title: Security and Operability Baseline
+status: active
+
+goal: Establish the P0/P1 production security and operability baseline for Dewflow without taking on P2 performance or architecture work.
+
+completion_chain:
+  - Production security guardrails are enforced for secrets, mock auth settings, and public API documentation.
+  - Authentication entrypoints have rate limiting and SMS verification abuse protection designed for real client IPs.
+  - Supply-chain scanning runs in CI for Python dependencies, container images, and dependency update hygiene.
+  - CSP rollout and alert delivery are configured with a safe validation path.
+  - Focused tests, CI checks, and deployment notes prove each workstream is ready to ship.
+
+workstreams:
+  - id: 1
+    title: PR 1 Production security guardrails.
+    status: done
+    kind: blocking
+    deps: []
+  - id: 2
+    title: PR 2 Authentication rate limiting and true client IP readiness.
+    status: pending
+    kind: serial
+    deps: [1]
+  - id: 3
+    title: PR 3 Supply-chain security CI.
+    status: done
+    kind: parallel
+    deps: []
+  - id: 4
+    title: PR 4 CSP and alert delivery.
+    status: pending
+    kind: serial
+    deps: [1]
+
+current_checkpoint:
+  name: pr3-implemented
+  state: implemented
+  summary: PR 1 production guardrails and PR 3 supply-chain CI are implemented; security CI scans Python deps and backend images, and Dependabot covers backend and frontend surfaces.
+
+open_decisions:
+  - id: proxy-cidr-decision
+    note: Production is compose-based; derive trusted proxy CIDRs from Docker/nginx networks instead of k8s.
+  - id: alert-delivery-channel
+    note: First baseline should use email delivery, with SMTP settings provided through env/secrets.
+  - id: csp-reporting-sink
+    note: Build a thin self-hosted report endpoint for report-only CSP validation.
+
+next_choices:
+  - id: A
+    label: Review PR 3
+    note: Review the supply-chain CI workflow and Dependabot update configuration.
+  - id: B
+    label: Prepare PR 4
+    note: Add a thin CSP report sink and basic Alertmanager email delivery.
+  - id: C
+    label: Prepare PR 2
+    note: Add auth abuse protection and compose real-client-IP readiness before formal Google/SMS launch.
+
+attached_artifacts:
+  task_plan: task-plan.md
+  reviews: []
+  debug: []

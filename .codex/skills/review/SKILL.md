@@ -5,7 +5,7 @@ description: "Multi-angle code review against Dewflow project skill conventions.
 
 # Code Review
 
-Review the full current workspace change set by default, including staged changes, unstaged tracked changes, and untracked files. If the user specifies files, a commit, a PR, a diff range, or an explicit task slug/path, review only that requested scope or attach the results to that existing work item.
+Review the full current workspace change set by default, including staged changes, unstaged tracked changes, and untracked files. If the user specifies files, a commit, a PR, a diff range, or an explicit work-item slug/path, review only that requested scope or attach the results to that existing work item.
 
 ## Scope Gathering
 
@@ -36,7 +36,7 @@ Check against `.codex/skills/project/references/coding.md` conventions:
 
 ### Pass 2: Architecture (medium — diff + contracts)
 
-Read the diff + `backend/contracts/interfaces.py` + directory structure.
+For backend code changes, read the diff + `backend/contracts/interfaces.py` + directory structure.
 
 Check:
 
@@ -46,9 +46,19 @@ Check:
 - New code follows 3-tier chain: endpoint → service → repository (no ORM queries in endpoints)
 - New files placed in the correct directory per the directory map
 
+For non-code artifacts, apply the relevant contract checks instead of forcing
+backend architecture checks:
+
+- **Skills and instructions**: inspect linked references, permission boundaries, task-mode ownership, and conflicting or incomplete instructions.
+- **YAML and config**: parse the changed files and compare field names, enums, and examples with their documented schema or templates.
+- **CI and scripts**: verify referenced commands and files exist, trigger/path filters cover the intended scope, and read/write side effects are explicit.
+- **Markdown and docs**: verify local links, commands, filenames, and documented contracts against the repository.
+
 ### Pass 3: Logic & Correctness (deep — expand references as needed)
 
-Read the diff. For each changed function, identify its callers and callees. Expand references when something looks suspicious.
+Read the diff and expand references when something looks suspicious. For each
+changed function, identify its callers and callees. For structured artifacts,
+trace consumers, templates, examples, and resume or handoff flows instead.
 
 Check:
 
@@ -88,12 +98,14 @@ Scope: staged + unstaged + untracked files from `git status --short`.
    修复建议：保留非空校验，但返回原始字符串。
 ```
 
-## Work-Item Attachment
+## Attach to Existing Work Item
 
-- If the user gives an explicit `work-items/active/<task-slug>/` path or task slug, attach persisted review output to that existing task.
-- If there is exactly one clear active-task match, you may attach to it.
-- If there are multiple plausible matches, ask the user which task to use.
-- If no task exists yet, do not create one from `review` alone; suggest using `task-plan` when durable tracking is needed.
+- Treat review and persistence as separate permissions. A request to review does not authorize writing review artifacts.
+- If the user explicitly asks to persist the review and gives an existing `work-items/active/<work-item-slug>/` path or work-item slug, attach the output there.
+- If persistence is explicitly requested and there is exactly one clear active work-item match, identify it and ask for confirmation before writing.
+- If there are multiple plausible matches, ask the user which work item to use.
+- If no work item exists yet, do not create one from `review` alone; suggest using `task-plan` when durable tracking is needed.
+- Do not create or update `reviews/*.md`, `manifest.yaml`, or `task-plan.md` until the user explicitly approves the target and persistence.
 - Persist the concrete review checkpoint output only; keep review methodology in this skill file, not inside `work-items/`.
 
 ## Rules

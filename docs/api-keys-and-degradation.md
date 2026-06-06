@@ -126,7 +126,7 @@ Secret 文件位于 [secrets/ec2/](../secrets/ec2)（EC2）或 [secrets/local-pr
 | LLM（`resilient` 路由） | 首选挂 | ✅ 故障转移到下一 profile（deepseek→gemini）；流式仅在首 chunk 前可切 | [routing_service.py:52-112](../backend/ai/providers/llm/routing_service.py#L52-L112) |
 | RAG 检索（query embedding） | embedding 调用失败 | ✅ orchestrator 兜底捕获 → 退回**普通对话**（无 KB 上下文） | [worker_rag_orchestrator.py:388-392](../backend/application/chat/worker_rag_orchestrator.py#L388-L392) |
 | RAG rerank（运行期调用） | DashScope 挂/超时/429/key 失效 | ✅ 退回候选原始顺序（不 rerank） | [rag_service.py:137-138](../backend/services/rag_service.py#L137-L138)、[:227-229](../backend/services/rag_service.py#L227-L229)、[orchestrator:471-479](../backend/application/chat/worker_rag_orchestrator.py#L471-L479) |
-| **RAG rerank（构造期）** | `RAG_RERANK_PROVIDER` 非空但 key **为空** | ❌ **无降级**：worker 无条件构造（不看 flag）→ ValueError → 生成任务崩 | [worker/dependencies.py:95-106](../backend/worker/dependencies.py#L95-L106)，调用点 [llm_tasks.py:180](../backend/worker/tasks/llm_tasks.py#L180) |
+| **RAG rerank（构造期）** | `RAG_RERANK_PROVIDER` 非空但 key **为空/无效** | ✅ **已修复（#4）**：worker `get_rerank_service` 加 try/except → warning（`event=worker_rerank_init_degraded`）+ 退回无 rerank，不再崩任务 | [worker/dependencies.py:95-123](../backend/worker/dependencies.py#L95-L123) |
 | RAG planner | 规划失败/超时 | ✅ 退回默认计划 | [worker_rag_orchestrator.py:313-315](../backend/application/chat/worker_rag_orchestrator.py#L313-L315) |
 | 联网检索（Tavily） | key 缺失 / 运行期失败 | ✅ 静默跳过 / 退回空，仅用 KB | [orchestrator:370-372](../backend/application/chat/worker_rag_orchestrator.py#L370-L372) |
 | **知识入库（doc embedding）** | embedding 调用失败 | ⚠️ 文件标记 `FAILED` + 清理半成品，**但无自动重试**，需手动重传 | [ingestion_workflow.py:154-179](../backend/application/knowledge/ingestion_workflow.py#L154-L179)、[knowledge_tasks.py:168](../backend/worker/tasks/knowledge_tasks.py#L168) |
@@ -136,23 +136,78 @@ Secret 文件位于 [secrets/ec2/](../secrets/ec2)（EC2）或 [secrets/local-pr
 | S3 存储 | bucket 缺失 | ❌ 构造存储时 ValueError | [object_storage.py:354-355](../backend/services/object_storage.py#L354-L355) |
 | S3 存储 | 凭证不可解析 | ⚠️ 构造不报错，首次 S3 操作时 boto3 报错 | [object_storage.py:328-347](../backend/services/object_storage.py#L328-L347) |
 
-**结论**：对话链路（retrieval / rerank / planner / 联网）**运行期故障几乎全部优雅降级**，对话总能完成（质量下降而已）。真正会硬失败的只有三类：① rerank 构造期 key 为空；② 单 LLM provider 无 fallback；③ 知识入库无自动重试。
+**结论**：对话链路（retrieval / rerank / planner / 联网）**运行期故障几乎全部优雅降级**，对话总能完成（质量下降而已）。曾经的硬失败"① rerank 构造期空 key"已在 **#4 修复**（改为降级）。当前剩余硬失败点只有两类：② 单 LLM provider 无 fallback（已评估，采用**方案 A** 接受为已知风险，见第 7 节）；③ 知识入库无自动重试（改进方案见第 7 节 #2）。
 
 ---
 
-## 5. 当前已知薄弱点（现状事实）
+## 5. 韧性矩阵：熔断 / 重试 / 超时 / 降级
 
-> 仅描述现状；改进方案另行讨论。
+第 4 节是"按失败场景看降级"，本节是"按调用点看它拥有哪些韧性手段"（读代码直得）：
+
+| 调用点 | 熔断 | 重试 | 超时 | 失败降级 |
+|---|---|---|---|---|
+| **LLM** `PydanticAILLMService` | ✅ `CircuitBreaker`（进程内，5 次/30s） | ✅ OpenAI SDK `max_retries`（单 profile=默认 2；路由内=0） | ✅ chat 首包 30s / 续包 10s | ✅ 路由跨 profile fallback |
+| **LLM 路由** `LLMRoutingService` | 用各候选自己的 breaker | 候选间 fallback（非 retry） | — | ✅ 全挂 → `LLM_ROUTING_FAILED` |
+| **Bifrost 网关**（启用时） | ❌ app 侧无 | ✅ 网关 `max_retries:1`/provider | ✅ provider 级（deepseek 120s） | key 级负载 / 双 key |
+| **Embedding（入库/检索）** | ❌ **无** | ❌ **无** | httpx client timeout | 检索侧→普通对话；**入库侧无降级 → FAILED** |
+| **Rerank** | ❌ 无 | ❌ 无 | ✅ `RAG_RERANK_TIMEOUT`(15s) | ✅ 运行期失败→原始顺序；构造失败→None（#4 已修） |
+| **Tavily 外部上下文** | ❌ 无 | ❌ 无 | ✅ `EXTERNAL_CONTEXT_TIMEOUT`(6s) | ✅ 失败→空结果（静默） |
+| **GrowthBook** | ❌ 无 | ❌ 无 | httpx + 30s 缓存 TTL | ✅ 失败→缓存 / 代码默认 |
+| **GitHub repo 分析** | ❌ 无 | ❌ 无 | httpx timeout | token 缺失→匿名；HTTPError 抛出 |
+| **Taskiq 任务（入库等）** | ❌ 无 | ❌ **无中间件** | wait-tasks-timeout 105s | mark FAILED，不重投 |
+| **DB / Redis** | ❌ 无 app 级 | 连接池底层 | connect 10s | compose healthcheck |
+
+**三条要点**：
+
+1. **熔断全工程只有 LLM 一处**。`CircuitBreaker`（[core/circuit_breaker.py](../backend/core/circuit_breaker.py)，自带 CLOSED/OPEN/HALF_OPEN + 半开探测）是通用类，但只接进了 [pydantic_ai_service.py](../backend/ai/providers/llm/pydantic_ai_service.py)；embedding / rerank / tavily / 外部 HTTP 全裸奔。
+2. **重试极少**：仅 LLM 经 OpenAI SDK `max_retries`（路由内禁用、交给 fallback）+ Bifrost 网关 `max_retries:1`。应用层无 tenacity / 退避 / taskiq-retry。
+3. **多数靠"降级"而非"熔断/重试"**——对只读、无状态的 chat 检索链路是对的；**入库链路是例外**（熔断/重试/降级三者全无，一次失败即 FAILED 终态）。注意 breaker 状态**进程内、不跨 worker 共享**（`--workers 2` → 各进程一个 breaker）。
+
+---
+
+## 6. 当前已知薄弱点（现状事实）
+
+> 现状事实；对应的决策与改进见第 7 节。
 
 1. **LLM 单 provider 是唯一会硬失败到用户的点**：`LLM_PROVIDER` 为单一真实 provider 时，上游挂 → 熔断 → 对话报错。`resilient` 路由才有故障转移，但要求路由内所有 key 齐备且通过启动校验。
 2. **知识入库无重试**：transient 故障（如 429）也会让文件直接 `FAILED`，需手动重新上传；broker 是裸 `ListQueueBroker`，无 retry 中间件。
 3. **stale-ingestion sweeper 未接调度**：回收逻辑 `recover_stale_ingestions`（[knowledge_ingestion_recovery_service.py:42-63](../backend/services/knowledge_ingestion_recovery_service.py#L42-L63)）只标 `FAILED`、不重投；超时阈值 `KNOWLEDGE_INGEST_STALE_TIMEOUT_SECONDS`(1800s) 定义在 [ai_settings.py:158](../backend/config/ai_settings.py#L158)。它由 taskiq task `recover_stale_knowledge_ingestions`（[knowledge_tasks.py:70](../backend/worker/tasks/knowledge_tasks.py#L70)）包装，但代码内无 cron/scheduler 触发，需靠外部调度调用。
-4. **rerank 构造期空 key 风险**：worker 的 `get_rerank_service` 不看 feature flag，只要 `RAG_RERANK_PROVIDER` 非空（EC2 默认 `dashscope`）就在首个生成任务时构造 reranker；若 `secrets/ec2/dashscope_api_key.txt` 为空 → ValueError 崩任务（健康检查覆盖不到）。规避：填该 key，或在 `.env.ec2` 显式设 `RAG_RERANK_PROVIDER=`（置空）。
+4. ~~**rerank 构造期空 key 风险**~~ **（已修复，#4）**：worker `get_rerank_service` 已加 try/except，构造失败记 warning（`event=worker_rerank_init_degraded`）并退回无 rerank（[worker/dependencies.py:95-123](../backend/worker/dependencies.py#L95-L123)），不再崩生成任务。配置侧仍建议：填 `secrets/ec2/dashscope_api_key.txt`，或在 `.env.ec2` 显式设 `RAG_RERANK_PROVIDER=`（置空）直到要用 rerank。
 5. **无主动告警**：所有"告警"仅为 `logger.warning/error` 日志；要可观测需 `DEPLOY_ENABLE_OBSERVABILITY=true` 拉起 Prometheus/Loki/Grafana。
 
 ---
 
-## 6. 复核命令
+## 7. 决策与改进路线
+
+> 截至目前讨论的结论。P0 = 会硬失败到用户；P1/P2 = 韧性增强。
+
+### 已决策 / 已完成
+
+- **#4 rerank 构造期崩溃（P0）— ✅ 已修复**。worker `get_rerank_service` 加 try/except，构造失败记录 `event=worker_rerank_init_degraded` 并降级为无 rerank（[worker/dependencies.py:95-123](../backend/worker/dependencies.py#L95-L123)；测试 [test_worker_dependencies.py](../tests/unit/worker/test_worker_dependencies.py)）。
+- **#1 LLM 单 provider SPOF（P0）— 决策：方案 A（接受为已知风险）**。
+  - 不在 app 层加旁路 fallback —— 尊重"key 归 Bifrost 管"的所有权（[bifrost/README.md](../configs/bifrost/README.md)）。
+  - 现有容错：Bifrost 双 key（`DEEPSEEK_API_KEY` + `DEEPSEEK_API_KEY_2`，weighted）+ 网关重试 + app 熔断。
+  - **唯一待办（部署侧）**：确认 `secrets/ec2/deepseek_api_key.txt` 与 `..._2.txt` 是**两把不同**的 key（README 曾建议"只有一把就指向同值"，那样冗余是假的）。
+  - 残留风险：DeepSeek **整体**宕机 → chat 短暂不可用，第一版可接受。
+
+### 待办（按 embedding / 上线节奏）
+
+- **#2 入库韧性（P1，随 embedding 切真实做）—— 核心是熔断而非重试**：
+  - 给 embedder 包一个 `CircuitBreaker`（复用现成类，仿 LLM 接法），防 provider 宕机时"N 文件 × 重试"的**重试风暴**。
+  - 配套**有界重试 + 退避**，且**只对瞬时错误**（`RAG_EMBEDDING_API_ERROR` / `GOOGLE_EMBEDDING_API_ERROR`），不重试永久错误（`*_INPUT_EMPTY` / `*_DIMENSION_MISMATCH`）。
+  - 重跑安全（`replace_file_chunks` 幂等）；重试耗尽 → 保留 FAILED 终态。
+- **#3 stale sweeper 接调度（P2）**：`recover_stale_knowledge_ingestions` 接 taskiq scheduler / 外部 cron；考虑改为**重投**而非只标 FAILED。与 #2 配套才完整。
+- **#5 主动告警（P1，上线即需）—— 现状"有规则没出口"**：[alert_rules.yml](../deploy/monitoring/alert_rules.yml) 有规则，但**无 Alertmanager**、prometheus.yml 无 `alerting:` 段 → 警报发不出去；且 worker 不在抓取目标内。
+  - **推荐（单 EC2）**：CloudWatch Logs（`awslogs` driver + EC2 IAM role）→ metric filter（盯 `LLM_ROUTING_FAILED` / `KNOWLEDGE_FILE_INGEST_FAILED` / `event=circuit_breaker_opened` / `event=worker_rerank_init_degraded`）→ Alarm → SNS。托管、省内存、天然覆盖 worker 日志。
+  - **自托管替代**：Grafana 11.x 内置告警（对 Loki 日志查询 + Prometheus 指标，无需额外 Alertmanager）；代价是运维 + 内存。
+
+### 后续可选（非必需）
+
+- **#1 方案 B（仅当要扛 DeepSeek 整体宕机）**：跨家族 chat fallback 只能走 Bifrost **请求级** `fallbacks`（VK 级自动 fallback 会按 model 过滤，给不了 deepseek→gemini）。需：Bifrost 加第二个 chat provider + `LLMExtraBody` 加 `fallbacks` 字段（~2 行，[params.py](../backend/models/schemas/chat/params.py)）+ models.yaml 配 `extra_body.fallbacks`。gemini key 仍在 Bifrost，app 只发 model 名。残留：Bifrost 网关本身成为新 SPOF。
+
+---
+
+## 8. 复核命令
 
 ```bash
 # 1) 生效的 AI provider 值（在 EC2 / APP_ENV=prod 下）

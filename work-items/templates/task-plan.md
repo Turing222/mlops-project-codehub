@@ -1,43 +1,39 @@
-# Task Plan: Human-readable task title
+# 工作项计划：人类可读工作项标题
 
-## Current Goal
+> 机读状态（`status`、`workstreams`、`current_checkpoint`、`next_choices`、
+> `open_decisions`）只保存在 `manifest.yaml`，并以它为准。
+> 本文件只记录稳定叙事：为什么做、范围是什么、取舍是什么。
+> 不要在这里复制状态字段。
 
-One sentence matching `manifest.yaml`.
+## 目标
 
-## Conversation Conclusions
+用一段中文解释这个工作项目标背后的意图，不要逐字复制 `manifest.yaml` 里的单行 `goal`。
 
-- Durable conclusion from the latest conversation.
-- Important decision or constraint.
+## 对话结论
 
-## Completion Chain
+- 已确认、去重后的稳定结论。
+- 重要决策或约束。
 
-1. First completion condition.
-2. Second completion condition.
-3. Validation or acceptance condition.
+## Workstream 拆分理由
 
-## Workstreams
+每一节对应 `manifest.yaml` 中的一个 workstream id。这里只写这个工作项下各 workstream 的范围和理由；状态只保存在 manifest。
 
-1. [blocking] Scope or decision that must happen first.
-2. [parallel] Independent workstream.
-3. [depends_on: 1] Dependent workstream.
+### WS1 — manifest 中的标题
 
-## Current Checkpoint
+- Scope：这个 workstream 改什么。
+- Reason：为什么需要它。
+- Expected effect：完成后应成立的结果。
 
-- Checkpoint: scope-aligned
-- State: planned
-- Summary: where the task stands now.
+### WS2 — manifest 中的标题
 
-## Dependencies
+- Scope：...
+- Reason：...
+- Expected effect：...
 
-- `related-task-slug`: relationship and note.
+## 暂缓 / 不纳入范围
 
-## Next Choices
+- 明确排除的工作和简短理由。这些不是 workstream。
 
-- A: Recommended choice.
-- B: Alternative choice.
+## Open Decisions 说明
 
-## Attached Artifacts
-
-- Reviews: none
-- Debug: none
-- Other: none
+- `example-decision`：展开 manifest 中的条目，说明背景和当前倾向。

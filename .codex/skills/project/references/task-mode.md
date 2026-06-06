@@ -12,12 +12,12 @@ Use this reference when a request could fit more than one local skill.
 
 ## Ambiguity Rule
 
-Prefer the least invasive mode that satisfies the latest user request. If implementation intent is explicit, choose `write`, `edit`, or `add-tests`; if durable task identity is required, choose `task-plan`; if a planning request looks complex but persistence is not explicit, use `task-plan` to ask whether to persist; if intent is unclear and risk is high, ask one concise question.
+Prefer the least invasive mode that satisfies the latest user request. If implementation intent is explicit, choose `write`, `edit`, or `add-tests`; if durable work-item identity is required, choose `task-plan`; if a planning request looks complex but persistence is not explicit, use `task-plan` to ask whether to persist; if intent is unclear and risk is high, ask one concise question.
 
 ## Collaboration Flow
 
 - For broad implementation planning, prefer Claude Code built-in `/plan`; use `task-plan` to persist approved conclusions and checkpoint state into `work-items/`.
-- For complex方案/计划/里程碑 requests with multiple PRs, phases, dependencies, or rollout checkpoints, use `task-plan` to confirm whether the user wants durable `work-items/` tracking before producing only an in-chat plan.
+- For complex方案/计划/里程碑 requests with multiple PRs, phases, dependencies, or rollout checkpoints, use `task-plan` to confirm whether the user wants durable work-item tracking in `work-items/` before producing only an in-chat plan.
 - After `task-plan`, switch to the mode skill that owns the next executable step.
 - After `write` or `edit`, consider `add-tests` when coverage gaps exist or behavior changed.
 

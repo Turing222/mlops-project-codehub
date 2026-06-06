@@ -77,7 +77,8 @@
 ## 维护约定
 
 - `docs/` 优先放长期有效的规范、流程和参考资料。
-- `work-items/` 用于可推进、可结束、可归档的任务产物与 checkpoint；不要把长期规范沉淀到这里。
+- `work-items/` 用于可推进、可结束、可归档的工作项（work item）产物与 checkpoint；不要把长期规范沉淀到这里。
 - 临时任务说明可以保留，但应像 [todo-storage-column-types.md](todo-storage-column-types.md) 一样明确标识其临时性质。
+- 项目文档正文使用中文；代码标识、命令、字段名、状态枚举和常用技术术语保留英文。`work-items/*/manifest.yaml` 作为 agent 状态源保持英文，`task-plan.md` 使用中文叙事。
 - 当代码结构或 Makefile 入口发生变化时，优先更新根目录 [README.md](../README.md) 与本索引，避免导航层先过时。
 - 如果某篇文档已经属于某个子领域的专属说明（例如 frontend、tests、evals、perf），优先在对应目录维护细节，这里只保留索引链接。
