@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from backend.core.exceptions import AppException
-from backend.services.sms_service import SMSService
+from backend.services.sms_service import LUA_VERIFY_CODE, SMSService
 
 pytestmark = pytest.mark.asyncio
 
@@ -23,6 +23,7 @@ def _make_redis_mock() -> SimpleNamespace:
         get=AsyncMock(return_value=None),
         set=AsyncMock(),
         delete=AsyncMock(),
+        eval=AsyncMock(return_value=[0, "missing", 0]),
     )
     return redis
 
@@ -41,6 +42,9 @@ def make_sms_service(
     sms_code_expire_seconds: int = 300,
     sms_code_rate_limit_seconds: int = 60,
     sms_mock_mode: bool = True,
+    sms_verify_failure_limit: int = 5,
+    sms_verify_failure_window_seconds: int = 300,
+    sms_verify_lockout_seconds: int = 600,
     redis: SimpleNamespace | None = None,
 ) -> SMSService:
     redis_client = _make_redis_client(redis)
@@ -49,6 +53,9 @@ def make_sms_service(
         sms_code_expire_seconds=sms_code_expire_seconds,
         sms_code_rate_limit_seconds=sms_code_rate_limit_seconds,
         sms_mock_mode=sms_mock_mode,
+        sms_verify_failure_limit=sms_verify_failure_limit,
+        sms_verify_failure_window_seconds=sms_verify_failure_window_seconds,
+        sms_verify_lockout_seconds=sms_verify_lockout_seconds,
     )
 
 
@@ -126,13 +133,22 @@ async def test_verify_code_success_deletes_key() -> None:
 
     code = await service.send_code("13800138000")
 
-    # Simulate stored code
-    redis.get.return_value = code
+    redis.eval.return_value = [1, "ok", 0]
 
     result = await service.verify_code("13800138000", code)
 
     assert result is True
-    redis.delete.assert_awaited_once_with("sms:13800138000")
+    redis.eval.assert_awaited_once_with(
+        LUA_VERIFY_CODE,
+        3,
+        "sms:13800138000",
+        "sms_verify_fail:13800138000",
+        "sms_verify_lock:13800138000",
+        code,
+        5,
+        300,
+        600,
+    )
 
 
 async def test_verify_code_wrong_code_returns_false() -> None:
@@ -141,22 +157,23 @@ async def test_verify_code_wrong_code_returns_false() -> None:
 
     await service.send_code("13800138000")
 
-    redis.get.return_value = "999999"
+    redis.eval.return_value = [0, "wrong", 1]
     result = await service.verify_code("13800138000", "000000")
 
     assert result is False
     redis.delete.assert_not_awaited()
+    redis.eval.assert_awaited_once()
 
 
 async def test_verify_code_expired_returns_false() -> None:
     redis = _make_redis_mock()
-    redis.get.return_value = None
     service = make_sms_service(redis=redis)
 
     result = await service.verify_code("13800138000", "123456")
 
     assert result is False
     redis.delete.assert_not_awaited()
+    redis.eval.assert_awaited_once()
 
 
 async def test_verify_code_handles_bytes_from_redis() -> None:
@@ -166,9 +183,42 @@ async def test_verify_code_handles_bytes_from_redis() -> None:
     code = await service.send_code("13800138000")
 
     # Redis may return bytes
-    redis.get.return_value = code.encode()
+    redis.eval.return_value = [1, b"ok", 0]
 
     result = await service.verify_code("13800138000", code)
 
     assert result is True
-    redis.delete.assert_awaited_once()
+    redis.delete.assert_not_awaited()
+
+
+async def test_verify_code_sets_lockout_after_failure_threshold() -> None:
+    redis = _make_redis_mock()
+    redis.eval.return_value = [0, "wrong_locked", 5]
+    service = make_sms_service(
+        redis=redis,
+        sms_verify_failure_limit=5,
+        sms_verify_lockout_seconds=600,
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await service.verify_code("13800138000", "000000")
+
+    assert exc_info.value.code == "SMS_VERIFY_LOCKED"
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.details == {"lockout_seconds": 600}
+    redis.set.assert_not_awaited()
+    redis.delete.assert_not_awaited()
+
+
+async def test_verify_code_rejects_when_phone_is_locked() -> None:
+    redis = _make_redis_mock()
+    redis.eval.return_value = [0, "locked", 0]
+    service = make_sms_service(redis=redis, sms_verify_lockout_seconds=600)
+
+    with pytest.raises(AppException) as exc_info:
+        await service.verify_code("13800138000", "000000")
+
+    assert exc_info.value.code == "SMS_VERIFY_LOCKED"
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.details == {"lockout_seconds": 600}
+    redis.eval.assert_awaited_once()

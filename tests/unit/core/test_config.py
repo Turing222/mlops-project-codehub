@@ -430,6 +430,13 @@ def test_rate_limit_settings_load_from_env(
     monkeypatch.setenv("AUTH_REGISTER_RATE_LIMIT_SECONDS", "61")
     monkeypatch.setenv("AUTH_LOGIN_RATE_LIMIT_TIMES", "102")
     monkeypatch.setenv("AUTH_LOGIN_RATE_LIMIT_SECONDS", "62")
+    monkeypatch.setenv("AUTH_SMS_LOGIN_RATE_LIMIT_TIMES", "103")
+    monkeypatch.setenv("AUTH_SMS_LOGIN_RATE_LIMIT_SECONDS", "63")
+    monkeypatch.setenv("AUTH_GOOGLE_CALLBACK_RATE_LIMIT_TIMES", "104")
+    monkeypatch.setenv("AUTH_GOOGLE_CALLBACK_RATE_LIMIT_SECONDS", "64")
+    monkeypatch.setenv("SMS_VERIFY_FAILURE_LIMIT", "6")
+    monkeypatch.setenv("SMS_VERIFY_FAILURE_WINDOW_SECONDS", "301")
+    monkeypatch.setenv("SMS_VERIFY_LOCKOUT_SECONDS", "601")
     monkeypatch.setenv("BUSINESS_RATE_LIMIT_TIMES", "103")
     monkeypatch.setenv("BUSINESS_RATE_LIMIT_SECONDS", "63")
     monkeypatch.setenv("CHAT_RATE_LIMIT_TIMES", "104")
@@ -441,10 +448,62 @@ def test_rate_limit_settings_load_from_env(
     assert settings.AUTH_REGISTER_RATE_LIMIT_SECONDS == 61
     assert settings.AUTH_LOGIN_RATE_LIMIT_TIMES == 102
     assert settings.AUTH_LOGIN_RATE_LIMIT_SECONDS == 62
+    assert settings.AUTH_SMS_LOGIN_RATE_LIMIT_TIMES == 103
+    assert settings.AUTH_SMS_LOGIN_RATE_LIMIT_SECONDS == 63
+    assert settings.AUTH_GOOGLE_CALLBACK_RATE_LIMIT_TIMES == 104
+    assert settings.AUTH_GOOGLE_CALLBACK_RATE_LIMIT_SECONDS == 64
+    assert settings.SMS_VERIFY_FAILURE_LIMIT == 6
+    assert settings.SMS_VERIFY_FAILURE_WINDOW_SECONDS == 301
+    assert settings.SMS_VERIFY_LOCKOUT_SECONDS == 601
     assert settings.BUSINESS_RATE_LIMIT_TIMES == 103
     assert settings.BUSINESS_RATE_LIMIT_SECONDS == 63
     assert settings.CHAT_RATE_LIMIT_TIMES == 104
     assert settings.CHAT_RATE_LIMIT_SECONDS == 64
+
+
+@pytest.mark.parametrize(
+    ("env_name", "env_value"),
+    [
+        ("SMS_VERIFY_FAILURE_LIMIT", "-1"),
+        ("SMS_VERIFY_FAILURE_WINDOW_SECONDS", "0"),
+        ("SMS_VERIFY_LOCKOUT_SECONDS", "0"),
+    ],
+)
+def test_sms_verify_settings_reject_invalid_values(
+    monkeypatch: pytest.MonkeyPatch,
+    env_name: str,
+    env_value: str,
+) -> None:
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
+    monkeypatch.setenv(env_name, env_value)
+
+    with pytest.raises(ValueError):
+        Settings(_env_file=None)
+
+
+def test_web_settings_load_sms_verify_values_from_yaml(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / "configs"
+    app_dir = config_dir / "app"
+    app_dir.mkdir(parents=True)
+    (app_dir / "base.yaml").write_text(
+        "SMS_VERIFY_FAILURE_LIMIT: 3\n"
+        "SMS_VERIFY_FAILURE_WINDOW_SECONDS: 45\n"
+        "SMS_VERIFY_LOCKOUT_SECONDS: 90\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
+    get_web_settings.cache_clear()
+
+    settings = get_web_settings()
+
+    assert settings.SMS_VERIFY_FAILURE_LIMIT == 3
+    assert settings.SMS_VERIFY_FAILURE_WINDOW_SECONDS == 45
+    assert settings.SMS_VERIFY_LOCKOUT_SECONDS == 90
+    get_web_settings.cache_clear()
 
 
 def test_rag_refusal_settings_can_load_from_env(

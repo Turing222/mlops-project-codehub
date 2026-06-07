@@ -91,8 +91,25 @@ cp deploy/.env.ec2.template deploy/.env.ec2
 - `DEPLOY_FRONTEND_BASE_URL`
 - `DEPLOY_PULL_IMAGES`
 - `BACKEND_CORS_ORIGINS`
+- `RATE_LIMIT_TRUSTED_PROXY_CIDRS`
 
 如果当前版本暂不开放 Google 登录，保持 `GOOGLE_OAUTH_ENABLED=false` 即可；后续启用时再补 `GOOGLE_CLIENT_ID`、`GOOGLE_ALLOWED_REDIRECT_URIS` 和 `secrets/ec2/google_client_secret.txt`。
+
+### 登录限流与真实客户端 IP
+
+认证入口限流按 `client IP + path` 计数。仓库里的 compose fallback 由 `frontend/apps/admin/nginx.conf` 代理 `/api/`，并向 API 传递 `X-Real-IP`；API 只有在请求来源 IP 命中 `RATE_LIMIT_TRUSTED_PROXY_CIDRS` 时才会读取这个 header。生产 compose 的 Uvicorn command 不启用 `--proxy-headers` / `--forwarded-allow-ips "*"`，避免在应用层校验前就信任客户端可伪造的 forwarded headers。
+
+在 EC2 compose fallback 中，`frontend` 通过专用 `edge_net` 连接 API，并使用固定地址。推荐保留模板里的：
+
+```bash
+EDGE_NETWORK_SUBNET=172.30.0.0/24
+FRONTEND_PROXY_IP=172.30.0.10
+RATE_LIMIT_TRUSTED_PROXY_CIDRS=172.30.0.10/32
+```
+
+这只信任 compose frontend/nginx 的固定地址，让 `/sms/login`、`/google/callback` 和 audit 使用真实用户 IP，而不是共享代理 IP。若该 subnet 与宿主机网络冲突，应同时调整 `EDGE_NETWORK_SUBNET`、`FRONTEND_PROXY_IP` 和对应 `/32` CIDR。
+
+如果 API 直接暴露到公网，`RATE_LIMIT_TRUSTED_PROXY_CIDRS` 应保持为空。若改由 Cloudflare、ALB 或其他外部 edge 代理，edge 必须把经过自身校验的客户端地址规范化写入 `X-Real-IP`，并把 `RATE_LIMIT_TRUSTED_PROXY_CIDRS` 改为实际可信代理网段；当前应用不会从 `X-Forwarded-For` 或 `CF-Connecting-IP` 推断客户端地址。请通过 `make deploy-ec2-*` 或等价的 `docker compose --env-file deploy/.env.ec2 ...` 入口启动。
 
 如果前端已经部署到 Cloudflare Pages，至少要同步以下配置：
 

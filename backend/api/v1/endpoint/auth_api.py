@@ -45,6 +45,14 @@ sms_limiter = RateLimiter(
     times=settings.SMS_SEND_RATE_LIMIT_TIMES,
     seconds=settings.SMS_SEND_RATE_LIMIT_SECONDS,
 )
+sms_login_limiter = RateLimiter(
+    times=settings.AUTH_SMS_LOGIN_RATE_LIMIT_TIMES,
+    seconds=settings.AUTH_SMS_LOGIN_RATE_LIMIT_SECONDS,
+)
+google_callback_limiter = RateLimiter(
+    times=settings.AUTH_GOOGLE_CALLBACK_RATE_LIMIT_TIMES,
+    seconds=settings.AUTH_GOOGLE_CALLBACK_RATE_LIMIT_SECONDS,
+)
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 LoginDataDep = Annotated[UserLogin, Depends(get_login_data)]
 AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
@@ -152,7 +160,7 @@ async def sms_send(body: SMSSendRequest, sms_service: SMSServiceDep) -> SMSSendR
     )
 
 
-@router.post("/sms/login")
+@router.post("/sms/login", dependencies=[Depends(sms_login_limiter)])
 async def sms_login(
     body: PhoneLoginRequest,
     user_service: UserServiceDep,
@@ -215,7 +223,7 @@ async def google_auth_url(
     return GoogleAuthUrlResponse(url=url)
 
 
-@router.post("/google/callback")
+@router.post("/google/callback", dependencies=[Depends(google_callback_limiter)])
 async def google_callback(
     body: GoogleCallbackRequest,
     user_service: UserServiceDep,

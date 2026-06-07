@@ -166,10 +166,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips "*" --timeout-graceful-shutdown 30
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 30
     networks:
       - app_net
       - monitor_net
+      - edge_net
 
   frontend:
     image: ${DOCKER_IMAGE_NAME_FRONTEND:-dewflow-frontend:2.0.0}
@@ -181,7 +182,8 @@ services:
     ports:
       - "${FRONTEND_PUBLIC_PORT:-80}:8080"
     networks:
-      - app_net
+      edge_net:
+        ipv4_address: ${FRONTEND_PROXY_IP:-172.30.0.10}
     deploy:
       resources:
         limits:
@@ -422,6 +424,11 @@ networks:
     driver: bridge
   monitor_net:
     driver: bridge
+  edge_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${EDGE_NETWORK_SUBNET:-172.30.0.0/24}
 
 volumes:
   pg_data_v17:

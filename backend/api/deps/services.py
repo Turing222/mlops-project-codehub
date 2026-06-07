@@ -83,6 +83,9 @@ def get_sms_service() -> SMSService:
         sms_code_expire_seconds=ws.SMS_CODE_EXPIRE_SECONDS,
         sms_code_rate_limit_seconds=ws.SMS_CODE_RATE_LIMIT_SECONDS,
         sms_mock_mode=ws.SMS_MOCK_MODE,
+        sms_verify_failure_limit=ws.SMS_VERIFY_FAILURE_LIMIT,
+        sms_verify_failure_window_seconds=ws.SMS_VERIFY_FAILURE_WINDOW_SECONDS,
+        sms_verify_lockout_seconds=ws.SMS_VERIFY_LOCKOUT_SECONDS,
     )
 
 

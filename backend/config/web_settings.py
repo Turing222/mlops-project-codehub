@@ -10,9 +10,14 @@ from functools import lru_cache
 from typing import Annotated, Any
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    NoDecode,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
-from backend.config.ai_settings import _env_files
+from backend.config.ai_settings import AppYamlSettingsSource, _env_files
 
 DEFAULT_SECRET_KEY = "local-dev-secret"  # noqa: S105
 PRODUCTION_APP_ENVS = {"prod", "production"}
@@ -97,6 +102,17 @@ class WebSettings(BaseSettings):
     SMS_SEND_RATE_LIMIT_SECONDS: int = Field(
         60, description="短信发送接口限流窗口（秒）"
     )
+    SMS_VERIFY_FAILURE_LIMIT: int = Field(
+        5,
+        ge=0,
+        description="短信验证码校验失败锁定阈值；0 表示禁用手机号锁定",
+    )
+    SMS_VERIFY_FAILURE_WINDOW_SECONDS: int = Field(
+        300, gt=0, description="短信验证码校验失败统计窗口（秒）"
+    )
+    SMS_VERIFY_LOCKOUT_SECONDS: int = Field(
+        600, gt=0, description="短信验证码校验失败后的临时锁定时间（秒）"
+    )
     SMS_MOCK_MODE: bool = Field(False, description="Mock 模式下验证码仅写入日志")
 
     # ── Rate Limiting ─────────────────────────────────────────────
@@ -105,6 +121,10 @@ class WebSettings(BaseSettings):
     AUTH_REGISTER_RATE_LIMIT_SECONDS: int = 60
     AUTH_LOGIN_RATE_LIMIT_TIMES: int = 20
     AUTH_LOGIN_RATE_LIMIT_SECONDS: int = 60
+    AUTH_SMS_LOGIN_RATE_LIMIT_TIMES: int = 10
+    AUTH_SMS_LOGIN_RATE_LIMIT_SECONDS: int = 60
+    AUTH_GOOGLE_CALLBACK_RATE_LIMIT_TIMES: int = 10
+    AUTH_GOOGLE_CALLBACK_RATE_LIMIT_SECONDS: int = 60
     BUSINESS_RATE_LIMIT_TIMES: int = 100
     BUSINESS_RATE_LIMIT_SECONDS: int = 60
     CHAT_RATE_LIMIT_TIMES: int = 10
@@ -131,6 +151,23 @@ class WebSettings(BaseSettings):
         extra="ignore",
     )
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+            AppYamlSettingsSource(settings_cls),
+        )
+
     @model_validator(mode="before")
     @classmethod
     def apply_environment_cors_defaults(cls, data: Any) -> Any:
@@ -138,7 +175,9 @@ class WebSettings(BaseSettings):
             return data
         values = dict(data)
         app_env = str(values.get("APP_ENV") or _current_app_env())
-        default_methods, default_headers, default_expose_headers = _cors_defaults_for_env(app_env)
+        default_methods, default_headers, default_expose_headers = (
+            _cors_defaults_for_env(app_env)
+        )
         values.setdefault("BACKEND_CORS_METHODS", default_methods)
         values.setdefault("BACKEND_CORS_HEADERS", default_headers)
         values.setdefault("BACKEND_CORS_EXPOSE_HEADERS", default_expose_headers)
