@@ -200,8 +200,9 @@ Secret 文件位于 [secrets/ec2/](../secrets/ec2)（EC2）或 [secrets/local-pr
 - **#5 主动告警（P1，上线即需）—— 现状 / 条件 / 目标态需区分**：
   - **当前状态**：`deploy/monitoring/alert_rules.yml` 提供的是本地 / 自托管观察栈的规则定义；当前 `prometheus.yml` 无 `alerting:` 段、无 Alertmanager，且 worker 不在抓取目标内，所以这套配置不能直接视为 AWS 生产告警出口。
   - **条件成立时可用**：如果在本地或自托管环境显式启用 `DEPLOY_ENABLE_OBSERVABILITY=true`，可以使用 Prometheus/Loki/Grafana 做排障观察，但仍需额外接入告警投递链路。
-  - **推荐生产路径（单 EC2）**：CloudWatch Logs（`awslogs` driver + EC2 IAM role）→ metric filter（盯 `LLM_ROUTING_FAILED` / `KNOWLEDGE_FILE_INGEST_FAILED` / `event=circuit_breaker_opened` / `event=worker_rerank_init_degraded`）→ Alarm → SNS。托管、省内存、天然覆盖 worker 日志。
-  - **自托管替代**：Grafana 11.x 内置告警（对 Loki 日志查询 + Prometheus 指标，无需额外 Alertmanager）；代价是运维 + 内存。
+  - **推荐生产目标（AWS 后端）**：backend / worker JSON logs → CloudWatch Logs → metric filters → CloudWatch alarms → SNS topic → email subscription。当前 production compose 仍使用 `json-file` logging driver，尚未选择 CloudWatch Agent、Docker `awslogs` 或 Fluent Bit，因此这条链路还不是可执行闭环。完成日志投递后，第一批信号盯 `level=CRITICAL`、`error_code=LLM_ROUTING_FAILED`、`error_code=KNOWLEDGE_FILE_INGEST_FAILED`、`event=circuit_breaker_opened`、`event=worker_rerank_init_degraded`。
+  - **CSP 单独处理**：`event=csp_violation` 来自 report-only 观察流，第一阶段只用于 CloudWatch Logs 查询，不建 alarm；等噪声稳定后再决定是否加入 metric filter。
+  - **自托管替代**：Grafana 11.x 内置告警（对 Loki 日志查询 + Prometheus 指标，无需额外 Alertmanager）；代价是运维 + 内存。本次生产投递闭环不接 Alertmanager。
 
 ### 后续可选（非必需）
 

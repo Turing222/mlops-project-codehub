@@ -75,8 +75,9 @@ Pages 生产部署前至少确认：
 1. 构建时设置 `VITE_API_BASE_URL=https://api.<domain>`
 2. `public/_redirects` 已提供 SPA fallback
 3. `public/_headers` 已提供基础安全头与静态缓存策略
-4. 后端已设置 `BACKEND_CORS_ORIGINS=https://app.<domain>`
-5. 若启用 Google OAuth，后端已设置 `GOOGLE_ALLOWED_REDIRECT_URIS=https://app.<domain>/auth/google/callback`
+4. `pnpm --dir frontend --filter admin build` 会在 `dist/_headers` 生成真实 `Content-Security-Policy-Report-Only` header；Cloudflare Pages 环境下缺少 `VITE_API_BASE_URL` 会直接失败
+5. 后端已设置 `BACKEND_CORS_ORIGINS=https://app.<domain>`
+6. 若启用 Google OAuth，后端已设置 `GOOGLE_ALLOWED_REDIRECT_URIS=https://app.<domain>/auth/google/callback`
 
 ### 3. 前端生产镜像构建（fallback / 演练）
 使用根目录的 `Makefile` 构建前端生产 Docker 镜像（支持多阶段构建和 pnpm store 缓存）：

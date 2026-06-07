@@ -393,6 +393,29 @@ export DEPLOY_ENABLE_OBSERVABILITY=true
 
 ### 目标态说明
 
+生产推荐告警投递目标使用 AWS 托管链路，而不是当前 compose observability profile：
+
+```text
+backend/worker JSON logs -> CloudWatch Logs -> metric filters -> CloudWatch alarms -> SNS topic -> email subscription
+```
+
+当前 [deploy/docker-compose.yml](../deploy/docker-compose.yml) 使用 `json-file` logging driver，没有配置 CloudWatch Agent、Docker `awslogs` driver 或 Fluent Bit，因此日志**不会自动进入 CloudWatch Logs**。在明确选择并部署一种日志 shipper 前，下面内容只是目标态，不是当前可执行的告警闭环。
+
+选定日志投递方式后，最少步骤：
+
+1. 让 `api` 和 `worker` 日志进入同一个 CloudWatch Logs log group，EC2 instance role 需要具备写日志权限。
+2. 建立 SNS topic，并添加 email subscription；收件人必须在邮件中确认订阅。
+3. 为第一批生产信号创建 metric filters：
+   - `level=CRITICAL`
+   - `event=circuit_breaker_opened`
+   - `event=worker_rerank_init_degraded`
+   - `error_code=LLM_ROUTING_FAILED`
+   - `error_code=KNOWLEDGE_FILE_INGEST_FAILED`
+4. 为每个 metric 建 CloudWatch alarm，alarm action 指向同一个 SNS topic。
+5. 触发一次 test alarm，确认 email 能收到 `ALARM` 和恢复通知。
+
+CSP report-only 第一阶段只用于日志观察：`POST /api/v1/csp/reports` 会写 `event=csp_violation`，但不落库、不触发应用告警，也暂不建 CloudWatch alarm。等 report-only 噪声稳定并确认 allowlist 后，再决定是否为 CSP 加 metric filter。
+
 后续如果需要统一本地自托管栈与 AWS 云端监控，应优先统一 `event` / `error_code` / `request_id` / `trace_id` / OTLP endpoint / health endpoint 等应用层合同，而不是要求两边复用同一套 compose service host、Prometheus scrape wiring 或 Grafana datasource 配置。
 
 ## 与本地 smoke 的边界

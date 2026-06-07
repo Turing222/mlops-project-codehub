@@ -10,7 +10,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
-from backend.config.settings import settings
+from backend.api.deps.origin import is_allowed_browser_origin
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -26,33 +26,12 @@ class FrontendErrorTelemetry(BaseModel):
     source: Annotated[str | None, Field(max_length=80)] = None
 
 
-def _is_allowed_origin(request: Request) -> bool:
-    origin = request.headers.get("origin")
-    if not origin:
-        return True
-
-    configured_origins = {
-        str(item).rstrip("/") for item in settings.BACKEND_CORS_ORIGINS
-    }
-    if "*" in configured_origins or origin.rstrip("/") in configured_origins:
-        return True
-
-    host = request.headers.get("host")
-    if host:
-        forwarded_proto = request.headers.get("x-forwarded-proto", "")
-        scheme = forwarded_proto.split(",", maxsplit=1)[0].strip() or request.url.scheme
-        same_origin = f"{scheme}://{host}".rstrip("/")
-        return origin.rstrip("/") == same_origin
-
-    return False
-
-
 @router.post("/errors", status_code=status.HTTP_204_NO_CONTENT)
 async def report_frontend_error(
     payload: FrontendErrorTelemetry,
     request: Request,
 ) -> Response:
-    if not _is_allowed_origin(request):
+    if not is_allowed_browser_origin(request):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     telemetry_request_id = getattr(request.state, "request_id", None)

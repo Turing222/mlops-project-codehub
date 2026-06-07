@@ -5,6 +5,7 @@ from backend.api.v1.endpoint import (
     auth_api,
     chat_api,
     credit_api,
+    csp_report_api,
     health_check,
     knowledge_api,
     permission_api,
@@ -24,6 +25,10 @@ business_limiter = RateLimiter(
 frontend_telemetry_limiter = RateLimiter(
     times=settings.FRONTEND_TELEMETRY_RATE_LIMIT_TIMES,
     seconds=settings.FRONTEND_TELEMETRY_RATE_LIMIT_SECONDS,
+)
+csp_report_limiter = RateLimiter(
+    times=settings.CSP_REPORT_RATE_LIMIT_TIMES,
+    seconds=settings.CSP_REPORT_RATE_LIMIT_SECONDS,
 )
 
 api_router.include_router(
@@ -67,6 +72,12 @@ api_router.include_router(
     prefix="/telemetry",
     tags=["telemetry"],
     dependencies=[Depends(frontend_telemetry_limiter)],
+)
+api_router.include_router(
+    csp_report_api.router,
+    prefix="/csp",
+    tags=["csp"],
+    dependencies=[Depends(csp_report_limiter)],
 )
 api_router.include_router(
     credit_api.router,

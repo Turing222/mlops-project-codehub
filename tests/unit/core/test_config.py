@@ -441,6 +441,10 @@ def test_rate_limit_settings_load_from_env(
     monkeypatch.setenv("BUSINESS_RATE_LIMIT_SECONDS", "63")
     monkeypatch.setenv("CHAT_RATE_LIMIT_TIMES", "104")
     monkeypatch.setenv("CHAT_RATE_LIMIT_SECONDS", "64")
+    monkeypatch.setenv("FRONTEND_TELEMETRY_RATE_LIMIT_TIMES", "105")
+    monkeypatch.setenv("FRONTEND_TELEMETRY_RATE_LIMIT_SECONDS", "65")
+    monkeypatch.setenv("CSP_REPORT_RATE_LIMIT_TIMES", "106")
+    monkeypatch.setenv("CSP_REPORT_RATE_LIMIT_SECONDS", "66")
 
     settings = Settings(_env_file=None)
 
@@ -459,6 +463,10 @@ def test_rate_limit_settings_load_from_env(
     assert settings.BUSINESS_RATE_LIMIT_SECONDS == 63
     assert settings.CHAT_RATE_LIMIT_TIMES == 104
     assert settings.CHAT_RATE_LIMIT_SECONDS == 64
+    assert settings.FRONTEND_TELEMETRY_RATE_LIMIT_TIMES == 105
+    assert settings.FRONTEND_TELEMETRY_RATE_LIMIT_SECONDS == 65
+    assert settings.CSP_REPORT_RATE_LIMIT_TIMES == 106
+    assert settings.CSP_REPORT_RATE_LIMIT_SECONDS == 66
 
 
 @pytest.mark.parametrize(

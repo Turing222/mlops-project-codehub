@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from backend.api.deps import origin
 from backend.api.v1.endpoint import telemetry_api
 from backend.core.exception_handlers import setup_exception_handlers
 from backend.middleware.tracing import setup_tracing
@@ -66,7 +67,7 @@ async def test_frontend_error_telemetry_rejects_disallowed_origin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        telemetry_api.settings,
+        origin.settings,
         "BACKEND_CORS_ORIGINS",
         ["https://admin.example.com"],
     )
@@ -90,7 +91,7 @@ async def test_frontend_error_telemetry_allows_forwarded_https_same_origin(
     telemetry_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(telemetry_api.settings, "BACKEND_CORS_ORIGINS", [])
+    monkeypatch.setattr(origin.settings, "BACKEND_CORS_ORIGINS", [])
 
     response = await telemetry_client.post(
         "/api/v1/telemetry/errors",

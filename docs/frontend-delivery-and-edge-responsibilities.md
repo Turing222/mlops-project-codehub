@@ -19,6 +19,7 @@
 - 域名接入
 - SPA fallback（`public/_redirects`）
 - 基础安全头（`public/_headers`）
+- CSP report-only header（构建后生成到 `dist/_headers`，不在仓库默认 `_headers` 写无效占位符）
 - 静态资源缓存策略（`public/_headers`）
 - 静态 `healthz` 探活文件（如启用）
 
@@ -37,6 +38,7 @@
 - CORS allowlist（`BACKEND_CORS_ORIGINS`）
 - Google OAuth callback allowlist（`GOOGLE_ALLOWED_REDIRECT_URIS`）
 - telemetry origin 校验依赖的同源 / allowlist 规则
+- CSP report-only sink：`POST /api/v1/csp/reports`
 - streaming / SSE 兼容
 - 长 timeout、禁止错误缓冲 / 缓存
 - API request tracing / 访问日志
@@ -79,11 +81,17 @@
 - 前端 API endpoint path 常量仍集中在 `frontend/apps/admin/src/api/urls.ts`
 - 生产 Pages 构建时必须通过 `VITE_API_BASE_URL` 指向 API origin
 - 若 `VITE_API_BASE_URL` 未设置，前端退回当前同源路径行为，便于本地 / Compose fallback
+- Cloudflare Pages 的 CSP report-only header 不在仓库默认 `_headers` 中启用；`pnpm --dir frontend --filter admin build` 会根据 `VITE_API_BASE_URL` 生成 `dist/_headers`，写入真实 `report-uri https://api.<domain>/api/v1/csp/reports`，并校验产物中不存在占位符。
+- Cloudflare Pages 环境下如果缺少 `VITE_API_BASE_URL`，构建会失败，避免生产静默漏启 CSP report-only。
+- CSP 当前只使用 `Content-Security-Policy-Report-Only`：违规报告只写 `event=csp_violation` 结构化日志，不阻断页面资源，也不直接触发告警。
+- Compose fallback 使用 `frontend/apps/admin/nginx.conf` 中的相对 `report-uri /api/v1/csp/reports`，依赖同一 nginx `/api/` 反代到后端。
 
 ## 上线前最少检查项
 
 1. Pages 构建时设置 `VITE_API_BASE_URL=https://api.<domain>`
 2. 后端设置 `BACKEND_CORS_ORIGINS=https://app.<domain>`
 3. 若启用 Google OAuth，后端设置 `GOOGLE_ALLOWED_REDIRECT_URIS=https://app.<domain>/auth/google/callback`
-4. 验证 `POST /api/v1/telemetry/errors` 在 Pages origin 下不返回 403
-5. 验证 `/api/v1/chat/query_stream` 在公网 API 路径下保持增量流式输出
+4. 运行 Pages build 后检查 `dist/_headers` 已包含 `Content-Security-Policy-Report-Only`，且 `report-uri` 指向真实 `https://api.<domain>/api/v1/csp/reports`
+5. 验证 `POST /api/v1/telemetry/errors` 在 Pages origin 下不返回 403
+6. 验证 `POST /api/v1/csp/reports` 在 Pages origin 下返回 204
+7. 验证 `/api/v1/chat/query_stream` 在公网 API 路径下保持增量流式输出
