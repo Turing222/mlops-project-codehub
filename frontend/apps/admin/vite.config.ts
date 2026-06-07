@@ -1,9 +1,23 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { visualizer } from 'rollup-plugin-visualizer'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // 构建期 bundle 分析，仅在 ANALYZE 为真时接入，零运行时影响、不干扰常规 build。
+    // 用法：ANALYZE=1 pnpm build → 产出 dist/stats.html。
+    ...(process.env.ANALYZE
+      ? [
+          visualizer({
+            filename: 'dist/stats.html',
+            gzipSize: true,
+            brotliSize: true,
+          }),
+        ]
+      : []),
+  ],
   server: {
     host: '0.0.0.0', // 允许局域网访问（可选）
     port: 5173,      // 指定端口（可选）

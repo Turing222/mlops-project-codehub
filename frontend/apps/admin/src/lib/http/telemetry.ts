@@ -1,4 +1,5 @@
 import { API_URLS, resolveApiUrl } from '../../api/urls';
+import { beaconPost } from './beacon';
 import { AppHttpError } from './errors';
 
 export type FrontendErrorEventType =
@@ -31,6 +32,7 @@ type ReportableAppHttpError = AppHttpError & { requestId: string };
 const DEDUPE_TTL_MS = 5000;
 // Keep payloads within the backend's bounded telemetry schema so events are not dropped as 422.
 const MAX_MESSAGE_LENGTH = 500;
+const MAX_URL_LENGTH = 2048;
 const MAX_METADATA_KEYS = 20;
 const MAX_METADATA_VALUE_LENGTH = 2048;
 const recentReports = new Map<string, number>();
@@ -120,28 +122,7 @@ const boundMetadata = (
 };
 
 export const sendFrontendErrorTelemetry = (payload: FrontendErrorEventPayload): void => {
-    try {
-        const url = resolveApiUrl(API_URLS.TELEMETRY.ERRORS);
-        const body = JSON.stringify(payload);
-
-        if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-            const blob = new Blob([body], { type: 'application/json' });
-            if (navigator.sendBeacon(url, blob)) {
-                return;
-            }
-        }
-
-        if (typeof fetch === 'function') {
-            void fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body,
-                keepalive: true,
-            }).catch(() => undefined);
-        }
-    } catch {
-        // Telemetry must never affect the user-facing request flow.
-    }
+    beaconPost(resolveApiUrl(API_URLS.TELEMETRY.ERRORS), payload);
 };
 
 /**
@@ -151,6 +132,7 @@ export const reportFrontendErrorEvent = (input: FrontendErrorEventInput): void =
     const payload: FrontendErrorEventPayload = {
         ...input,
         message: truncate(input.message, MAX_MESSAGE_LENGTH),
+        url: input.url !== undefined ? truncate(input.url, MAX_URL_LENGTH) : undefined,
         metadata: boundMetadata(input.metadata),
         severity: 'error',
     };

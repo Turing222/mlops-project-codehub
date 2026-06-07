@@ -205,6 +205,24 @@ describe('frontend error telemetry', () => {
         expect(body.message).toHaveLength(500);
     });
 
+    it('truncates an overlong url to the backend bound', () => {
+        const sendBeacon = vi.fn().mockReturnValue(false);
+        const fetchMock = vi.fn().mockResolvedValue(undefined);
+        vi.stubGlobal('navigator', { sendBeacon });
+        vi.stubGlobal('fetch', fetchMock);
+
+        reportFrontendErrorEvent({
+            eventType: 'global_error',
+            message: 'boom',
+            source: 'window_error',
+            url: `https://admin.example.com/${'a'.repeat(3000)}`,
+        });
+
+        const init = fetchMock.mock.calls[0][1] as RequestInit;
+        const body = JSON.parse(init.body as string);
+        expect(body.url).toHaveLength(2048);
+    });
+
     it('bounds metadata to the backend key limit', () => {
         const sendBeacon = vi.fn().mockReturnValue(false);
         const fetchMock = vi.fn().mockResolvedValue(undefined);

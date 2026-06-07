@@ -21,10 +21,10 @@
 - 聊天流已迁入 `src/streams/chat-stream.ts`，页面侧只保留 UI 与状态编排
 - 前端架构文档、标准文档、Make target 和 CI 校验已经建立
 - 前端错误 telemetry 已统一为通用 error event 语义，render/global/promise/stream failure 均已接入上报
+- Web Vitals 指标已走独立 `/telemetry/metrics` 通道上报，bundle composition 已用 `ANALYZE` visualizer 建立体积基线
 
 当前剩余收口点：
 
-- Web Vitals 与 bundle composition 还缺少测量基线
 - 上传等 mutation 已有幂等入口，但仍可继续按业务链路补齐策略说明
 - 日期展示收口和模板化沉淀仍按需推进
 
@@ -280,7 +280,7 @@
 
 1. （已完成）前端 telemetry 语义：通用 frontend error event 区分 API error、client error、chat stream failure；Web Vitals metrics 留独立 metrics 通道，不混入 error log。
 2. （已完成）客户端错误可观测性：render crash、global error、unhandled promise 和 stream failure 均已接入上报。
-3. 测量基线：增加 bundle visualizer 和 Web Vitals baseline。
+3. （已完成）测量基线：bundle visualizer（`ANALYZE` gate，产出 `dist/stats.html`）与 Web Vitals baseline（独立 `/telemetry/metrics` 通道）已建立。
 4. 小范围收口：按真实业务需求补充上传幂等策略、日期展示工具或模板化样例。
 
 ## 每阶段通用验收

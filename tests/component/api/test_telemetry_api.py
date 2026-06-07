@@ -214,3 +214,137 @@ async def test_frontend_error_telemetry_rejects_nested_metadata(
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_frontend_metric_returns_204_and_logs_metric_event(
+    telemetry_client: AsyncClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger=telemetry_api.__name__)
+
+    response = await telemetry_client.post(
+        "/api/v1/telemetry/metrics",
+        json={
+            "name": "LCP",
+            "value": 2300.4,
+            "rating": "good",
+            "id": "v5-lcp-123",
+            "navigationType": "navigate",
+            "url": "https://admin.example.com/dashboard",
+            "page": "/dashboard",
+        },
+        headers={"X-Request-ID": "metric-req-1"},
+    )
+
+    assert response.status_code == 204
+    record = next(
+        item
+        for item in caplog.records
+        if getattr(item, "event", None) == "frontend_metric_reported"
+    )
+    assert record.telemetry_request_id == "metric-req-1"
+    assert record.frontend_metric_name == "LCP"
+    assert record.frontend_metric_value == 2300.4
+    assert record.frontend_metric_rating == "good"
+    assert record.frontend_metric_id == "v5-lcp-123"
+    assert record.frontend_metric_navigation_type == "navigate"
+    assert record.frontend_metric_page == "/dashboard"
+    # metric 通道绝不复用 error 事件名。
+    assert not any(
+        getattr(item, "event", None) == "frontend_error_reported"
+        for item in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_frontend_metric_accepts_bfcache_navigation_type(
+    telemetry_client: AsyncClient,
+) -> None:
+    response = await telemetry_client.post(
+        "/api/v1/telemetry/metrics",
+        json={
+            "name": "CLS",
+            "value": 0.0,
+            "rating": "good",
+            "id": "v5-cls-1",
+            "navigationType": "back-forward-cache",
+        },
+    )
+
+    assert response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_frontend_metric_rejects_invalid_name(
+    telemetry_client: AsyncClient,
+) -> None:
+    response = await telemetry_client.post(
+        "/api/v1/telemetry/metrics",
+        json={
+            "name": "FID",
+            "value": 100.0,
+            "rating": "good",
+            "id": "v5-fid-1",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_frontend_metric_rejects_invalid_rating(
+    telemetry_client: AsyncClient,
+) -> None:
+    response = await telemetry_client.post(
+        "/api/v1/telemetry/metrics",
+        json={
+            "name": "INP",
+            "value": 180.0,
+            "rating": "average",
+            "id": "v5-inp-1",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_frontend_metric_rejects_missing_value(
+    telemetry_client: AsyncClient,
+) -> None:
+    response = await telemetry_client.post(
+        "/api/v1/telemetry/metrics",
+        json={
+            "name": "TTFB",
+            "rating": "good",
+            "id": "v5-ttfb-1",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_frontend_metric_rejects_disallowed_origin(
+    telemetry_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        origin.settings,
+        "BACKEND_CORS_ORIGINS",
+        ["https://admin.example.com"],
+    )
+
+    response = await telemetry_client.post(
+        "/api/v1/telemetry/metrics",
+        json={
+            "name": "LCP",
+            "value": 2300.4,
+            "rating": "good",
+            "id": "v5-lcp-123",
+        },
+        headers={"Origin": "https://evil.example.com"},
+    )
+
+    assert response.status_code == 403

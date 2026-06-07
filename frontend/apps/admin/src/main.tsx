@@ -7,6 +7,7 @@ import {
   registerGlobalErrorHandlers,
   reportI18nInitFailure,
 } from './lib/observability/global-error-handlers'
+import { registerWebVitals } from './lib/observability/web-vitals'
 
 import { initI18n } from './lib/i18n.ts'
 
@@ -21,6 +22,7 @@ const renderApp = () => {
 }
 
 registerGlobalErrorHandlers();
+registerWebVitals();
 
 initI18n()
   .then(renderApp)

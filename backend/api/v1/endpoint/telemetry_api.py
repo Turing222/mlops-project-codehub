@@ -1,7 +1,8 @@
 """Frontend telemetry ingestion endpoints.
 
-职责：接收前端精简错误事件遥测并写入结构化日志。
-边界：本模块不落库、不触发业务流程，也不承担通用前端监控（metrics/Web Vitals）职责。
+职责：接收前端精简错误事件与 Web Vitals 性能指标遥测，并写入结构化日志。
+边界：本模块不落库、不触发业务流程；错误与指标走各自独立的 schema 与日志事件
+（frontend_error_reported / frontend_metric_reported），互不混淆。
 """
 
 import logging
@@ -96,6 +97,80 @@ async def report_frontend_error(
             "frontend_url": payload.url,
             "frontend_method": payload.method,
             "frontend_metadata": payload.metadata,
+        },
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class FrontendMetricName(StrEnum):
+    """Web Vitals 指标名（INP 已取代 FID，本端点不收 FID）。"""
+
+    LCP = "LCP"
+    INP = "INP"
+    CLS = "CLS"
+    FCP = "FCP"
+    TTFB = "TTFB"
+
+
+class FrontendMetricRating(StrEnum):
+    """web-vitals 给出的 good/needs-improvement/poor 阈值评级。"""
+
+    good = "good"
+    needs_improvement = "needs-improvement"
+    poor = "poor"
+
+
+class FrontendMetricNavigationType(StrEnum):
+    """web-vitals Metric.navigationType 全集（含 bfcache/prerender/restore），避免误判 422。"""
+
+    navigate = "navigate"
+    reload = "reload"
+    back_forward = "back-forward"
+    back_forward_cache = "back-forward-cache"
+    prerender = "prerender"
+    restore = "restore"
+
+
+class FrontendMetricTelemetry(BaseModel):
+    """单条 Web Vitals 性能指标事件，与 FrontendErrorTelemetry 完全独立。"""
+
+    name: FrontendMetricName
+    value: Annotated[float, Field(ge=0)]
+    rating: FrontendMetricRating
+    id: Annotated[str, Field(min_length=1, max_length=128)]
+    navigation_type: Annotated[
+        FrontendMetricNavigationType | None, Field(alias="navigationType")
+    ] = None
+    url: Annotated[str | None, Field(max_length=2048)] = None
+    page: Annotated[str | None, Field(max_length=512)] = None
+
+
+@router.post("/metrics", status_code=status.HTTP_204_NO_CONTENT)
+async def report_frontend_metric(
+    payload: FrontendMetricTelemetry,
+    request: Request,
+) -> Response:
+    if not is_allowed_browser_origin(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    telemetry_request_id = getattr(request.state, "request_id", None)
+    # info 级：指标是常规观测信号，不同于 error 通道的 warning。
+    logger.info(
+        "Frontend metric reported",
+        extra={
+            "event": "frontend_metric_reported",
+            "telemetry_request_id": telemetry_request_id,
+            "frontend_metric_name": payload.name.value,
+            "frontend_metric_value": payload.value,
+            "frontend_metric_rating": payload.rating.value,
+            "frontend_metric_id": payload.id,
+            "frontend_metric_navigation_type": (
+                payload.navigation_type.value
+                if payload.navigation_type is not None
+                else None
+            ),
+            "frontend_metric_url": payload.url,
+            "frontend_metric_page": payload.page,
         },
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
