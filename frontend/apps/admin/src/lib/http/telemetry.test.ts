@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { API_URLS } from '../../api/urls';
+import { API_URLS, resolveApiUrl } from '../../api/urls';
 import { AppHttpError } from './errors';
 import {
     reportFrontendHttpError,
@@ -14,6 +14,7 @@ describe('frontend error telemetry', () => {
     });
 
     afterEach(() => {
+        vi.unstubAllEnvs();
         vi.unstubAllGlobals();
         vi.useRealTimers();
     });
@@ -37,7 +38,7 @@ describe('frontend error telemetry', () => {
         );
 
         expect(sendBeacon).toHaveBeenCalledTimes(1);
-        expect(sendBeacon).toHaveBeenCalledWith(API_URLS.TELEMETRY.ERRORS, expect.any(Blob));
+        expect(sendBeacon).toHaveBeenCalledWith(resolveApiUrl(API_URLS.TELEMETRY.ERRORS), expect.any(Blob));
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -82,12 +83,29 @@ describe('frontend error telemetry', () => {
         }).not.toThrow();
 
         expect(fetchMock).toHaveBeenCalledWith(
-            API_URLS.TELEMETRY.ERRORS,
+            resolveApiUrl(API_URLS.TELEMETRY.ERRORS),
             expect.objectContaining({
                 method: 'POST',
                 keepalive: true,
-                credentials: 'same-origin',
             }),
+        );
+    });
+
+    it('uses absolute telemetry URLs when VITE_API_BASE_URL is configured', () => {
+        const sendBeacon = vi.fn().mockReturnValue(true);
+        vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.com');
+        vi.stubGlobal('navigator', { sendBeacon });
+
+        sendFrontendErrorTelemetry({
+            message: 'Internal Server Error',
+            status: 500,
+            errorCode: 'server',
+            requestId: 'req-500',
+        });
+
+        expect(sendBeacon).toHaveBeenCalledWith(
+            'https://api.example.com/api/v1/telemetry/errors',
+            expect.any(Blob),
         );
     });
 

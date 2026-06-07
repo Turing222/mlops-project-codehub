@@ -10,7 +10,7 @@ import {
     sessionListResponseSchema,
 } from '../schemas/chat';
 import { parseWithSchema } from '../schemas/parse';
-import { API_URLS } from './urls';
+import { API_URLS, resolveApiUrl } from './urls';
 
 export interface ChatQueryOptions {
     query: string;
@@ -50,7 +50,8 @@ export const sendQueryStreamAPI = async (options: ChatQueryOptions): Promise<Res
         client_request_id: resolvedClientRequestId,
         enable_external_context: options.enableExternalContext ?? false,
     });
-    const res = await fetch(API_URLS.CHAT.QUERY_STREAM, {
+    const streamUrl = resolveApiUrl(API_URLS.CHAT.QUERY_STREAM);
+    const res = await fetch(streamUrl, {
         method: 'POST',
         headers: createAuthorizedHeaders({
             'Content-Type': 'application/json',
@@ -64,7 +65,7 @@ export const sendQueryStreamAPI = async (options: ChatQueryOptions): Promise<Res
             status: res.status,
             statusText: res.statusText,
             requestId: getRequestIdFromHeaders(res.headers),
-            url: API_URLS.CHAT.QUERY_STREAM,
+            url: streamUrl,
             method: 'POST',
         });
 

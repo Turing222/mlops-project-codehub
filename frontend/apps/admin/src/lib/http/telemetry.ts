@@ -1,4 +1,4 @@
-import { API_URLS } from '../../api/urls';
+import { API_URLS, resolveApiUrl } from '../../api/urls';
 import { AppHttpError } from './errors';
 
 type FrontendErrorTelemetryPayload = {
@@ -50,22 +50,22 @@ const shouldReport = (payload: FrontendErrorTelemetryPayload, now = Date.now()):
 
 export const sendFrontendErrorTelemetry = (payload: FrontendErrorTelemetryPayload): void => {
     try {
+        const url = resolveApiUrl(API_URLS.TELEMETRY.ERRORS);
         const body = JSON.stringify(payload);
 
         if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
             const blob = new Blob([body], { type: 'application/json' });
-            if (navigator.sendBeacon(API_URLS.TELEMETRY.ERRORS, blob)) {
+            if (navigator.sendBeacon(url, blob)) {
                 return;
             }
         }
 
         if (typeof fetch === 'function') {
-            void fetch(API_URLS.TELEMETRY.ERRORS, {
+            void fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body,
                 keepalive: true,
-                credentials: 'same-origin',
             }).catch(() => undefined);
         }
     } catch {

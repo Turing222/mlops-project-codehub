@@ -1,5 +1,6 @@
 import axios, { AxiosHeaders } from 'axios';
 
+import { resolveApiUrl } from '../../api/urls';
 import { getAccessToken, handleUnauthorized } from './auth';
 import { normalizeHttpError, notifyHttpError } from './errors';
 import { IDEMPOTENCY_KEY_HEADER, resolveIdempotencyKey } from './idempotency';
@@ -38,6 +39,10 @@ httpClient.interceptors.request.use(
     (config) => {
         const headers = AxiosHeaders.from(config.headers);
         const token = getAccessToken();
+
+        if (config.url) {
+            config.url = resolveApiUrl(config.url);
+        }
 
         if (token && !headers.has('Authorization')) {
             headers.set('Authorization', `Bearer ${token}`);

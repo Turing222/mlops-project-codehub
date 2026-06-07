@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { sendQueryStreamAPI } from './chat';
-import { API_URLS } from './urls';
+import { API_URLS, getApiBaseUrl, resolveApiUrl } from './urls';
 import request, { createAuthorizedHeaders } from '../lib/http/client';
 import { AUTH_UNAUTHORIZED_EVENT, notifyUnauthorized } from '../lib/http/auth';
 import { normalizeHttpError } from '../lib/http/errors';
@@ -10,9 +10,21 @@ import { REQUEST_ID_HEADER } from '../lib/http/trace';
 import { useAuthStore } from '../stores/auth-store';
 
 describe('request configuration', () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.unstubAllGlobals();
+    });
+
     it('uses explicit /api/v1 routes without duplicating the api prefix', () => {
         expect(request.getUri({ url: API_URLS.AUTH.LOGIN })).toBe('/api/v1/auth/login');
         expect(request.getUri({ url: API_URLS.USER.ME })).toBe('/api/v1/users/me');
+    });
+
+    it('resolves API URLs against VITE_API_BASE_URL when configured', () => {
+        vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.com/');
+
+        expect(getApiBaseUrl()).toBe('https://api.example.com');
+        expect(resolveApiUrl(API_URLS.AUTH.LOGIN)).toBe('https://api.example.com/api/v1/auth/login');
     });
 
     it('injects authorization and request id headers for outgoing requests', () => {
@@ -74,6 +86,28 @@ describe('request configuration', () => {
             client_request_id: 'cid-1',
             enable_external_context: false,
         });
+    });
+
+    it('uses absolute stream URLs when VITE_API_BASE_URL is configured', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response('', {
+                status: 200,
+                statusText: 'OK',
+            }),
+        );
+
+        vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.com');
+        useAuthStore.getState().setToken('test-token');
+        vi.stubGlobal('fetch', fetchMock);
+
+        await sendQueryStreamAPI({ query: 'hello' });
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            'https://api.example.com/api/v1/chat/query_stream',
+            expect.objectContaining({
+                method: 'POST',
+            }),
+        );
     });
 
     it('normalizes HTTP errors to a stable frontend shape', () => {

@@ -1,5 +1,23 @@
 const API_PREFIX = '/api/v1';
 
+const normalizeApiBaseUrl = (value: string | undefined): string => {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+        return '';
+    }
+    return trimmed.replace(/\/+$/, '');
+};
+
+export const getApiBaseUrl = (): string => normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+
+export const resolveApiUrl = (path: string): string => {
+    const apiBaseUrl = getApiBaseUrl();
+    if (!apiBaseUrl) {
+        return path;
+    }
+    return new URL(path, `${apiBaseUrl}/`).toString();
+};
+
 export const API_URLS = {
     AUTH: {
         LOGIN: `${API_PREFIX}/auth/login`,
