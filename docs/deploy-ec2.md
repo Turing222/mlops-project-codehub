@@ -24,9 +24,37 @@ EC2 默认部署栈包含：
 
 其中：
 
-- `frontend` 是默认公网入口，并继续通过 `/api/` 反向代理后端 API。
 - `api` / `db_migrator` / `task_worker` 共享同一套后端运行时配置。
 - `STORAGE_BACKEND=s3` 时，优先让 boto3 走 **EC2 instance profile / 默认 credential chain**，不要在部署文件中长期写死 AWS AK/SK。
+- 当生产前端切到 **Cloudflare Pages** 时，EC2 中的 `frontend` 容器不再代表正式公网入口，而是作为本地演练、回滚预案或自托管 fallback 使用。
+
+## 前端上线拓扑（Cloudflare Pages + 独立 API）
+
+当前推荐的上线形态是：
+
+- Frontend：`https://app.<domain>`（Cloudflare Pages）
+- API：`https://api.<domain>`（AWS / 自托管入口）
+- API 对外路径保持 `/api/v1/...`
+
+职责分工：
+
+- **Cloudflare Pages / Cloudflare edge** 负责：
+  - 前端静态资源托管
+  - TLS / HTTPS
+  - 域名接入
+  - SPA fallback（通过 `_redirects`）
+  - 基础安全头与静态缓存（通过 `_headers`）
+- **AWS / 自托管 API 入口** 负责：
+  - `https://api.<domain>/api/v1/...` 暴露
+  - streaming / SSE 兼容
+  - 长 timeout 与 anti-buffering 策略
+  - API request tracing / 访问日志
+- **仓库中的 `frontend/apps/admin/nginx.conf`** 仅继续服务：
+  - 本地 Compose 验证
+  - 生产镜像演练
+  - Pages 回滚时的容器前端 fallback
+
+这意味着 Pages 正式启用后，不应再把 `frontend` 容器当成默认公网入口，也不应再假设前端通过同源 `/api/` 反代后端。
 
 ## 前置条件
 
@@ -60,13 +88,24 @@ cp deploy/.env.ec2.template deploy/.env.ec2
 - `S3_BUCKET`
 - `LLM_PROVIDER` / `RAG_EMBED_PROVIDER`
 - `DEPLOY_BASE_URL`
+- `DEPLOY_FRONTEND_BASE_URL`
 - `DEPLOY_PULL_IMAGES`
+- `BACKEND_CORS_ORIGINS`
 
 如果当前版本暂不开放 Google 登录，保持 `GOOGLE_OAUTH_ENABLED=false` 即可；后续启用时再补 `GOOGLE_CLIENT_ID`、`GOOGLE_ALLOWED_REDIRECT_URIS` 和 `secrets/ec2/google_client_secret.txt`。
 
-> 说明：如果在 EC2 本机执行验证，`DEPLOY_BASE_URL=http://localhost` 通常就够了；如果希望验证公网域名，也可以改成真实域名。
+如果前端已经部署到 Cloudflare Pages，至少要同步以下配置：
+
+- `DEPLOY_BASE_URL=https://api.<domain>`
+- `DEPLOY_FRONTEND_BASE_URL=https://app.<domain>`
+- `BACKEND_CORS_ORIGINS=https://app.<domain>`（如果有 `pages.dev` 预发域名，可在上线窗口临时一并加入）
+- `GOOGLE_ALLOWED_REDIRECT_URIS=https://app.<domain>/auth/google/callback`（仅在启用 Google OAuth 时）
+
+> 说明：如果在 EC2 本机执行验证，`DEPLOY_BASE_URL=http://localhost`、`DEPLOY_FRONTEND_BASE_URL=http://localhost` 通常就够了；如果希望验证公网域名，也可以改成真实域名。
 >
 > `make deploy-ec2-*` 会自动把真实 deploy env 文件路径注入给 compose；只有在你把 deploy env 文件移到其他位置时，才需要通过 `DEPLOY_ENV_FILE=...` 覆盖默认路径。`DEPLOY_*` 控制项和镜像名可以用临时 shell 环境变量覆盖；secret 值应写入 EC2 专用 secret 文件，不写进 `deploy/.env.ec2`。
+>
+> 当前端已经切到 Cloudflare Pages 时，`DEPLOY_BASE_URL` 应理解为 **API 验证入口**，`DEPLOY_FRONTEND_BASE_URL` 才是前端 Pages 站点入口。二者可以不同域名。
 
 ## Secret 文件
 
@@ -154,9 +193,11 @@ make deploy-ec2-wait
 
 默认会检查：
 
-- frontend health: `/healthz`
-- API liveness: `/api/v1/health_check/live`
-- API DB readiness: `/api/v1/health_check/db_ready`
+- frontend health: `${DEPLOY_FRONTEND_BASE_URL}${DEPLOY_FRONTEND_HEALTH_PATH}`
+- API liveness: `${DEPLOY_BASE_URL}${DEPLOY_API_LIVE_PATH}`
+- API DB readiness: `${DEPLOY_BASE_URL}${DEPLOY_API_READY_PATH}`
+
+当生产前端已经切到 Cloudflare Pages 时，建议把 `DEPLOY_FRONTEND_HEALTH_PATH` 保持为 `/healthz`，并让 Pages 静态产物提供简单 `healthz` 文件，用于上线探活。
 
 ### 5. 跑部署后 smoke 验证
 
@@ -194,6 +235,103 @@ make deploy-ec2-down
 
 如果要连 volume 一起删除，可在后续通过环境变量扩展控制。
 
+## 生产数据库备份与恢复（RDS）
+
+如果生产数据库使用 **Amazon RDS for PostgreSQL**，备份责任在 RDS 控制面，而不在本仓库的 Compose `postgres` 容器脚本中。也就是说：
+
+- 本地 / smoke / 演练环境仍可使用 Compose `postgres`。
+- 生产库备份不依赖容器内 `pg_dump` 定时脚本，也不依赖 EBS volume snapshot。
+- 生产侧应使用 RDS 自带的 automated backups、DB snapshots 和 restore 流程。
+
+### 当前状态
+
+- 当前仓库中的 `postgres` 服务只属于 [deploy/docker-compose.yml](../deploy/docker-compose.yml) 的本地 / 自管形态，不应被当成 RDS 生产备份策略的一部分。
+- 如果生产库已经迁到 RDS，那么之前删除的容器内数据库备份脚本不需要恢复到当前生产入口。
+
+### 条件成立时可用
+
+当生产数据库是 RDS 时，建议至少启用以下能力：
+
+1. **Automated Backups**：开启自动备份，并设置合适的 retention period。
+2. **Point-in-Time Recovery (PITR)**：确保可以恢复到误操作前的时间点。
+3. **Manual DB Snapshot**：在高风险操作前手动打快照，例如：
+   - 大版本升级
+   - schema migration
+   - 大批量数据修复
+   - 不可逆发布
+4. **Restore drill**：定期验证能否从 automated backup / snapshot 恢复出可用实例。
+
+### 推荐做法
+
+- 日常依赖 **RDS automated backups + PITR** 作为主备份方案。
+- 在高风险变更前创建 **manual DB snapshot** 作为静态锚点。
+- 如果有跨 Region / 合规保留要求，再评估 **AWS Backup** 或跨 Region backup 策略。
+- 在部署或发布 runbook 中明确：哪些变更必须先打 snapshot，再执行迁移或发布。
+
+### 不建议的做法
+
+- 不要把 Compose `postgres` 的备份方式直接等同于生产 RDS 的备份方式。
+- 不要仅依赖“有自动备份”这一个事实，而不做恢复演练；没有 restore drill，备份策略就不算闭环。
+- 不要在生产路径里恢复旧的容器内数据库备份脚本，除非未来重新回到 self-managed PostgreSQL on EC2。
+
+### 发布前 checklist（RDS）
+
+在以下操作前，默认执行一次 **manual DB snapshot**：
+
+- schema migration
+- 大版本升级
+- 批量数据修复 / backfill
+- 任何不可逆发布
+
+推荐检查顺序：
+
+1. 确认目标是**生产 RDS 实例**，记录 `DB instance identifier`、Region 和变更单号。
+2. 确认 **automated backups 已开启**，且 retention period 不是 0。
+3. 确认最近一次自动备份状态正常，没有实例正在进行其他高风险维护操作。
+4. 创建 **manual DB snapshot**，命名里带上环境、日期和变更标识，例如 `prod-2026-06-07-before-migration-<ticket>`。
+5. 等待 snapshot 进入 `available` 状态，再执行 migration / 发布。
+6. 在发布记录中写明：
+   - 使用的 snapshot 名称
+   - 开始变更时间
+   - 执行人
+7. 发布完成后，确认应用 smoke、核心查询和连接池状态正常。
+
+### 故障时怎么选恢复方式
+
+- **误删 / 数据写坏，但希望回到某个时间点** → 优先用 **PITR**。
+- **高风险变更刚完成，想回到变更前固定状态** → 优先用 **manual snapshot restore**。
+- **只想恢复单个库 / 单张表 / 少量数据** → 不要先整库覆盖；先从 snapshot 或 PITR **恢复到一台新实例**，再导出需要的数据回灌。
+
+默认原则：**先恢复到新实例验证，再决定是否切换生产流量**，不要直接对生产实例做覆盖式操作。
+
+### Restore drill checklist
+
+建议至少按固定节奏（例如每月或每个大版本前）做一次恢复演练。
+
+推荐检查顺序：
+
+1. 选择一个最近的 automated backup 或 manual snapshot。
+2. 将其**恢复到新的临时 RDS 实例**，不要直接覆盖生产实例。
+3. 为临时实例配置最小必要的网络访问（Security Group / 子网 / 跳板访问路径），避免直接暴露公网。
+4. 验证以下项目：
+   - 能正常连接数据库
+   - 关键 schema / extension / role 存在
+   - 应用最小 smoke query 可执行
+   - 关键业务表有合理数据量
+5. 记录本次演练的：
+   - 恢复耗时（RTO）
+   - 可接受的数据回退窗口（RPO）
+   - 是否需要额外的参数组、白名单或应用切换步骤
+6. 演练完成后，删除临时实例，避免持续计费。
+
+### 建议额外沉淀到运行手册里的信息
+
+- 生产 RDS 实例名 / ARN 对照表
+- snapshot 命名约定
+- 谁能创建 snapshot、谁能执行 restore
+- 发布前“是否需要 snapshot”的判定规则
+- 恢复后的应用切换步骤（连接串、只读验证、回切条件）
+
 ## Bifrost Gateway
 
 [deploy/docker-compose.yml](../deploy/docker-compose.yml) 保留了 Bifrost gateway 服务，但默认作为 **可选 profile** 关闭。
@@ -216,7 +354,19 @@ export DEPLOY_ENABLE_BIFROST=true
 
 [deploy/docker-compose.yml](../deploy/docker-compose.yml) 中的 observability 服务默认是 **可选 profile**，而不是默认启动。
 
-如果确实要启用，可以在运行前设置：
+### 当前状态
+
+- 当前生产部署路径以 EC2 + 云端托管监控服务为准；`deploy/monitoring/` 下的 Prometheus / Grafana / Loki 资产主要用于本地自托管观察与排障，不是 AWS 生产监控的 source of truth。
+- 默认 `deploy-ec2-up` 不会启动 self-hosted observability profile。
+- 当前 EC2 observability profile 的真实能力边界是：
+  - metrics 通过 backend OTLP exporter **直接推到 Prometheus receiver**（`OTEL_METRICS_ENDPOINT=http://prometheus:9090/api/v1/otlp`）
+  - traces 默认关闭；active EC2 stack **没有** `otel-collector` / trace backend
+  - [deploy/monitoring/alert_rules.yml](../deploy/monitoring/alert_rules.yml) 会被加载，但当前 **没有 Alertmanager / alert delivery path**
+  - Prometheus 目前抓取的是 `prometheus`、`api`、`postgres_exporter`、`redis_exporter`；**不包含 worker app metrics**
+
+### 条件成立时可用
+
+如果确实要在本地或自托管环境启用这套 observability profile，可以在运行前设置：
 
 ```bash
 export DEPLOY_ENABLE_OBSERVABILITY=true
@@ -224,13 +374,17 @@ export DEPLOY_ENABLE_OBSERVABILITY=true
 
 然后再执行 `make deploy-ec2-up`。
 
+### 目标态说明
+
+后续如果需要统一本地自托管栈与 AWS 云端监控，应优先统一 `event` / `error_code` / `request_id` / `trace_id` / OTLP endpoint / health endpoint 等应用层合同，而不是要求两边复用同一套 compose service host、Prometheus scrape wiring 或 Grafana datasource 配置。
+
 ## 与本地 smoke 的边界
 
 请保持以下职责分离：
 
 - [deploy/docker-compose.yml](../deploy/docker-compose.yml) → **EC2 / 正式部署入口**
 - [deploy/docker-compose.local-s3.yml](../deploy/docker-compose.local-s3.yml) → **本地生产形态演练，使用 MinIO 模拟 S3**
-- [docker-compose.db.yml](../docker-compose.db.yml) → **本地 / CI smoke 和测试环境**
+- [docker-compose.db.yml](../docker-compose.db.yml) → **本地 / CI smoke 和测试环境**（包含 `otel-collector` 等 smoke-only 组件）
 
 不要把两者重新揉成一套，否则会让部署面和测试面相互污染。
 

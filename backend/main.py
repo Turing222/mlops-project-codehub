@@ -78,6 +78,7 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_credentials=True,
         allow_methods=settings.BACKEND_CORS_METHODS,
         allow_headers=settings.BACKEND_CORS_HEADERS,
+        expose_headers=settings.BACKEND_CORS_EXPOSE_HEADERS,
     )
 app.add_middleware(PayloadLimitMiddleware)  # type: ignore[arg-type]
 

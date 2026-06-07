@@ -16,8 +16,14 @@ from backend.config.ai_settings import _env_files
 
 DEFAULT_SECRET_KEY = "local-dev-secret"  # noqa: S105
 PRODUCTION_APP_ENVS = {"prod", "production"}
-PRODUCTION_CORS_METHODS = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-PRODUCTION_CORS_HEADERS = ["Authorization", "Content-Type", "X-Request-ID"]
+PRODUCTION_CORS_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+PRODUCTION_CORS_HEADERS = [
+    "Authorization",
+    "Content-Type",
+    "X-Request-ID",
+    "X-Idempotency-Key",
+]
+PRODUCTION_CORS_EXPOSE_HEADERS = ["X-Request-ID", "X-Trace-ID", "X-Process-Time"]
 MIN_NON_LOCAL_SECRET_KEY_LENGTH = 32
 
 
@@ -49,10 +55,14 @@ def _default_cors_headers() -> list[str]:
     return ["*"]
 
 
-def _cors_defaults_for_env(app_env: str) -> tuple[list[str], list[str]]:
+def _cors_defaults_for_env(app_env: str) -> tuple[list[str], list[str], list[str]]:
     if is_production_app_env(app_env):
-        return PRODUCTION_CORS_METHODS.copy(), PRODUCTION_CORS_HEADERS.copy()
-    return ["*"], ["*"]
+        return (
+            PRODUCTION_CORS_METHODS.copy(),
+            PRODUCTION_CORS_HEADERS.copy(),
+            PRODUCTION_CORS_EXPOSE_HEADERS.copy(),
+        )
+    return ["*"], ["*"], PRODUCTION_CORS_EXPOSE_HEADERS.copy()
 
 
 class WebSettings(BaseSettings):
@@ -110,6 +120,9 @@ class WebSettings(BaseSettings):
     BACKEND_CORS_HEADERS: Annotated[list[str], NoDecode] = Field(
         default_factory=_default_cors_headers
     )
+    BACKEND_CORS_EXPOSE_HEADERS: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: PRODUCTION_CORS_EXPOSE_HEADERS.copy()
+    )
 
     model_config = SettingsConfigDict(
         env_file=_env_files(),
@@ -125,9 +138,10 @@ class WebSettings(BaseSettings):
             return data
         values = dict(data)
         app_env = str(values.get("APP_ENV") or _current_app_env())
-        default_methods, default_headers = _cors_defaults_for_env(app_env)
+        default_methods, default_headers, default_expose_headers = _cors_defaults_for_env(app_env)
         values.setdefault("BACKEND_CORS_METHODS", default_methods)
         values.setdefault("BACKEND_CORS_HEADERS", default_headers)
+        values.setdefault("BACKEND_CORS_EXPOSE_HEADERS", default_expose_headers)
         return values
 
     @field_validator("SECRET_KEY")
@@ -152,6 +166,7 @@ class WebSettings(BaseSettings):
         "BACKEND_CORS_ORIGINS",
         "BACKEND_CORS_METHODS",
         "BACKEND_CORS_HEADERS",
+        "BACKEND_CORS_EXPOSE_HEADERS",
         "GOOGLE_ALLOWED_REDIRECT_URIS",
         mode="before",
     )
@@ -179,9 +194,8 @@ class WebSettings(BaseSettings):
                     f"SECRET_KEY is short ({len(secret_key)} chars); "
                     "use >=32 chars for non-local environments"
                 )
-        if is_production_app_env(self.APP_ENV):
-            if self.SMS_MOCK_MODE:
-                raise ValueError("SMS_MOCK_MODE must be False in production")
+        if is_production_app_env(self.APP_ENV) and self.SMS_MOCK_MODE:
+            raise ValueError("SMS_MOCK_MODE must be False in production")
         if self.GOOGLE_OAUTH_ENABLED:
             if not self.GOOGLE_CLIENT_ID.strip():
                 raise ValueError(

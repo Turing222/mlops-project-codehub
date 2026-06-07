@@ -8,6 +8,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.testclient import TestClient
 
 from backend.config.settings import Settings
 from backend.config.web_settings import DEFAULT_SECRET_KEY, get_web_settings
@@ -191,12 +194,66 @@ def test_cors_defaults_are_restricted_for_production(
 
     settings = Settings(_env_file=None)
 
-    assert settings.BACKEND_CORS_METHODS == ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    assert settings.BACKEND_CORS_METHODS == [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+    ]
     assert settings.BACKEND_CORS_HEADERS == [
         "Authorization",
         "Content-Type",
         "X-Request-ID",
+        "X-Idempotency-Key",
     ]
+
+
+def test_production_cors_defaults_allow_frontend_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.delenv("BACKEND_CORS_METHODS", raising=False)
+    monkeypatch.delenv("BACKEND_CORS_HEADERS", raising=False)
+    monkeypatch.setenv("SECRET_KEY", PROD_SECRET_KEY)
+    monkeypatch.setenv("BACKEND_CORS_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("GOOGLE_ALLOWED_REDIRECT_URIS", "https://example.com/callback")
+
+    settings = Settings(_env_file=None)
+    app = FastAPI()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.BACKEND_CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=settings.BACKEND_CORS_METHODS,
+        allow_headers=settings.BACKEND_CORS_HEADERS,
+    )
+    client = TestClient(app)
+
+    patch_response = client.options(
+        "/",
+        headers={
+            "Origin": "https://app.example.com",
+            "Access-Control-Request-Method": "PATCH",
+            "Access-Control-Request-Headers": (
+                "authorization,content-type,x-request-id"
+            ),
+        },
+    )
+    idempotent_post_response = client.options(
+        "/",
+        headers={
+            "Origin": "https://app.example.com",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": (
+                "authorization,content-type,x-request-id,x-idempotency-key"
+            ),
+        },
+    )
+
+    assert patch_response.status_code == 200
+    assert idempotent_post_response.status_code == 200
 
 
 def test_google_oauth_can_be_disabled_in_production(
@@ -259,11 +316,19 @@ def test_cors_defaults_follow_yaml_app_env(
     settings = Settings()
 
     assert settings.APP_ENV == "production"
-    assert settings.BACKEND_CORS_METHODS == ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    assert settings.BACKEND_CORS_METHODS == [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+    ]
     assert settings.BACKEND_CORS_HEADERS == [
         "Authorization",
         "Content-Type",
         "X-Request-ID",
+        "X-Idempotency-Key",
     ]
 
 

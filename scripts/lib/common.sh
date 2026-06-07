@@ -22,10 +22,27 @@ SMOKE_REQUIRED_VOLUME_NAMES=(
     prod_db_volume_test
     knowledge_files_volume_test
 )
+DEPLOY_COMPOSE_FILE_EXPLICIT="${DEPLOY_COMPOSE_FILE+x}"
+DEPLOY_EXTRA_COMPOSE_FILES_EXPLICIT="${DEPLOY_EXTRA_COMPOSE_FILES+x}"
+DEPLOY_BASE_URL_EXPLICIT="${DEPLOY_BASE_URL+x}"
+DEPLOY_FRONTEND_BASE_URL_EXPLICIT="${DEPLOY_FRONTEND_BASE_URL+x}"
+DEPLOY_FRONTEND_HEALTH_PATH_EXPLICIT="${DEPLOY_FRONTEND_HEALTH_PATH+x}"
+DEPLOY_API_LIVE_PATH_EXPLICIT="${DEPLOY_API_LIVE_PATH+x}"
+DEPLOY_API_READY_PATH_EXPLICIT="${DEPLOY_API_READY_PATH+x}"
+DEPLOY_ENABLE_BIFROST_EXPLICIT="${DEPLOY_ENABLE_BIFROST+x}"
+DEPLOY_ENABLE_OBSERVABILITY_EXPLICIT="${DEPLOY_ENABLE_OBSERVABILITY+x}"
+DEPLOY_PULL_IMAGES_EXPLICIT="${DEPLOY_PULL_IMAGES+x}"
+DEPLOY_LOG_TAIL_EXPLICIT="${DEPLOY_LOG_TAIL+x}"
+DEPLOY_SECRET_DIR_EXPLICIT="${DEPLOY_SECRET_DIR+x}"
+DEPLOY_SMOKE_PYTEST_TARGETS_EXPLICIT="${DEPLOY_SMOKE_PYTEST_TARGETS+x}"
+DOCKER_IMAGE_NAME_WEB_EXPLICIT="${DOCKER_IMAGE_NAME_WEB+x}"
+DOCKER_IMAGE_NAME_AI_EXPLICIT="${DOCKER_IMAGE_NAME_AI+x}"
+DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT="${DOCKER_IMAGE_NAME_FRONTEND+x}"
 DEPLOY_COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-deploy/docker-compose.yml}"
 DEPLOY_EXTRA_COMPOSE_FILES="${DEPLOY_EXTRA_COMPOSE_FILES:-}"
 DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-deploy/.env.ec2}"
 DEPLOY_BASE_URL="${DEPLOY_BASE_URL:-http://localhost}"
+DEPLOY_FRONTEND_BASE_URL="${DEPLOY_FRONTEND_BASE_URL:-}"
 DEPLOY_FRONTEND_HEALTH_PATH="${DEPLOY_FRONTEND_HEALTH_PATH:-/healthz}"
 DEPLOY_API_LIVE_PATH="${DEPLOY_API_LIVE_PATH:-/api/v1/health_check/live}"
 DEPLOY_API_READY_PATH="${DEPLOY_API_READY_PATH:-/api/v1/health_check/db_ready}"
@@ -348,13 +365,49 @@ deploy_env_value() {
 deploy_control_env_value() {
     local name="$1"
     local default_value="$2"
+    local explicit_marker="${name}_EXPLICIT"
 
-    if [[ -n "${!name:-}" ]]; then
+    if [[ -n "${!explicit_marker:-}" && -n "${!name:-}" && "${!name}" != "$default_value" ]]; then
         printf '%s\n' "${!name}"
         return
     fi
 
-    deploy_env_value "$name" "$default_value"
+    deploy_env_file_value "$name" "$default_value"
+}
+
+deploy_env_file_value() {
+    local name="$1"
+    local default_value="$2"
+    local deploy_env_path
+    local value
+
+    deploy_env_path="$(resolve_project_path "$DEPLOY_ENV_FILE")"
+    if [[ -f "$deploy_env_path" ]]; then
+        if value="$(
+            awk -F= -v key="$name" '
+                $0 !~ /^[[:space:]]*#/ && $1 == key {
+                    sub(/^[^=]*=/, "")
+                    print
+                    found = 1
+                    exit
+                }
+                END {
+                    if (!found) {
+                        exit 1
+                    }
+                }
+            ' "$deploy_env_path"
+        )"; then
+            value="${value%\"}"
+            value="${value#\"}"
+            value="${value%\'}"
+            value="${value#\'}"
+            printf '%s\n' "$value"
+            return
+        fi
+    fi
+
+    printf '%s\n' "$default_value"
 }
 
 deploy_secret_file_path() {
@@ -368,20 +421,21 @@ deploy_secret_file_path() {
 load_deploy_env() {
     require_deploy_env_file
 
-    DEPLOY_SECRET_DIR="$(deploy_control_env_value "DEPLOY_SECRET_DIR" "$DEPLOY_SECRET_DIR")"
-    DEPLOY_EXTRA_COMPOSE_FILES="$(deploy_control_env_value "DEPLOY_EXTRA_COMPOSE_FILES" "$DEPLOY_EXTRA_COMPOSE_FILES")"
-    DEPLOY_BASE_URL="$(deploy_control_env_value "DEPLOY_BASE_URL" "$DEPLOY_BASE_URL")"
-    DEPLOY_FRONTEND_HEALTH_PATH="$(deploy_control_env_value "DEPLOY_FRONTEND_HEALTH_PATH" "$DEPLOY_FRONTEND_HEALTH_PATH")"
-    DEPLOY_API_LIVE_PATH="$(deploy_control_env_value "DEPLOY_API_LIVE_PATH" "$DEPLOY_API_LIVE_PATH")"
-    DEPLOY_API_READY_PATH="$(deploy_control_env_value "DEPLOY_API_READY_PATH" "$DEPLOY_API_READY_PATH")"
-    DEPLOY_ENABLE_BIFROST="$(deploy_control_env_value "DEPLOY_ENABLE_BIFROST" "${DEPLOY_ENABLE_BIFROST:-false}")"
-    DEPLOY_ENABLE_OBSERVABILITY="$(deploy_control_env_value "DEPLOY_ENABLE_OBSERVABILITY" "${DEPLOY_ENABLE_OBSERVABILITY:-false}")"
+    DEPLOY_SECRET_DIR="$(deploy_control_env_value "DEPLOY_SECRET_DIR" "secrets/ec2")"
+    DEPLOY_EXTRA_COMPOSE_FILES="$(deploy_control_env_value "DEPLOY_EXTRA_COMPOSE_FILES" "")"
+    DEPLOY_BASE_URL="$(deploy_control_env_value "DEPLOY_BASE_URL" "http://localhost")"
+    DEPLOY_FRONTEND_BASE_URL="$(deploy_control_env_value "DEPLOY_FRONTEND_BASE_URL" "$DEPLOY_BASE_URL")"
+    DEPLOY_FRONTEND_HEALTH_PATH="$(deploy_control_env_value "DEPLOY_FRONTEND_HEALTH_PATH" "/healthz")"
+    DEPLOY_API_LIVE_PATH="$(deploy_control_env_value "DEPLOY_API_LIVE_PATH" "/api/v1/health_check/live")"
+    DEPLOY_API_READY_PATH="$(deploy_control_env_value "DEPLOY_API_READY_PATH" "/api/v1/health_check/db_ready")"
+    DEPLOY_ENABLE_BIFROST="$(deploy_control_env_value "DEPLOY_ENABLE_BIFROST" "false")"
+    DEPLOY_ENABLE_OBSERVABILITY="$(deploy_control_env_value "DEPLOY_ENABLE_OBSERVABILITY" "false")"
     DEPLOY_PULL_IMAGES="$(deploy_control_env_value "DEPLOY_PULL_IMAGES" "${DEPLOY_PULL_IMAGES:-false}")"
-    DEPLOY_LOG_TAIL="$(deploy_control_env_value "DEPLOY_LOG_TAIL" "$DEPLOY_LOG_TAIL")"
+    DEPLOY_LOG_TAIL="$(deploy_control_env_value "DEPLOY_LOG_TAIL" "200")"
     DEPLOY_SMOKE_PYTEST_TARGETS="$(deploy_control_env_value "DEPLOY_SMOKE_PYTEST_TARGETS" "$DEPLOY_SMOKE_PYTEST_TARGETS")"
-    DOCKER_IMAGE_NAME_WEB="$(deploy_control_env_value "DOCKER_IMAGE_NAME_WEB" "${DOCKER_IMAGE_NAME_WEB:-dewflow-backend:2.0.0-web}")"
-    DOCKER_IMAGE_NAME_AI="$(deploy_control_env_value "DOCKER_IMAGE_NAME_AI" "${DOCKER_IMAGE_NAME_AI:-dewflow-backend:2.0.0-ai}")"
-    DOCKER_IMAGE_NAME_FRONTEND="$(deploy_control_env_value "DOCKER_IMAGE_NAME_FRONTEND" "${DOCKER_IMAGE_NAME_FRONTEND:-dewflow-frontend:2.0.0}")"
+    DOCKER_IMAGE_NAME_WEB="$(deploy_control_env_value "DOCKER_IMAGE_NAME_WEB" "dewflow-backend:2.0.0-web")"
+    DOCKER_IMAGE_NAME_AI="$(deploy_control_env_value "DOCKER_IMAGE_NAME_AI" "dewflow-backend:2.0.0-ai")"
+    DOCKER_IMAGE_NAME_FRONTEND="$(deploy_control_env_value "DOCKER_IMAGE_NAME_FRONTEND" "dewflow-frontend:2.0.0")"
     DEPLOY_SECRET_KEY_FILE="$(deploy_secret_file_path "DEPLOY_SECRET_KEY_FILE" "secret_key.txt")"
     DEPLOY_POSTGRES_PASSWORD_FILE="$(deploy_secret_file_path "DEPLOY_POSTGRES_PASSWORD_FILE" "postgres_password.txt")"
     DEPLOY_REDIS_PASSWORD_FILE="$(deploy_secret_file_path "DEPLOY_REDIS_PASSWORD_FILE" "redis_password.txt")"
@@ -410,6 +464,7 @@ load_deploy_env() {
     export DEPLOY_SECRET_DIR
     export DEPLOY_EXTRA_COMPOSE_FILES
     export DEPLOY_BASE_URL
+    export DEPLOY_FRONTEND_BASE_URL
     export DEPLOY_FRONTEND_HEALTH_PATH
     export DEPLOY_API_LIVE_PATH
     export DEPLOY_API_READY_PATH

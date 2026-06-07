@@ -12,7 +12,7 @@ load_deploy_env
 
 log_section "Waiting for EC2 deploy endpoints"
 
-if ! wait_for_http_ok "${DEPLOY_BASE_URL}${DEPLOY_FRONTEND_HEALTH_PATH}"; then
+if ! wait_for_http_ok "${DEPLOY_FRONTEND_BASE_URL}${DEPLOY_FRONTEND_HEALTH_PATH}"; then
     print_deploy_logs
     exit 1
 fi
