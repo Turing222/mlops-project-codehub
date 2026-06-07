@@ -16,10 +16,12 @@
 - Google login 和 SMS login 仍处于 mock 或尚未 production-facing，因此 login abuse protection 属于 pre-launch baseline，而不是所有其他 guardrail 的前置阻塞。
 - production deployment 以 compose 为准，Kubernetes manifests 不属于本次 production acceptance path。
 - supply-chain CI 应在出现 serious vulnerabilities 时直接 fail PR。
-- alert delivery 的第一版应从 basic email receiver 开始。
-- CSP validation 应通过 thin self-hosted report sink + report-only rollout 完成，再考虑 enforcement。
+- alert delivery 的第一版应使用 AWS 托管链路：CloudWatch Logs / metric filters / alarms 负责判断，SNS email 负责触达人。
+- CSP validation 应通过 thin self-hosted report sink + report-only rollout 完成；第一阶段只写结构化日志，不拦截请求，也不直接告警。
 - N+1 profiling、LLM / embedding caching、token refresh / revocation、performance CI 和 business metrics 都保持在 P2 范围外。
 - Supply-chain baseline 应同时覆盖 dependency scan、image scan、Dependabot hygiene 和 pinned action refs；完整 Trivy action behavior 仍以 GitHub CI 为最终验证环境。
+- Auth abuse baseline 应把 `/sms/send`、`/sms/login`、`/google/callback` 分成独立 rate-limit bucket，并用手机号维度的 SMS verify failure lockout 防止验证码猜测。
+- Compose fallback 中的真实 client IP readiness 通过 `RATE_LIMIT_TRUSTED_PROXY_CIDRS` 显式信任 Docker/nginx proxy 网段；如果 API 直连公网或改由外部 edge 代理，则该值必须改为空或实际可信网段。
 
 ## Workstream 拆分理由
 
@@ -41,11 +43,11 @@
 - Reason：现有 CI 覆盖 lint / type / test / smoke，但尚未覆盖 dependency 与 image CVE。
 - Expected effect：有问题的 dependencies 和 base images 能在 merge 前或固定周期内被发现。
 
-### WS4 — PR 4 CSP and alert delivery
+### WS4 — PR 4 CSP report-only and AWS alert delivery
 
-- Scope：为 nginx surface 增加 report-only CSP、增加 thin self-hosted CSP report sink、接入 Alertmanager、配置 email delivery，并验证现有 Prometheus rules 是否真的能触达到人。
-- Reason：缺少 CSP 会扩大 browser-side exploit 的影响范围，而只有规则没有 delivery 的 alert 无法降低 MTTR。
-- Expected effect：CSP 可以在不意外破坏 frontend 的前提下逐步收紧，operational alerts 也会真正变得可执行。
+- Scope：为 frontend delivery surface 增加 report-only CSP，增加 thin self-hosted CSP report sink，只写 `event=csp_violation` 结构化日志；生产告警投递改走 CloudWatch Alarm -> SNS email，优先覆盖 backend / worker critical logs、关键 failure events 和 AWS 主机资源告警。
+- Reason：CSP enforcement 容易误伤前端，应先用 report-only 建立真实 allowlist；当前最大 operability 缺口不是缺少更多 Prometheus rules，而是 production incident 不能可靠触达到人。AWS 后端 + Cloudflare Pages 前端的部署形态下，CloudWatch / SNS 比自托管 Alertmanager 更贴近生产 source of truth，也减少 EC2 上额外运维负担。
+- Expected effect：CSP 可以在不影响线上功能的前提下积累 validation 数据；生产告警通过 AWS 托管链路触达 email receiver，后续服务器性能告警和前端安全信号可以复用同一投递路径。
 
 ## 暂缓 / 不纳入范围
 
@@ -55,9 +57,10 @@
 - Performance CI。
 - Business metrics。
 - Kubernetes production manifests。
+- CSP enforcement；待 report-only 日志稳定后再决定是否启用阻断。
+- 自托管 Alertmanager；除非后续决定生产长期运行自托管 Prometheus alert delivery。
 
 ## Open Decisions 说明
 
-- `proxy-cidr-decision`：需要基于 compose 和 Docker network 行为推导 trusted nginx / proxy CIDRs；k8s 不属于本工作项的 production scope。
-- `alert-delivery-channel`：第一版 baseline 应通过 env / secrets 提供 SMTP settings，使用 email delivery。
-- `csp-reporting-sink`：需要实现一个 thin self-hosted report endpoint，用于 report-only CSP validation。
+- `aws-alert-infra-owner`：需要确认 CloudWatch Logs、metric filters、alarms 和 SNS topic 先在 AWS 控制台 / CLI 手工建立，还是后续补 IaC 管理。
+- `csp-enforcement-rollout`：CSP enforcement 暂缓；只有 report-only 日志证明 allowlist 稳定后才进入阻断 rollout。
