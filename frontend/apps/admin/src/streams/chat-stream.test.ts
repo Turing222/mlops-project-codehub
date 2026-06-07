@@ -6,6 +6,15 @@ vi.mock('../api/chat', () => ({
     sendQueryStreamAPI: vi.fn(),
 }));
 
+const { reportFrontendErrorEvent } = vi.hoisted(() => ({
+    reportFrontendErrorEvent: vi.fn(),
+}));
+vi.mock('../lib/http/telemetry', () => ({
+    reportFrontendErrorEvent,
+    normalizeErrorMessage: (error: unknown) =>
+        error instanceof Error ? error.message : String(error),
+}));
+
 import { sendQueryStreamAPI } from '../api/chat';
 
 const mockSendQueryStreamAPI = vi.mocked(sendQueryStreamAPI);
@@ -46,6 +55,7 @@ function createCallbacks(): MockCallbacks {
 
 beforeEach(() => {
     vi.restoreAllMocks();
+    reportFrontendErrorEvent.mockClear();
 });
 
 describe('streamChatQuery', () => {
@@ -79,7 +89,7 @@ describe('streamChatQuery', () => {
         );
     });
 
-    it('invokes onError for error event', async () => {
+    it('invokes onError and reports telemetry for an SSE error event', async () => {
         const sseData = 'data: {"type":"error","message":"LLM error"}\n\n';
         mockSendQueryStreamAPI.mockResolvedValue(createFakeSSEResponse([sseData]));
         const callbacks = createCallbacks();
@@ -89,11 +99,18 @@ describe('streamChatQuery', () => {
         await vi.waitFor(() => {
             expect(callbacks.onError).toHaveBeenCalledOnce();
         });
-        expect(callbacks.onError).toHaveBeenCalledWith(expect.any(Error));
         expect(callbacks.onError.mock.calls[0][0].message).toBe('LLM error');
+        expect(reportFrontendErrorEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                eventType: 'stream_error',
+                source: 'chat_stream',
+                message: 'LLM error',
+                metadata: expect.objectContaining({ phase: 'sse_error' }),
+            }),
+        );
     });
 
-    it('invokes onDone when [DONE] received', async () => {
+    it('invokes onDone when [DONE] received and reports nothing', async () => {
         const sseData = 'data: [DONE]\n\n';
         mockSendQueryStreamAPI.mockResolvedValue(createFakeSSEResponse([sseData]));
         const callbacks = createCallbacks();
@@ -103,9 +120,10 @@ describe('streamChatQuery', () => {
         await vi.waitFor(() => {
             expect(callbacks.onDone).toHaveBeenCalledOnce();
         });
+        expect(reportFrontendErrorEvent).not.toHaveBeenCalled();
     });
 
-    it('calls onError when stream ends without [DONE]', async () => {
+    it('reports a truncated stream when it ends without [DONE]', async () => {
         const sseData = 'data: {"type":"chunk","content":"x"}\n\n';
         mockSendQueryStreamAPI.mockResolvedValue(createFakeSSEResponse([sseData]));
         const callbacks = createCallbacks();
@@ -117,6 +135,13 @@ describe('streamChatQuery', () => {
         });
         expect(callbacks.onError.mock.calls[0][0].message).toBe('流式响应异常结束');
         expect(callbacks.onChunk).toHaveBeenCalledOnce();
+        expect(reportFrontendErrorEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                eventType: 'stream_error',
+                message: '流式响应异常结束',
+                metadata: expect.objectContaining({ phase: 'truncated' }),
+            }),
+        );
     });
 
     it('handles meta then chunk then [DONE] in order', async () => {
@@ -145,6 +170,7 @@ describe('streamChatQuery', () => {
         const chunks = [
             'data: {"type":"me',
             'ta","session_id":"s1","session_title":"T"}\n\n',
+            'data: [DONE]\n\n',
         ];
         mockSendQueryStreamAPI.mockResolvedValue(createFakeSSEResponse(chunks));
         const callbacks = createCallbacks();
@@ -159,7 +185,7 @@ describe('streamChatQuery', () => {
         );
     });
 
-    it('silently warns on parse errors then calls onError when stream ends without [DONE]', async () => {
+    it('warns on parse errors without reporting them, but reports the truncated stream', async () => {
         const sseData = 'data: {invalid json}\n\n';
         mockSendQueryStreamAPI.mockResolvedValue(createFakeSSEResponse([sseData]));
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -170,14 +196,16 @@ describe('streamChatQuery', () => {
         await vi.waitFor(() => {
             expect(warnSpy).toHaveBeenCalled();
         });
-        // Stream ends without [DONE] → onError is called with truncation error
         await vi.waitFor(() => {
             expect(callbacks.onError).toHaveBeenCalledOnce();
         });
         expect(callbacks.onError.mock.calls[0][0].message).toBe('流式响应异常结束');
+        // Parse warnings stay as console.warn only; the single telemetry event is the truncation.
+        expect(reportFrontendErrorEvent).toHaveBeenCalledTimes(1);
+        expect(reportFrontendErrorEvent.mock.calls[0][0].metadata.phase).toBe('truncated');
     });
 
-    it('calls onError when no reader available', async () => {
+    it('reports a no-reader failure', async () => {
         mockSendQueryStreamAPI.mockResolvedValue(new Response(null, { status: 200 }));
         const callbacks = createCallbacks();
 
@@ -187,9 +215,16 @@ describe('streamChatQuery', () => {
             expect(callbacks.onError).toHaveBeenCalledOnce();
         });
         expect(callbacks.onError.mock.calls[0][0].message).toBe('无法获取响应流');
+        expect(reportFrontendErrorEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                eventType: 'stream_error',
+                message: '无法获取响应流',
+                metadata: expect.objectContaining({ phase: 'no_reader' }),
+            }),
+        );
     });
 
-    it('calls onError for unexpected exceptions', async () => {
+    it('reports an unexpected exception', async () => {
         mockSendQueryStreamAPI.mockRejectedValue(new Error('network fail'));
         const callbacks = createCallbacks();
 
@@ -199,9 +234,32 @@ describe('streamChatQuery', () => {
             expect(callbacks.onError).toHaveBeenCalledOnce();
         });
         expect(callbacks.onError.mock.calls[0][0].message).toBe('network fail');
+        expect(reportFrontendErrorEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                eventType: 'stream_error',
+                message: 'network fail',
+                metadata: expect.objectContaining({ phase: 'exception' }),
+            }),
+        );
     });
 
-    it('calls onAbort when stream is aborted', async () => {
+    it('includes client/session correlation in stream error metadata', async () => {
+        mockSendQueryStreamAPI.mockResolvedValue(new Response(null, { status: 200 }));
+        const callbacks = createCallbacks();
+
+        streamChatQuery({ query: 'test', clientRequestId: 'cr-1', sessionId: 's-9' }, callbacks);
+
+        await vi.waitFor(() => {
+            expect(reportFrontendErrorEvent).toHaveBeenCalledOnce();
+        });
+        expect(reportFrontendErrorEvent.mock.calls[0][0].metadata).toMatchObject({
+            phase: 'no_reader',
+            clientRequestId: 'cr-1',
+            sessionId: 's-9',
+        });
+    });
+
+    it('calls onAbort without reporting telemetry when the stream is aborted', async () => {
         const stream = new ReadableStream({
             pull() {
                 // never resolves — stream stays open
@@ -217,5 +275,6 @@ describe('streamChatQuery', () => {
         expect(callbacks.onAbort).toHaveBeenCalledOnce();
         expect(callbacks.onDone).not.toHaveBeenCalled();
         expect(callbacks.onError).not.toHaveBeenCalled();
+        expect(reportFrontendErrorEvent).not.toHaveBeenCalled();
     });
 });

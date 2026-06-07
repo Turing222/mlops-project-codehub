@@ -1,4 +1,6 @@
 import { sendQueryStreamAPI } from '../api/chat';
+import { AppHttpError } from '../lib/http/errors';
+import { normalizeErrorMessage, reportFrontendErrorEvent } from '../lib/http/telemetry';
 import { chatStreamEventSchema } from '../schemas/chat';
 import type { ChatStreamEvent } from '../schemas/chat';
 
@@ -30,6 +32,34 @@ export function streamChatQuery(
 ): AbortController {
     const abortController = new AbortController();
 
+    // 统一上报 chat stream 的 terminal failure；abort 不算错误，故在此处统一拦截。
+    type StreamErrorPhase = 'no_reader' | 'sse_error' | 'truncated' | 'exception';
+    const reportStreamError = (
+        message: string,
+        phase: StreamErrorPhase,
+        correlation?: { requestId?: string; status?: number; errorCode?: string },
+    ): void => {
+        if (abortController.signal.aborted) {
+            return;
+        }
+        const metadata: Record<string, string> = { phase };
+        if (options.clientRequestId) {
+            metadata.clientRequestId = options.clientRequestId;
+        }
+        if (options.sessionId) {
+            metadata.sessionId = options.sessionId;
+        }
+        reportFrontendErrorEvent({
+            eventType: 'stream_error',
+            source: 'chat_stream',
+            message,
+            requestId: correlation?.requestId,
+            status: correlation?.status,
+            errorCode: correlation?.errorCode,
+            metadata,
+        });
+    };
+
     if (options.signal?.aborted) {
         abortController.abort();
         return abortController;
@@ -55,6 +85,7 @@ export function streamChatQuery(
 
             const reader = response.body?.getReader();
             if (!reader) {
+                reportStreamError('无法获取响应流', 'no_reader');
                 callbacks.onError(new Error('无法获取响应流'));
                 return;
             }
@@ -97,7 +128,9 @@ export function streamChatQuery(
                         } else if (parsed.type === 'chunk') {
                             callbacks.onChunk(parsed);
                         } else if (parsed.type === 'error') {
-                            callbacks.onError(new Error(parsed.message || 'LLM 服务错误'));
+                            const errorMessage = parsed.message || 'LLM 服务错误';
+                            reportStreamError(errorMessage, 'sse_error');
+                            callbacks.onError(new Error(errorMessage));
                             return;
                         }
                     } catch (parseErr) {
@@ -107,9 +140,15 @@ export function streamChatQuery(
             }
 
             // Stream ended without [DONE] — treat as error
+            reportStreamError('流式响应异常结束', 'truncated');
             callbacks.onError(new Error('流式响应异常结束'));
         } catch (err: unknown) {
             if (abortController.signal.aborted) return;
+            const correlation =
+                err instanceof AppHttpError
+                    ? { requestId: err.requestId, status: err.status, errorCode: err.code }
+                    : undefined;
+            reportStreamError(normalizeErrorMessage(err), 'exception', correlation);
             callbacks.onError(err instanceof Error ? err : new Error('请求处理失败，请稍后重试'));
         } finally {
             if (parentAbortHandler && options.signal) {

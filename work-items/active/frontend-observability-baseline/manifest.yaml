@@ -13,12 +13,12 @@ completion_chain:
 workstreams:
   - id: 1
     title: Telemetry event semantics.
-    status: pending
+    status: done
     kind: blocking
     deps: []
   - id: 2
     title: Client error and chat stream observability.
-    status: pending
+    status: done
     kind: parallel
     deps: [1]
   - id: 3
@@ -38,21 +38,19 @@ workstreams:
     deps: [2, 3, 4]
 
 current_checkpoint:
-  name: migration-doc-synced
+  name: telemetry-and-client-observability-shipped
   state: in_progress
-  summary: Migration plan now reflects the completed frontend baseline; telemetry event semantics is the next blocking decision.
+  summary: Telemetry event semantics (WS1) and client/stream error observability (WS2) are implemented, tested (backend component + full frontend vitest), and review-hardened; performance and Web Vitals baseline (WS4) is the next gap.
 
-open_decisions:
-  - id: telemetry-event-semantics
-    note: Needed before client errors and Web Vitals can be logged cleanly without mixing metrics into API error logs.
+open_decisions: []
 
 next_choices:
   - id: A
-    label: Define telemetry semantics
-    note: Decide endpoint and payload shape for API errors, client errors, chat stream failures, and Web Vitals before adding new reporters.
+    label: Add measurement baseline
+    note: Add bundle visualizer output and Web Vitals (LCP/INP/CLS) metrics through a dedicated metrics channel, keeping them out of the error telemetry log (WS4).
   - id: B
-    label: Add measurement
-    note: Add bundle visualizer and Web Vitals metrics after telemetry event semantics are stable.
+    label: Validation and handoff
+    note: Run focused telemetry and build checks, then record the WS5 checkpoint once measurement lands.
 
 attached_artifacts:
   task_plan: task-plan.md

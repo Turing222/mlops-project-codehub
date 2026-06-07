@@ -60,4 +60,4 @@
 
 ## Open Decisions 说明
 
-- `telemetry-event-semantics`：在实现 client error 和 Web Vitals 之前，先决定 endpoint 或 payload shape，保证日志继续保持清晰的 error-vs-metric 语义。
+- `telemetry-event-semantics`（已确定）：复用现有 `/api/v1/telemetry/errors` 通道，把 payload 从 5xx-only 扩展为带 `eventType` 区分的通用 frontend error event（`http_error` / `render_error` / `global_error` / `unhandled_rejection` / `stream_error`）；HTTP 关联字段（requestId/status/errorCode/url/method）改为可选，新增有界 `metadata`，结构化日志事件统一为 `frontend_error_reported`。Web Vitals 等 metrics 留到后续独立 metrics 通道，不混入 error log。

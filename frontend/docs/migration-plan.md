@@ -20,10 +20,10 @@
 - `TanStack Query` 已接入查询、mutation、缓存失效和错误上报基础设施
 - 聊天流已迁入 `src/streams/chat-stream.ts`，页面侧只保留 UI 与状态编排
 - 前端架构文档、标准文档、Make target 和 CI 校验已经建立
+- 前端错误 telemetry 已统一为通用 error event 语义，render/global/promise/stream failure 均已接入上报
 
 当前剩余收口点：
 
-- 前端 render/global/promise/stream failure 可观测性还未形成完整 telemetry 语义
 - Web Vitals 与 bundle composition 还缺少测量基线
 - 上传等 mutation 已有幂等入口，但仍可继续按业务链路补齐策略说明
 - 日期展示收口和模板化沉淀仍按需推进
@@ -133,7 +133,7 @@
 
 本阶段结果：
 
-- `src/query/query-client.ts` 已配置全局 query/mutation 策略和 HTTP 5xx telemetry 上报。
+- `src/query/query-client.ts` 已配置全局 query/mutation 策略，并通过通用 `http_error` 事件上报 HTTP 5xx 失败。
 - `src/query/hooks/` 与 `src/query/keys/` 已覆盖 auth、users、chat、credits、repo-analysis 等主要服务端状态。
 - SSE 主聊天流继续由 stream client 管理，没有强行塞进 Query。
 
@@ -214,7 +214,7 @@
 
 后续收口：
 
-- 失败可观测性、自动重连或 resume 不属于本迁移阶段，按独立任务处理。
+- chat stream 失败已接入 `stream_error` telemetry；自动重连或 resume 仍不属于本阶段，按独立任务处理。
 
 验收标准：
 
@@ -278,8 +278,8 @@
 
 迁移基线已经基本完成。后续不再按阶段重跑迁移，改为按缺口推进：
 
-1. 前端 telemetry 语义：区分 API error、client error、chat stream failure 和 Web Vitals metrics。
-2. 客户端错误可观测性：补齐 render crash、global error、unhandled promise 和 stream failure 上报。
+1. （已完成）前端 telemetry 语义：通用 frontend error event 区分 API error、client error、chat stream failure；Web Vitals metrics 留独立 metrics 通道，不混入 error log。
+2. （已完成）客户端错误可观测性：render crash、global error、unhandled promise 和 stream failure 均已接入上报。
 3. 测量基线：增加 bundle visualizer 和 Web Vitals baseline。
 4. 小范围收口：按真实业务需求补充上传幂等策略、日期展示工具或模板化样例。
 

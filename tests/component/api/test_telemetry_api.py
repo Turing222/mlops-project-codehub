@@ -28,7 +28,7 @@ async def telemetry_client() -> AsyncIterator[AsyncClient]:
 
 
 @pytest.mark.asyncio
-async def test_frontend_error_telemetry_returns_204_and_logs_payload(
+async def test_frontend_http_error_event_returns_204_and_logs_payload(
     telemetry_client: AsyncClient,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -37,13 +37,14 @@ async def test_frontend_error_telemetry_returns_204_and_logs_payload(
     response = await telemetry_client.post(
         "/api/v1/telemetry/errors",
         json={
+            "eventType": "http_error",
             "message": "Internal Server Error",
+            "source": "react_query",
             "status": 500,
             "errorCode": "server",
             "requestId": "api-req-123",
             "url": "/api/v1/users/me",
             "method": "GET",
-            "source": "react_query",
         },
         headers={"X-Request-ID": "telemetry-req-1"},
     )
@@ -52,13 +53,47 @@ async def test_frontend_error_telemetry_returns_204_and_logs_payload(
     record = next(
         item
         for item in caplog.records
-        if getattr(item, "event", None) == "frontend_api_error"
+        if getattr(item, "event", None) == "frontend_error_reported"
     )
     assert record.telemetry_request_id == "telemetry-req-1"
+    assert record.frontend_event_type == "http_error"
+    assert record.frontend_source == "react_query"
+    assert record.frontend_severity == "error"
     assert record.frontend_request_id == "api-req-123"
     assert record.frontend_status == 500
     assert record.frontend_error_code == "server"
     assert record.frontend_url == "/api/v1/users/me"
+
+
+@pytest.mark.asyncio
+async def test_frontend_runtime_event_without_http_fields_returns_204(
+    telemetry_client: AsyncClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=telemetry_api.__name__)
+
+    response = await telemetry_client.post(
+        "/api/v1/telemetry/errors",
+        json={
+            "eventType": "render_error",
+            "message": "Cannot read properties of undefined",
+            "source": "react_error_boundary",
+            "metadata": {"componentStack": "at App\n  at Root"},
+        },
+    )
+
+    assert response.status_code == 204
+    record = next(
+        item
+        for item in caplog.records
+        if getattr(item, "event", None) == "frontend_error_reported"
+    )
+    assert record.frontend_event_type == "render_error"
+    assert record.frontend_source == "react_error_boundary"
+    assert record.frontend_request_id is None
+    assert record.frontend_status is None
+    assert record.frontend_error_code is None
+    assert record.frontend_metadata == {"componentStack": "at App\n  at Root"}
 
 
 @pytest.mark.asyncio
@@ -75,7 +110,9 @@ async def test_frontend_error_telemetry_rejects_disallowed_origin(
     response = await telemetry_client.post(
         "/api/v1/telemetry/errors",
         json={
+            "eventType": "http_error",
             "message": "Internal Server Error",
+            "source": "react_query",
             "status": 500,
             "errorCode": "server",
             "requestId": "api-req-123",
@@ -96,7 +133,9 @@ async def test_frontend_error_telemetry_allows_forwarded_https_same_origin(
     response = await telemetry_client.post(
         "/api/v1/telemetry/errors",
         json={
+            "eventType": "http_error",
             "message": "Internal Server Error",
+            "source": "react_query",
             "status": 500,
             "errorCode": "server",
             "requestId": "api-req-123",
@@ -112,16 +151,15 @@ async def test_frontend_error_telemetry_allows_forwarded_https_same_origin(
 
 
 @pytest.mark.asyncio
-async def test_frontend_error_telemetry_rejects_empty_request_id(
+async def test_frontend_error_telemetry_rejects_invalid_event_type(
     telemetry_client: AsyncClient,
 ) -> None:
     response = await telemetry_client.post(
         "/api/v1/telemetry/errors",
         json={
-            "message": "Internal Server Error",
-            "status": 500,
-            "errorCode": "server",
-            "requestId": "",
+            "eventType": "not_a_real_event",
+            "message": "boom",
+            "source": "window_error",
         },
     )
 
@@ -135,10 +173,43 @@ async def test_frontend_error_telemetry_rejects_overlong_message(
     response = await telemetry_client.post(
         "/api/v1/telemetry/errors",
         json={
+            "eventType": "global_error",
             "message": "x" * 501,
-            "status": 500,
-            "errorCode": "server",
-            "requestId": "api-req-123",
+            "source": "window_error",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_frontend_error_telemetry_rejects_overlong_metadata_value(
+    telemetry_client: AsyncClient,
+) -> None:
+    response = await telemetry_client.post(
+        "/api/v1/telemetry/errors",
+        json={
+            "eventType": "render_error",
+            "message": "boom",
+            "source": "react_error_boundary",
+            "metadata": {"componentStack": "x" * 2049},
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_frontend_error_telemetry_rejects_nested_metadata(
+    telemetry_client: AsyncClient,
+) -> None:
+    response = await telemetry_client.post(
+        "/api/v1/telemetry/errors",
+        json={
+            "eventType": "global_error",
+            "message": "boom",
+            "source": "window_error",
+            "metadata": {"nested": {"not": "allowed"}},
         },
     )
 
