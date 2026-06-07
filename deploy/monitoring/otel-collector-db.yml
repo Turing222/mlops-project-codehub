@@ -1,3 +1,5 @@
+# Local OTel collector example for richer traces and metrics experiments.
+# Not mounted by the current EC2 observability profile by default.
 receivers:
   otlp:
     protocols:

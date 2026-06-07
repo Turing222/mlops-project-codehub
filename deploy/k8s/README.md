@@ -1,8 +1,14 @@
 # Dewflow Kubernetes 接入示例
 
 职责：沉淀 Dewflow Backend 迁移到 Kubernetes 的最小部署入口。
-边界：当前本地开发仍以 `docker-compose.db.yml` 为主，本目录不改变 compose 运行方式。
-副作用：应用这些清单会在目标集群创建 namespace、工作负载、HPA 和 KEDA 扩缩容对象。
+边界：当前生产验收路径仍以 [deploy/docker-compose.yml](../docker-compose.yml) + [docs/deploy-ec2.md](../../docs/deploy-ec2.md) 为准；本目录保留 Kubernetes 参考清单、扩缩容设计和后续接入草案，不改变 compose 运行方式。
+副作用：应用这些清单会在目标集群创建 namespace、ConfigMap、knowledge PVC、`db-migrator` Job，以及 API / Worker / Frontend 对应的 Deployment、Service、HPA 和 KEDA 扩缩容对象。
+
+## 状态说明
+
+- **当前主路径**：单台 EC2 + Docker Compose；本目录不是当前 production acceptance path。
+- **当前用途**：Kubernetes 参考清单、扩缩容讨论和本地/预演环境验证。
+- **使用方式**：需要继续推进 k8s 时，再按实际集群、域名、TLS 和监控方案细化；不要把这里的示例直接当成当前正式部署合同。
 
 ## 设计目标
 
@@ -13,7 +19,7 @@
 
 ## 扩缩容策略
 
-详细设计见 `docs/k8s-scaling-strategy.md`。
+详细设计见 `../../docs/k8s-scaling-strategy.md`。
 
 API 压力来自在线请求，示例策略为：
 
@@ -40,7 +46,7 @@ Worker 压力来自后台任务积压，示例策略为：
 
 ## 使用方式
 
-本地只验证 Worker 会根据 Redis 队列扩缩容时，优先看 `deploy/k8s/local-scaling/README.md`。
+本地只验证 Worker 会根据 Redis 队列扩缩容时，优先看 `./local-scaling/README.md`。
 
 1. 先复制并替换 Secret 示例，不要把真实密钥提交到仓库：
    ```bash
@@ -60,12 +66,19 @@ Worker 压力来自后台任务积压，示例策略为：
    # 修改 /tmp/dewflow-ingress.yaml 中的 host 等配置
    ```
 
-4. 集群部署（标准部署入口使用 Kustomize 编排，`kubectl apply -k deploy/k8s` 会一并部署 API、Worker 和 Frontend 服务）：
+   > Ingress 示例表达的是**替代拓扑**，不是同一套规则的可叠加片段：
+   > - `frontend-ingress.example.yaml`：单 host + `/api` 路径转发的统一入口方案。
+   > - `api-ingress.example.yaml`：前后端分 host 的拆分入口方案。
+   > 选择一种后再继续细化，不要直接混搭 path rewrite 和独立 host 规则。
+
+4. 集群部署（标准部署入口使用 Kustomize 编排，`kubectl apply -k deploy/k8s` 会一并创建 `namespace.yaml`、`configmap.yaml`、`knowledge-files-pvc.yaml`、`db-migrator-job.yaml`，以及 API / Worker / Frontend 对应的 Deployment、Service、HPA 和 KEDA 资源）：
    ```bash
    kubectl apply -f deploy/k8s/namespace.yaml
    kubectl apply -f /tmp/dewflow-secret.yaml
    kubectl apply -k deploy/k8s
    kubectl apply -f /tmp/dewflow-ingress.yaml
    ```
+
+   > 注意：`db-migrator-job.yaml` 属于这次 Kustomize apply 的一部分；当镜像和数据库连接已就绪时，这一步会创建并执行数据库迁移 Job。
 
 如果集群没有安装 KEDA，需要临时跳过 `worker-keda-scaledobject.yaml`，Worker 仍可按 `worker-deployment.yaml` 的固定副本运行。

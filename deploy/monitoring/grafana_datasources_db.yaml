@@ -1,3 +1,5 @@
+# Local-db / richer tracing datasource set.
+# Includes Tempo integration and is not the default datasource config for the active EC2 compose profile.
 apiVersion: 1
 
 datasources:

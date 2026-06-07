@@ -1,8 +1,8 @@
 # Kubernetes 扩缩容策略
 
 职责：解释 Dewflow Backend 为什么需要扩容、按什么信号扩容，以及如何限制扩容风险。
-边界：本文描述 k8s 接入方案和容量策略，不替代真实生产压测结论。
-副作用：无；实际部署入口见 `deploy/k8s/`。
+边界：本文描述 k8s 接入方案和容量策略，不替代真实生产压测结论；当前生产验收路径仍以 compose / EC2 为准。
+副作用：无；实际参考清单位于 `deploy/k8s/`。
 
 ## 核心判断
 
@@ -74,11 +74,25 @@ Worker 负责 LLM 非流式生成、知识库解析、chunking、embedding 和�
 
 生产化前需要通过压测校准副本上限、队列阈值和下游服务配额。
 
-## 后续升级
+## 观测状态说明
+
+### 当前状态
+
+- 当前生产验收路径仍是 compose / EC2，不是 k8s。
+- 当前 AWS 生产环境的监控以云端托管服务为准，不以 `deploy/monitoring/` 下的本地自托管配置为 source of truth。
+- 当前这份文档中的 HPA / KEDA 方案，主要用于说明未来 k8s 接入时的扩缩容信号选择。
+
+### 条件成立时可用
+
+- 当后续真的启用 k8s 路径时，API 可以先用 Kubernetes 原生 CPU / Memory 指标扩容。
+- 当 worker 继续使用 Redis TaskIQ 队列时，可用 KEDA Redis scaler 按队列积压扩容。
+- 当需要 richer observability 时，应再决定是走 Prometheus Adapter、自托管指标链路，还是云端托管指标接入。
+
+### 目标态
 
 推荐演进顺序：
 
 1. 当前阶段：HPA 使用 CPU/内存，KEDA 使用 Redis 队列长度。
-2. 观测增强：FastAPI 暴露 `/metrics`，Prometheus 采集 API、Worker 和业务指标。
+2. 观测增强：在真正启用 k8s 路径后，再让 FastAPI `/metrics`、Prometheus 和 Worker / 业务指标接入同一套 observability contract。
 3. API 指标升级：通过 Prometheus Adapter 使用 RPS、P95 延迟或 in-flight requests 扩容。
 4. 生产保护：增加 PDB、NetworkPolicy、资源配额、告警规则和压测报告。

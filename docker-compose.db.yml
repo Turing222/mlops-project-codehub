@@ -116,7 +116,7 @@ x-feature-env:
   ENABLE_OTEL_METRICS: ${ENABLE_OTEL_METRICS:-false}
   ENABLE_OTEL_TRACES: ${ENABLE_OTEL_TRACES:-false}
   OTEL_TRACES_ENDPOINT: ${OTEL_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
-  PROMETHEUS_OTLP_ENDPOINT: ${PROMETHEUS_OTLP_ENDPOINT:-http://otel-collector:4318/v1/metrics}
+  OTEL_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
   LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
   LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://us.cloud.langfuse.com}
 
@@ -133,9 +133,7 @@ services:
     volumes:
       - pg_data_v17_test:/var/lib/postgresql/data
       - ./scripts/pg_init:/docker-entrypoint-initdb.d:ro
-    #  - ./scripts/pgsql_backup.sh:/usr/local/bin/pg_backup.sh:ro
     logging: *default-logging
-    #entrypoint: [ "/bin/sh", "/usr/local/bin/pg_backup.sh" ]
     deploy:
       resources:
         limits:

@@ -1,3 +1,5 @@
+# Local tracing backend example for local-db / richer observability experiments.
+# Not part of the default EC2 production acceptance path.
 server:
   http_listen_port: 3200
 

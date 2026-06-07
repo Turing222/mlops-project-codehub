@@ -25,14 +25,14 @@ Secret 注入机制：`FOO_FILE` 指向的文件内容会在进程导入时被�
 
 ### 1.2 坑：`RAG_*_ENABLED` 是无效配置
 
-[deploy/.env.ec2.template](../deploy/.env.ec2.template) 里的 `RAG_PLANNER_ENABLED` / `RAG_RERANK_ENABLED` **不是真实配置字段**（`AISettings` 没有这两个字段，`extra="ignore"` 直接丢弃）。它们 **不控制任何行为**。真正的开关是：
+如果你在旧模板或历史部署记录里看到 `RAG_PLANNER_ENABLED` / `RAG_RERANK_ENABLED`，它们 **不是真实配置字段**（`AISettings` 没有这两个字段，`extra="ignore"` 直接丢弃）。它们 **不控制任何行为**。真正的控制面是：
 
 | 功能 | 真正的开关 |
 |---|---|
 | LLM | `LLM_PROVIDER` + 启动校验 [validate_llm_configs](../backend/config/llm.py#L236-L264) |
 | RAG planner | GrowthBook flag `enable-rag-planner`（默认 False） |
 | RAG rerank（web 路径） | GrowthBook flag `enable-rag-rerank`（默认 False），见 [api/deps/ai.py:33-34](../backend/api/deps/ai.py#L33-L34) |
-| RAG rerank（worker 路径） | **`RAG_RERANK_PROVIDER` 是否非空**（不看 flag），见 [worker/dependencies.py:95-106](../backend/worker/dependencies.py#L95-L106) |
+| RAG rerank（worker 路径） | planner/flag 决定是否尝试 rerank；`RAG_RERANK_PROVIDER` 只决定 worker 能否构造 rerank 实现，构造或运行失败都会降级，见 [rag_planning_service.py:142-145](../backend/services/rag_planning_service.py#L142-L145) 与 [worker/dependencies.py:100-129](../backend/worker/dependencies.py#L100-L129) |
 | 联网检索（Tavily） | flag `enable-external-context` + `TAVILY_API_KEY` 非空 |
 
 ### 1.3 EC2 默认态（模板 + APP_ENV=prod）的生效值
@@ -173,7 +173,7 @@ Secret 文件位于 [secrets/ec2/](../secrets/ec2)（EC2）或 [secrets/local-pr
 2. **知识入库无重试**：transient 故障（如 429）也会让文件直接 `FAILED`，需手动重新上传；broker 是裸 `ListQueueBroker`，无 retry 中间件。
 3. **stale-ingestion sweeper 未接调度**：回收逻辑 `recover_stale_ingestions`（[knowledge_ingestion_recovery_service.py:42-63](../backend/services/knowledge_ingestion_recovery_service.py#L42-L63)）只标 `FAILED`、不重投；超时阈值 `KNOWLEDGE_INGEST_STALE_TIMEOUT_SECONDS`(1800s) 定义在 [ai_settings.py:158](../backend/config/ai_settings.py#L158)。它由 taskiq task `recover_stale_knowledge_ingestions`（[knowledge_tasks.py:70](../backend/worker/tasks/knowledge_tasks.py#L70)）包装，但代码内无 cron/scheduler 触发，需靠外部调度调用。
 4. ~~**rerank 构造期空 key 风险**~~ **（已修复，#4）**：worker `get_rerank_service` 已加 try/except，构造失败记 warning（`event=worker_rerank_init_degraded`）并退回无 rerank（[worker/dependencies.py:95-123](../backend/worker/dependencies.py#L95-L123)），不再崩生成任务。配置侧仍建议：填 `secrets/ec2/dashscope_api_key.txt`，或在 `.env.ec2` 显式设 `RAG_RERANK_PROVIDER=`（置空）直到要用 rerank。
-5. **无主动告警**：所有"告警"仅为 `logger.warning/error` 日志；要可观测需 `DEPLOY_ENABLE_OBSERVABILITY=true` 拉起 Prometheus/Loki/Grafana。
+5. **无主动告警**：当前应用侧所有“告警”仍主要体现为 `logger.warning/error` 日志。`DEPLOY_ENABLE_OBSERVABILITY=true` 只能拉起本地 / 自托管的 Prometheus/Loki/Grafana 观察栈，不代表 AWS 生产环境已经具备告警投递出口。
 
 ---
 
@@ -197,8 +197,10 @@ Secret 文件位于 [secrets/ec2/](../secrets/ec2)（EC2）或 [secrets/local-pr
   - 配套**有界重试 + 退避**，且**只对瞬时错误**（`RAG_EMBEDDING_API_ERROR` / `GOOGLE_EMBEDDING_API_ERROR`），不重试永久错误（`*_INPUT_EMPTY` / `*_DIMENSION_MISMATCH`）。
   - 重跑安全（`replace_file_chunks` 幂等）；重试耗尽 → 保留 FAILED 终态。
 - **#3 stale sweeper 接调度（P2）**：`recover_stale_knowledge_ingestions` 接 taskiq scheduler / 外部 cron；考虑改为**重投**而非只标 FAILED。与 #2 配套才完整。
-- **#5 主动告警（P1，上线即需）—— 现状"有规则没出口"**：[alert_rules.yml](../deploy/monitoring/alert_rules.yml) 有规则，但**无 Alertmanager**、prometheus.yml 无 `alerting:` 段 → 警报发不出去；且 worker 不在抓取目标内。
-  - **推荐（单 EC2）**：CloudWatch Logs（`awslogs` driver + EC2 IAM role）→ metric filter（盯 `LLM_ROUTING_FAILED` / `KNOWLEDGE_FILE_INGEST_FAILED` / `event=circuit_breaker_opened` / `event=worker_rerank_init_degraded`）→ Alarm → SNS。托管、省内存、天然覆盖 worker 日志。
+- **#5 主动告警（P1，上线即需）—— 现状 / 条件 / 目标态需区分**：
+  - **当前状态**：`deploy/monitoring/alert_rules.yml` 提供的是本地 / 自托管观察栈的规则定义；当前 `prometheus.yml` 无 `alerting:` 段、无 Alertmanager，且 worker 不在抓取目标内，所以这套配置不能直接视为 AWS 生产告警出口。
+  - **条件成立时可用**：如果在本地或自托管环境显式启用 `DEPLOY_ENABLE_OBSERVABILITY=true`，可以使用 Prometheus/Loki/Grafana 做排障观察，但仍需额外接入告警投递链路。
+  - **推荐生产路径（单 EC2）**：CloudWatch Logs（`awslogs` driver + EC2 IAM role）→ metric filter（盯 `LLM_ROUTING_FAILED` / `KNOWLEDGE_FILE_INGEST_FAILED` / `event=circuit_breaker_opened` / `event=worker_rerank_init_degraded`）→ Alarm → SNS。托管、省内存、天然覆盖 worker 日志。
   - **自托管替代**：Grafana 11.x 内置告警（对 Loki 日志查询 + Prometheus 指标，无需额外 Alertmanager）；代价是运维 + 内存。
 
 ### 后续可选（非必需）

@@ -28,7 +28,7 @@ ORM Models              → SQLAlchemy 表定义
 - **知识库 RAG**：文件上传 → TaskIQ 异步解析/切片/向量化入库 → 向量/全文/混合检索 → RAG 增强回答
 - **工作区管理**：CRUD + 成员管理 + OWNER/ADMIN/MEMBER 角色 + 权限矩阵
 - **审计日志**：操作审计记录，支持按资源/用户/时间范围查询
-- **可观测性**：OpenTelemetry 全链路追踪、Langfuse LLM 可观测、JSON 结构化日志、Prometheus `/metrics`
+- **可观测性**：OpenTelemetry 全链路追踪、Langfuse LLM 可观测、JSON 结构化日志、OTLP 指标导出（`/metrics` 仅占位/探针）
 - **稳定性**：Redis Lua 滑动窗口限流、LLM 断路器、进程内并发控制
 
 ## 2. 技术栈
@@ -309,7 +309,7 @@ docker compose -f deploy/docker-compose.yml up -d
 |------|------|------|
 | GET | `/health_check/live` | 存活探针 |
 | GET | `/health_check/db_ready` | 数据库就绪探针 |
-| GET | `/metrics` | Prometheus 指标（OTLP 推送） |
+| GET | `/metrics` | 占位/探针端点；真实应用指标通过 OTLP 推送，不从此端点抓取 |
 | GET | `/debug-request` | 请求调试信息 |
 
 ## 7. 数据模型
