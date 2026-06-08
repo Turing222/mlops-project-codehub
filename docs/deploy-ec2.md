@@ -19,14 +19,15 @@ EC2 默认部署栈包含：
 - `redis`
 - `db_migrator`
 - `api`
-- `frontend`
+- `api-nginx`
 - `task_worker`
 
 其中：
 
 - `api` / `db_migrator` / `task_worker` 共享同一套后端运行时配置。
 - `STORAGE_BACKEND=s3` 时，优先让 boto3 走 **EC2 instance profile / 默认 credential chain**，不要在部署文件中长期写死 AWS AK/SK。
-- 当生产前端切到 **Cloudflare Pages** 时，EC2 中的 `frontend` 容器不再代表正式公网入口，而是作为本地演练、回滚预案或自托管 fallback 使用。
+- `api-nginx` 是 EC2 本机 API edge，默认只绑定 `127.0.0.1:8081`，供 Cloudflare Tunnel 或本机部署验证访问。
+- `frontend` 容器不再默认启动；它只在 `DEPLOY_ENABLE_FRONTEND_FALLBACK=true` 时作为本地演练、回滚预案或自托管 fallback 使用。
 
 ## 前端上线拓扑（Cloudflare Pages + 独立 API）
 
@@ -35,6 +36,7 @@ EC2 默认部署栈包含：
 - Frontend：`https://app.<domain>`（Cloudflare Pages）
 - API：`https://api.<domain>`（AWS / 自托管入口）
 - API 对外路径保持 `/api/v1/...`
+- Cloudflare Tunnel：指向 EC2 本机 `http://127.0.0.1:8081`
 
 职责分工：
 
@@ -49,12 +51,24 @@ EC2 默认部署栈包含：
   - streaming / SSE 兼容
   - 长 timeout 与 anti-buffering 策略
   - API request tracing / 访问日志
+  - 将 `CF-Connecting-IP` 规范化为后端可信的 `X-Real-IP`
 - **仓库中的 `frontend/apps/admin/nginx.conf`** 仅继续服务：
   - 本地 Compose 验证
   - 生产镜像演练
   - Pages 回滚时的容器前端 fallback
 
 这意味着 Pages 正式启用后，不应再把 `frontend` 容器当成默认公网入口，也不应再假设前端通过同源 `/api/` 反代后端。
+
+Cloudflare Tunnel 本身暂不纳入 Compose，也不提交 token。生产主机上应将 Tunnel 的 public hostname（如 `api.<domain>`）指向 `http://127.0.0.1:8081`；Cloudflare credential / token 只保存在目标主机或 Cloudflare 托管配置中。`api-nginx` 只能允许 Cloudflare Tunnel / 本机访问，默认 `API_NGINX_BIND=127.0.0.1` 就是这个安全边界；不要把它直接绑定到 `0.0.0.0` 或公网 / 私网入口，否则客户端可以伪造 `CF-Connecting-IP`，绕过按 IP 的认证限流。
+
+Cloudflare Pages 推荐使用 GitHub 集成：
+
+```text
+Root directory: frontend
+Build command: pnpm install --frozen-lockfile && pnpm --filter admin build
+Build output: apps/admin/dist
+Environment: VITE_API_BASE_URL=https://api.<domain>
+```
 
 ## 前置条件
 
@@ -89,6 +103,8 @@ cp deploy/.env.ec2.template deploy/.env.ec2
 - `LLM_PROVIDER` / `RAG_EMBED_PROVIDER`
 - `DEPLOY_BASE_URL`
 - `DEPLOY_FRONTEND_BASE_URL`
+- `DEPLOY_ENABLE_FRONTEND_FALLBACK`
+- `DEPLOY_CHECK_FRONTEND_HEALTH`
 - `DEPLOY_PULL_IMAGES`
 - `BACKEND_CORS_ORIGINS`
 - `RATE_LIMIT_TRUSTED_PROXY_CIDRS`
@@ -97,17 +113,21 @@ cp deploy/.env.ec2.template deploy/.env.ec2
 
 ### 登录限流与真实客户端 IP
 
-认证入口限流按 `client IP + path` 计数。仓库里的 compose fallback 由 `frontend/apps/admin/nginx.conf` 代理 `/api/`，并向 API 传递 `X-Real-IP`；API 只有在请求来源 IP 命中 `RATE_LIMIT_TRUSTED_PROXY_CIDRS` 时才会读取这个 header。生产 compose 的 Uvicorn command 不启用 `--proxy-headers` / `--forwarded-allow-ips "*"`，避免在应用层校验前就信任客户端可伪造的 forwarded headers。
+认证入口限流按 `client IP + path` 计数。正式 EC2 路径由 `api-nginx` 代理 `/api/`，并把 Cloudflare Tunnel 提供的 `CF-Connecting-IP` 规范化写入 `X-Real-IP`；API 只有在请求来源 IP 命中 `RATE_LIMIT_TRUSTED_PROXY_CIDRS` 时才会读取这个 header。生产 compose 的 Uvicorn command 不启用 `--proxy-headers` / `--forwarded-allow-ips "*"`，避免在应用层校验前就信任客户端可伪造的 forwarded headers。
 
-在 EC2 compose fallback 中，`frontend` 通过专用 `edge_net` 连接 API，并使用固定地址。推荐保留模板里的：
+在 EC2 compose 默认路径中，`api-nginx` 通过专用 `edge_net` 连接 API，并使用固定地址。推荐保留模板里的：
 
 ```bash
 EDGE_NETWORK_SUBNET=172.30.0.0/24
-FRONTEND_PROXY_IP=172.30.0.10
-RATE_LIMIT_TRUSTED_PROXY_CIDRS=172.30.0.10/32
+API_NGINX_BIND=127.0.0.1
+API_NGINX_PORT=8081
+API_NGINX_PROXY_IP=172.30.0.11
+RATE_LIMIT_TRUSTED_PROXY_CIDRS=172.30.0.11/32
 ```
 
-这只信任 compose frontend/nginx 的固定地址，让 `/sms/login`、`/google/callback` 和 audit 使用真实用户 IP，而不是共享代理 IP。若该 subnet 与宿主机网络冲突，应同时调整 `EDGE_NETWORK_SUBNET`、`FRONTEND_PROXY_IP` 和对应 `/32` CIDR。
+这只信任 compose `api-nginx` 的固定地址，让 `/sms/login`、`/google/callback` 和 audit 使用真实用户 IP，而不是共享代理 IP。若该 subnet 与宿主机网络冲突，应同时调整 `EDGE_NETWORK_SUBNET`、`API_NGINX_PROXY_IP` 和对应 `/32` CIDR。
+
+`API_NGINX_BIND` 必须保持为本机 loopback 或其他仅允许受信任 edge 访问的地址。只有在前置代理已经校验并规范化真实客户端地址时，才能让 `api-nginx` 读取 `CF-Connecting-IP` 并写入 `X-Real-IP`；直接对公网暴露 `api-nginx` 会让任意客户端伪造 `CF-Connecting-IP`。
 
 如果 API 直接暴露到公网，`RATE_LIMIT_TRUSTED_PROXY_CIDRS` 应保持为空。若改由 Cloudflare、ALB 或其他外部 edge 代理，edge 必须把经过自身校验的客户端地址规范化写入 `X-Real-IP`，并把 `RATE_LIMIT_TRUSTED_PROXY_CIDRS` 改为实际可信代理网段；当前应用不会从 `X-Forwarded-For` 或 `CF-Connecting-IP` 推断客户端地址。请通过 `make deploy-ec2-*` 或等价的 `docker compose --env-file deploy/.env.ec2 ...` 入口启动。
 
@@ -118,7 +138,18 @@ RATE_LIMIT_TRUSTED_PROXY_CIDRS=172.30.0.10/32
 - `BACKEND_CORS_ORIGINS=https://app.<domain>`（如果有 `pages.dev` 预发域名，可在上线窗口临时一并加入）
 - `GOOGLE_ALLOWED_REDIRECT_URIS=https://app.<domain>/auth/google/callback`（仅在启用 Google OAuth 时）
 
-> 说明：如果在 EC2 本机执行验证，`DEPLOY_BASE_URL=http://localhost`、`DEPLOY_FRONTEND_BASE_URL=http://localhost` 通常就够了；如果希望验证公网域名，也可以改成真实域名。
+如果需要临时启用前端容器 fallback：
+
+```bash
+DEPLOY_ENABLE_FRONTEND_FALLBACK=true
+DEPLOY_CHECK_FRONTEND_HEALTH=true
+DEPLOY_FRONTEND_BASE_URL=http://localhost:8080
+FRONTEND_PUBLIC_PORT=8080
+```
+
+如果回滚到 frontend 容器作为入口，且浏览器经 frontend 容器的同源 `/api/` 反代访问后端，还需要把 `FRONTEND_PROXY_IP` 一并加入可信代理，例如 `RATE_LIMIT_TRUSTED_PROXY_CIDRS=172.30.0.11/32,172.30.0.10/32`，否则后端会忽略 frontend 写入的 `X-Real-IP`，认证限流会退化为按 frontend 容器共享 IP 计数。
+
+> 说明：如果在 EC2 本机执行 API 验证，`DEPLOY_BASE_URL=http://127.0.0.1:8081` 即可；如果希望验证公网域名，也可以改成真实 `https://api.<domain>`。
 >
 > `make deploy-ec2-*` 会自动把真实 deploy env 文件路径注入给 compose；只有在你把 deploy env 文件移到其他位置时，才需要通过 `DEPLOY_ENV_FILE=...` 覆盖默认路径。`DEPLOY_*` 控制项和镜像名可以用临时 shell 环境变量覆盖；secret 值应写入 EC2 专用 secret 文件，不写进 `deploy/.env.ec2`。
 >
@@ -210,11 +241,10 @@ make deploy-ec2-wait
 
 默认会检查：
 
-- frontend health: `${DEPLOY_FRONTEND_BASE_URL}${DEPLOY_FRONTEND_HEALTH_PATH}`
 - API liveness: `${DEPLOY_BASE_URL}${DEPLOY_API_LIVE_PATH}`
 - API DB readiness: `${DEPLOY_BASE_URL}${DEPLOY_API_READY_PATH}`
 
-当生产前端已经切到 Cloudflare Pages 时，建议把 `DEPLOY_FRONTEND_HEALTH_PATH` 保持为 `/healthz`，并让 Pages 静态产物提供简单 `healthz` 文件，用于上线探活。
+只有在 `DEPLOY_CHECK_FRONTEND_HEALTH=true` 时才会额外检查 frontend health：`${DEPLOY_FRONTEND_BASE_URL}${DEPLOY_FRONTEND_HEALTH_PATH}`。当生产前端已经切到 Cloudflare Pages 时，建议把 `DEPLOY_FRONTEND_HEALTH_PATH` 保持为 `/healthz`，并让 Pages 静态产物提供简单 `healthz` 文件，用于上线探活。
 
 ### 5. 跑部署后 smoke 验证
 
@@ -445,7 +475,7 @@ make deploy-local-prod-verify
 - 使用 `deploy/docker-compose.yml` 作为主体。
 - 叠加 `deploy/docker-compose.local-s3.yml`，只额外加入 MinIO 模拟 S3。
 - 使用 `secrets/local-prod`，不复用 `secrets/ec2` 的真实部署 secret。
-- 默认把 frontend 暴露到 `http://localhost:8080`，避免占用本机 80 端口。
+- 显式启用 `frontend-fallback` profile，并把 frontend 暴露到 `http://localhost:8080`，避免占用本机 80 端口。
 - 不启动 observability profile，也不拉入 `docker-compose.db.yml` 中的 Tempo / smoke-only 组件。
 
 查看日志和停止：

@@ -31,6 +31,8 @@ DEPLOY_API_LIVE_PATH_EXPLICIT="${DEPLOY_API_LIVE_PATH+x}"
 DEPLOY_API_READY_PATH_EXPLICIT="${DEPLOY_API_READY_PATH+x}"
 DEPLOY_ENABLE_BIFROST_EXPLICIT="${DEPLOY_ENABLE_BIFROST+x}"
 DEPLOY_ENABLE_OBSERVABILITY_EXPLICIT="${DEPLOY_ENABLE_OBSERVABILITY+x}"
+DEPLOY_ENABLE_FRONTEND_FALLBACK_EXPLICIT="${DEPLOY_ENABLE_FRONTEND_FALLBACK+x}"
+DEPLOY_CHECK_FRONTEND_HEALTH_EXPLICIT="${DEPLOY_CHECK_FRONTEND_HEALTH+x}"
 DEPLOY_PULL_IMAGES_EXPLICIT="${DEPLOY_PULL_IMAGES+x}"
 DEPLOY_LOG_TAIL_EXPLICIT="${DEPLOY_LOG_TAIL+x}"
 DEPLOY_SECRET_DIR_EXPLICIT="${DEPLOY_SECRET_DIR+x}"
@@ -430,6 +432,8 @@ load_deploy_env() {
     DEPLOY_API_READY_PATH="$(deploy_control_env_value "DEPLOY_API_READY_PATH" "/api/v1/health_check/db_ready")"
     DEPLOY_ENABLE_BIFROST="$(deploy_control_env_value "DEPLOY_ENABLE_BIFROST" "false")"
     DEPLOY_ENABLE_OBSERVABILITY="$(deploy_control_env_value "DEPLOY_ENABLE_OBSERVABILITY" "false")"
+    DEPLOY_ENABLE_FRONTEND_FALLBACK="$(deploy_control_env_value "DEPLOY_ENABLE_FRONTEND_FALLBACK" "false")"
+    DEPLOY_CHECK_FRONTEND_HEALTH="$(deploy_control_env_value "DEPLOY_CHECK_FRONTEND_HEALTH" "false")"
     DEPLOY_PULL_IMAGES="$(deploy_control_env_value "DEPLOY_PULL_IMAGES" "${DEPLOY_PULL_IMAGES:-false}")"
     DEPLOY_LOG_TAIL="$(deploy_control_env_value "DEPLOY_LOG_TAIL" "200")"
     DEPLOY_SMOKE_PYTEST_TARGETS="$(deploy_control_env_value "DEPLOY_SMOKE_PYTEST_TARGETS" "$DEPLOY_SMOKE_PYTEST_TARGETS")"
@@ -470,6 +474,8 @@ load_deploy_env() {
     export DEPLOY_API_READY_PATH
     export DEPLOY_ENABLE_BIFROST
     export DEPLOY_ENABLE_OBSERVABILITY
+    export DEPLOY_ENABLE_FRONTEND_FALLBACK
+    export DEPLOY_CHECK_FRONTEND_HEALTH
     export DEPLOY_PULL_IMAGES
     export DEPLOY_LOG_TAIL
     export DEPLOY_SMOKE_PYTEST_TARGETS
@@ -571,10 +577,14 @@ compose_deploy() {
     if [[ "$subcmd" == "down" ]]; then
         append_profile_arg "bifrost"
         append_profile_arg "observability"
+        append_profile_arg "frontend-fallback"
     elif [[ "${DEPLOY_ENABLE_OBSERVABILITY:-false}" == "true" ]]; then
         append_profile_arg "observability"
     fi
     if [[ "$subcmd" != "down" ]]; then
+        if [[ "${DEPLOY_ENABLE_FRONTEND_FALLBACK:-false}" == "true" ]]; then
+            append_profile_arg "frontend-fallback"
+        fi
         if [[ "${DEPLOY_ENABLE_BIFROST:-false}" == "true" ]]; then
             append_profile_arg "bifrost"
         else

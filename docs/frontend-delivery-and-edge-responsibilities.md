@@ -7,6 +7,7 @@
 - Frontend：`https://app.<domain>`（Cloudflare Pages）
 - API：`https://api.<domain>`（AWS / 自托管入口）
 - API path：继续保持 `/api/v1/...`
+- EC2 本机 API edge：`api-nginx` 绑定 `127.0.0.1:8081`，Cloudflare Tunnel 指向 `http://127.0.0.1:8081`
 
 ## 责任划分
 
@@ -42,6 +43,7 @@
 - streaming / SSE 兼容
 - 长 timeout、禁止错误缓冲 / 缓存
 - API request tracing / 访问日志
+- 将 Cloudflare Tunnel 的 `CF-Connecting-IP` 规范化为后端可信的 `X-Real-IP`
 
 ### 仓库中的 frontend 容器 nginx
 
@@ -56,7 +58,7 @@
 - 生产镜像验证
 - Cloudflare Pages 回滚时的 fallback
 
-它不再代表 Cloudflare Pages 正式公网入口的 source of truth。
+它不再代表 Cloudflare Pages 正式公网入口的 source of truth，并且在 EC2 Compose 中只通过 `frontend-fallback` profile 启动。
 
 ## 已从旧 edge nginx 迁移出去的职责
 
@@ -75,12 +77,14 @@
 - 长 timeout
 - anti-buffering / anti-cache
 - request tracing / access logs
+- true client IP 规范化
 
 ## 当前代码层面的配合约定
 
 - 前端 API endpoint path 常量仍集中在 `frontend/apps/admin/src/api/urls.ts`
 - 生产 Pages 构建时必须通过 `VITE_API_BASE_URL` 指向 API origin
 - 若 `VITE_API_BASE_URL` 未设置，前端退回当前同源路径行为，便于本地 / Compose fallback
+- 正式 EC2 API 入口是 `deploy/nginx/api.conf` 对应的 `api-nginx` 服务；它代理 `/api/` 时不剥离 `/api` 前缀。
 - Cloudflare Pages 的 CSP report-only header 不在仓库默认 `_headers` 中启用；`pnpm --dir frontend --filter admin build` 会根据 `VITE_API_BASE_URL` 生成 `dist/_headers`，写入真实 `report-uri https://api.<domain>/api/v1/csp/reports`，并校验产物中不存在占位符。
 - Cloudflare Pages 环境下如果缺少 `VITE_API_BASE_URL`，构建会失败，避免生产静默漏启 CSP report-only。
 - CSP 当前只使用 `Content-Security-Policy-Report-Only`：违规报告只写 `event=csp_violation` 结构化日志，不阻断页面资源，也不直接触发告警。
@@ -89,9 +93,10 @@
 ## 上线前最少检查项
 
 1. Pages 构建时设置 `VITE_API_BASE_URL=https://api.<domain>`
-2. 后端设置 `BACKEND_CORS_ORIGINS=https://app.<domain>`
-3. 若启用 Google OAuth，后端设置 `GOOGLE_ALLOWED_REDIRECT_URIS=https://app.<domain>/auth/google/callback`
-4. 运行 Pages build 后检查 `dist/_headers` 已包含 `Content-Security-Policy-Report-Only`，且 `report-uri` 指向真实 `https://api.<domain>/api/v1/csp/reports`
-5. 验证 `POST /api/v1/telemetry/errors` 在 Pages origin 下不返回 403
-6. 验证 `POST /api/v1/csp/reports` 在 Pages origin 下返回 204
-7. 验证 `/api/v1/chat/query_stream` 在公网 API 路径下保持增量流式输出
+2. Cloudflare Tunnel public hostname `api.<domain>` 指向 `http://127.0.0.1:8081`
+3. 后端设置 `BACKEND_CORS_ORIGINS=https://app.<domain>`
+4. 若启用 Google OAuth，后端设置 `GOOGLE_ALLOWED_REDIRECT_URIS=https://app.<domain>/auth/google/callback`
+5. 运行 Pages build 后检查 `dist/_headers` 已包含 `Content-Security-Policy-Report-Only`，且 `report-uri` 指向真实 `https://api.<domain>/api/v1/csp/reports`
+6. 验证 `POST /api/v1/telemetry/errors` 在 Pages origin 下不返回 403
+7. 验证 `POST /api/v1/csp/reports` 在 Pages origin 下返回 204
+8. 验证 `/api/v1/chat/query_stream` 在公网 API 路径下保持增量流式输出
