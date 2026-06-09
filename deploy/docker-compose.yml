@@ -129,7 +129,7 @@ services:
       - app_net
 
   api:
-    image: ${DOCKER_IMAGE_NAME_WEB:-dewflow-backend:2.0.0-web}
+    image: ${DOCKER_IMAGE_NAME_WEB:?missing DOCKER_IMAGE_NAME_WEB (set in deploy/.env.ec2 via make release-image-env)}
     container_name: api
     stop_grace_period: 40s
     volumes:
@@ -200,7 +200,7 @@ services:
           memory: 32M
 
   frontend:
-    image: ${DOCKER_IMAGE_NAME_FRONTEND:-dewflow-frontend:2.0.0}
+    image: ${DOCKER_IMAGE_NAME_FRONTEND:?missing DOCKER_IMAGE_NAME_FRONTEND (set in deploy/.env.ec2 via make release-image-env)}
     container_name: frontend
     profiles: [ "frontend-fallback" ]
     logging: *default-logging
@@ -382,7 +382,7 @@ services:
           memory: 128M
 
   db_migrator:
-    image: ${DOCKER_IMAGE_NAME_WEB:-dewflow-backend:2.0.0-web}
+    image: ${DOCKER_IMAGE_NAME_WEB:?missing DOCKER_IMAGE_NAME_WEB (set in deploy/.env.ec2 via make release-image-env)}
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     depends_on:
       postgres:
@@ -421,7 +421,7 @@ services:
           memory: 128M
 
   task_worker:
-    image: ${DOCKER_IMAGE_NAME_AI:-dewflow-backend:2.0.0-ai}
+    image: ${DOCKER_IMAGE_NAME_AI:?missing DOCKER_IMAGE_NAME_AI (set in deploy/.env.ec2 via make release-image-env)}
     container_name: task_worker
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     stop_grace_period: 120s

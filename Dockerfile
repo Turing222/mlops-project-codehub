@@ -1,8 +1,9 @@
 # ==========================================
 # Multi-target Dockerfile: 一个文件出两个镜像
 #
-#   docker build --target web    -t dewflow-backend:2.0.0-web .
-#   docker build --target worker -t dewflow-backend:2.0.0-ai .
+#   make image-build                                  # tags via immutable IMAGE_TAG (git describe)
+#   docker build --target web    -t "$DOCKER_IMAGE_NAME_WEB" .
+#   docker build --target worker -t "$DOCKER_IMAGE_NAME_AI" .
 #
 #   web    → api + db_migrator (base + web extras)
 #   worker → task_worker         (base + ai + worker extras)

@@ -175,6 +175,99 @@ make deploy-ec2-secrets-prepare
 
 > 各 key 对应哪个功能、缺失或上游故障时如何告警与降级，见 [api-keys-and-degradation.md](api-keys-and-degradation.md)。
 
+## 镜像版本与回退
+
+本项目有三个相互独立、不应合并成同一个数字的版本维度：
+
+| 维度 | 取值示例 | 单一来源 | 何时变 |
+| --- | --- | --- | --- |
+| API 契约版本 | `/api/v1/...` | `configs/app/base.yaml`（`API_ROOT_PATH` + `API_V1_STR`） | 仅破坏性 API 变更 |
+| 应用语义版本 | `VERSION=2.0.0` | `configs/app/base.yaml`，打进镜像；喂给 OpenAPI 与 OTel `service.version` | 手动按 semver bump |
+| 部署制品标识 | `v2.1.0` / 12 位 git SHA | git tag + 镜像 tag | 每次构建唯一、不可变 |
+
+`VERSION` 不随发布自动递增，也不能跟 git SHA 走（否则 OTel `service.version` 维度基数爆炸）。生产发布和回退以**镜像 tag** 为准：`deploy/.env.ec2` 中的 `DOCKER_IMAGE_NAME_WEB` / `DOCKER_IMAGE_NAME_AI` / `DOCKER_IMAGE_NAME_FRONTEND` 是当前 active image 记录，三者**必须显式设置**——留空或缺失会让 `make deploy-ec2-check` 直接失败（不再有 `2.0.0` 兜底）。
+
+后端 release 镜像使用不可变 git-describe tag，而不是重复覆盖 `2.0.0-web` / `2.0.0-ai`：
+
+```bash
+# Release target 会拒绝 tracked 或 untracked 的工作区变更。
+export IMAGE_TAG="$(git describe --tags --always --abbrev=12)"
+
+# 本地或 CI 构建后端 web / worker release 镜像
+make image-build-release
+
+# 如果使用镜像仓库，先指定仓库名再构建 / push
+BACKEND_IMAGE_REPOSITORY=<registry>/dewflow-backend make image-build-release
+docker push <registry>/dewflow-backend:${IMAGE_TAG}-web
+docker push <registry>/dewflow-backend:${IMAGE_TAG}-ai
+```
+
+查看本次发布应写入 `deploy/.env.ec2` 的镜像变量：
+
+```bash
+BACKEND_IMAGE_REPOSITORY=<registry>/dewflow-backend \
+FRONTEND_IMAGE_REPOSITORY=<registry>/dewflow-frontend \
+make release-image-env IMAGE_TAG=${IMAGE_TAG}
+```
+
+前端正式发布由 Cloudflare Pages 记录 git commit / deployment history；`DOCKER_IMAGE_NAME_FRONTEND` 只用于 `frontend-fallback` 容器。只有需要构建 fallback 镜像时才运行：
+
+```bash
+FRONTEND_IMAGE_REPOSITORY=<registry>/dewflow-frontend make frontend-image-build-release
+docker push <registry>/dewflow-frontend:${IMAGE_TAG}
+```
+
+### 语义版本 bump（按需）
+
+只有对外语义版本变化时才 bump `VERSION`（功能里程碑 / 正式版本号变更）；日常发布只动镜像 tag，不用碰 `VERSION`。
+
+1. 编辑 `configs/app/base.yaml` 的 `VERSION`（如 `2.0.0` → `2.1.0`），提交。
+2. 打 annotated git tag：
+
+   ```bash
+   make release-tag          # 读取 base.yaml 的 VERSION，打 v<VERSION> 并提示 push
+   git push origin v2.1.0
+   ```
+
+3. 之后构建的 release 镜像 `IMAGE_TAG` 会自动带上语义版本（`v2.1.0` / `v2.1.0-3-g<sha>`），无需手填。
+
+### 后端升级流程
+
+1. 在发布记录中保存当前 active image：
+
+   ```bash
+   grep '^DOCKER_IMAGE_NAME_' deploy/.env.ec2
+   ```
+
+2. 将 `deploy/.env.ec2` 中的 `DOCKER_IMAGE_NAME_WEB` / `DOCKER_IMAGE_NAME_AI` 改成新 tag。
+3. 如果镜像需要从 registry 拉取，设置 `DEPLOY_PULL_IMAGES=true`。
+4. 执行：
+
+   ```bash
+   make deploy-ec2-check
+   make deploy-ec2-up
+   make deploy-ec2-wait
+   make deploy-ec2-verify
+   ```
+
+### 后端回退流程
+
+1. 将 `deploy/.env.ec2` 中的 `DOCKER_IMAGE_NAME_WEB` / `DOCKER_IMAGE_NAME_AI` 恢复到上一组已验证 tag。
+2. 保持 `DEPLOY_PULL_IMAGES=true`，确保目标主机拉取旧镜像。
+3. 执行：
+
+   ```bash
+   make deploy-ec2-up
+   make deploy-ec2-wait
+   make deploy-ec2-verify
+   ```
+
+如果本次发布包含数据库 migration，先确认 migration 是否向后兼容。不可逆或破坏性 schema 变更不能只靠镜像回退修复；需要按“生产数据库备份与恢复”小节使用 snapshot / PITR 恢复或执行明确的反向迁移。
+
+### 前端回退流程
+
+Cloudflare Pages 前端优先在 Cloudflare Dashboard 回退到上一条成功 deployment。只有 Pages 故障或需要自托管临时入口时，才启用 `frontend-fallback` profile，并把 `DOCKER_IMAGE_NAME_FRONTEND` 指向已验证的 fallback 镜像 tag。
+
 ## Makefile 入口
 
 手动部署统一通过根目录 [Makefile](../Makefile) 暴露以下命令：

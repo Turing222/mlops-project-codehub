@@ -3,7 +3,6 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DOCKER_IMAGE_NAME="${DOCKER_IMAGE_NAME:-dewflow-backend:2.0.0}"
 SMOKE_COMPOSE_FILE="${SMOKE_COMPOSE_FILE:-docker-compose.db.yml}"
 SMOKE_ENV_FILE="${SMOKE_ENV_FILE:-.env.smoke}"
 SMOKE_ENV_TEMPLATE="${SMOKE_ENV_TEMPLATE:-.env.smoke.template}"
@@ -37,9 +36,9 @@ DEPLOY_PULL_IMAGES_EXPLICIT="${DEPLOY_PULL_IMAGES+x}"
 DEPLOY_LOG_TAIL_EXPLICIT="${DEPLOY_LOG_TAIL+x}"
 DEPLOY_SECRET_DIR_EXPLICIT="${DEPLOY_SECRET_DIR+x}"
 DEPLOY_SMOKE_PYTEST_TARGETS_EXPLICIT="${DEPLOY_SMOKE_PYTEST_TARGETS+x}"
-DOCKER_IMAGE_NAME_WEB_EXPLICIT="${DOCKER_IMAGE_NAME_WEB+x}"
-DOCKER_IMAGE_NAME_AI_EXPLICIT="${DOCKER_IMAGE_NAME_AI+x}"
-DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT="${DOCKER_IMAGE_NAME_FRONTEND+x}"
+DOCKER_IMAGE_NAME_WEB_EXPLICIT="${DOCKER_IMAGE_NAME_WEB_EXPLICIT-${DOCKER_IMAGE_NAME_WEB+x}}"
+DOCKER_IMAGE_NAME_AI_EXPLICIT="${DOCKER_IMAGE_NAME_AI_EXPLICIT-${DOCKER_IMAGE_NAME_AI+x}}"
+DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT="${DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT-${DOCKER_IMAGE_NAME_FRONTEND+x}}"
 DEPLOY_COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-deploy/docker-compose.yml}"
 DEPLOY_EXTRA_COMPOSE_FILES="${DEPLOY_EXTRA_COMPOSE_FILES:-}"
 DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-deploy/.env.ec2}"
@@ -437,9 +436,12 @@ load_deploy_env() {
     DEPLOY_PULL_IMAGES="$(deploy_control_env_value "DEPLOY_PULL_IMAGES" "${DEPLOY_PULL_IMAGES:-false}")"
     DEPLOY_LOG_TAIL="$(deploy_control_env_value "DEPLOY_LOG_TAIL" "200")"
     DEPLOY_SMOKE_PYTEST_TARGETS="$(deploy_control_env_value "DEPLOY_SMOKE_PYTEST_TARGETS" "$DEPLOY_SMOKE_PYTEST_TARGETS")"
-    DOCKER_IMAGE_NAME_WEB="$(deploy_control_env_value "DOCKER_IMAGE_NAME_WEB" "dewflow-backend:2.0.0-web")"
-    DOCKER_IMAGE_NAME_AI="$(deploy_control_env_value "DOCKER_IMAGE_NAME_AI" "dewflow-backend:2.0.0-ai")"
-    DOCKER_IMAGE_NAME_FRONTEND="$(deploy_control_env_value "DOCKER_IMAGE_NAME_FRONTEND" "dewflow-frontend:2.0.0")"
+    # No 2.0.0 fallback: an unset image variable must fail deploy-ec2-check
+    # (see the required-image guard in ec2-check.sh), not silently run a stale
+    # placeholder image. Release tags are immutable git-describe values.
+    DOCKER_IMAGE_NAME_WEB="$(deploy_control_env_value "DOCKER_IMAGE_NAME_WEB" "")"
+    DOCKER_IMAGE_NAME_AI="$(deploy_control_env_value "DOCKER_IMAGE_NAME_AI" "")"
+    DOCKER_IMAGE_NAME_FRONTEND="$(deploy_control_env_value "DOCKER_IMAGE_NAME_FRONTEND" "")"
     DEPLOY_SECRET_KEY_FILE="$(deploy_secret_file_path "DEPLOY_SECRET_KEY_FILE" "secret_key.txt")"
     DEPLOY_POSTGRES_PASSWORD_FILE="$(deploy_secret_file_path "DEPLOY_POSTGRES_PASSWORD_FILE" "postgres_password.txt")"
     DEPLOY_REDIS_PASSWORD_FILE="$(deploy_secret_file_path "DEPLOY_REDIS_PASSWORD_FILE" "redis_password.txt")"

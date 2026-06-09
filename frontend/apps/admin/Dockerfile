@@ -1,4 +1,4 @@
-# docker build -f frontend/apps/admin/Dockerfile -t dewflow-frontend:2.0.0 .
+# Build via: make frontend-image-build (tags via immutable IMAGE_TAG / git describe)
 
 FROM node:22-bookworm-slim AS builder
 

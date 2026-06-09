@@ -76,7 +76,7 @@ class WebSettings(BaseSettings):
     # ── App Metadata ──────────────────────────────────────────────
     APP_ENV: str = Field(default_factory=_current_app_env)
     PROJECT_NAME: str = "Dewflow AI"
-    VERSION: str = "2.0.0"
+    VERSION: str = "0.0.0"  # Sentinel overridden by the YAML settings source.
     DEBUG: bool = False
     API_ROOT_PATH: str = "/api"
     API_V1_STR: str = "/v1"

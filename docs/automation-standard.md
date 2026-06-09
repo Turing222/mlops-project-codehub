@@ -285,7 +285,7 @@ qa-test-unit
 
 为了便于复用，推荐在 `Makefile` 中定义公共变量并导出给脚本，例如：
 
-- `DOCKER_IMAGE_NAME`
+- `DOCKER_IMAGE_NAME_WEB`
 - `SMOKE_COMPOSE_FILE`
 - `SMOKE_BASE_URL`
 - `SMOKE_LIVE_PATH`

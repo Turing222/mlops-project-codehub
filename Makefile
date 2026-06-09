@@ -1,8 +1,24 @@
 SHELL := /bin/bash
 
-DOCKER_IMAGE_NAME_WEB ?= dewflow-backend:2.0.0-web
-DOCKER_IMAGE_NAME_AI ?= dewflow-backend:2.0.0-ai
-DOCKER_IMAGE_NAME_FRONTEND ?= dewflow-frontend:2.0.0
+# IMAGE_TAG = immutable build identity. `git describe` yields the semver tag when
+# one exists (v2.1.0 / v2.1.0-3-gabcdef0), else a 12-char short SHA. Release
+# targets require a clean worktree before using this tag.
+IMAGE_TAG ?= $(shell git describe --tags --always --abbrev=12 2>/dev/null || echo dev)
+BACKEND_IMAGE_REPOSITORY ?= dewflow-backend
+FRONTEND_IMAGE_REPOSITORY ?= dewflow-frontend
+RELEASE_DOCKER_IMAGE_NAME_WEB ?= $(BACKEND_IMAGE_REPOSITORY):$(IMAGE_TAG)-web
+RELEASE_DOCKER_IMAGE_NAME_AI ?= $(BACKEND_IMAGE_REPOSITORY):$(IMAGE_TAG)-ai
+RELEASE_DOCKER_IMAGE_NAME_FRONTEND ?= $(FRONTEND_IMAGE_REPOSITORY):$(IMAGE_TAG)
+# Default image names track the immutable tag — no 2.0.0 pseudo-version anywhere.
+DOCKER_IMAGE_NAME_WEB ?= $(RELEASE_DOCKER_IMAGE_NAME_WEB)
+DOCKER_IMAGE_NAME_AI ?= $(RELEASE_DOCKER_IMAGE_NAME_AI)
+DOCKER_IMAGE_NAME_FRONTEND ?= $(RELEASE_DOCKER_IMAGE_NAME_FRONTEND)
+explicit_image_override = $(if $(filter command line,$(origin $(1))),1,$(if $(filter environment environment override,$(origin $(1)_EXPLICIT)),$($(1)_EXPLICIT),$(if $(filter environment environment override,$(origin $(1))),1,)))
+DOCKER_IMAGE_NAME_WEB_EXPLICIT := $(call explicit_image_override,DOCKER_IMAGE_NAME_WEB)
+DOCKER_IMAGE_NAME_AI_EXPLICIT := $(call explicit_image_override,DOCKER_IMAGE_NAME_AI)
+DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT := $(call explicit_image_override,DOCKER_IMAGE_NAME_FRONTEND)
+# Semantic version for release tagging; single source of truth is base.yaml.
+RELEASE_VERSION ?= $(shell awk -F': *' '/^VERSION:/{print $$2}' configs/app/base.yaml 2>/dev/null)
 SMOKE_COMPOSE_FILE ?= docker-compose.db.yml
 SMOKE_ENV_FILE ?= .env.smoke
 SMOKE_ENV_TEMPLATE ?= .env.smoke.template
@@ -35,6 +51,9 @@ PERF_OUTPUT ?= perf/reports/chat_api_load_report.json
 PYTEST_ARGS ?=
 
 export DOCKER_IMAGE_NAME_WEB DOCKER_IMAGE_NAME_AI DOCKER_IMAGE_NAME_FRONTEND
+export DOCKER_IMAGE_NAME_WEB_EXPLICIT DOCKER_IMAGE_NAME_AI_EXPLICIT DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT
+export IMAGE_TAG BACKEND_IMAGE_REPOSITORY FRONTEND_IMAGE_REPOSITORY
+export RELEASE_DOCKER_IMAGE_NAME_WEB RELEASE_DOCKER_IMAGE_NAME_AI RELEASE_DOCKER_IMAGE_NAME_FRONTEND
 export SMOKE_COMPOSE_FILE
 export SMOKE_ENV_FILE
 export SMOKE_ENV_TEMPLATE
@@ -54,7 +73,7 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 .PHONY: help \
 	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-standards-fast qa-claude-fast qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-mock frontend-e2e-smoke frontend-check \
-	image-build frontend-image-build image-build-all \
+	image-build frontend-image-build image-build-all release-check-clean image-build-release frontend-image-build-release image-build-all-release release-image-env release-tag \
 	deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down \
 	deploy-local-prod-secrets-prepare deploy-local-prod-check deploy-local-prod-up deploy-local-prod-wait deploy-local-prod-verify deploy-local-prod-logs deploy-local-prod-down \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-up-debug env-smoke-wait env-smoke-down env-smoke-logs \
@@ -105,6 +124,11 @@ help:
 		'  image-build          Build the backend Docker image' \
 		'  frontend-image-build  Build the frontend Docker image' \
 		'  image-build-all       Build all Docker images (backend + frontend)' \
+		'  image-build-release  Build backend images tagged with IMAGE_TAG' \
+		'  frontend-image-build-release  Build frontend fallback image tagged with IMAGE_TAG' \
+		'  image-build-all-release       Build all release-tagged images' \
+		'  release-image-env    Print DOCKER_IMAGE_NAME_* values for deploy/.env.ec2' \
+		'  release-tag          Tag current commit v<VERSION> from configs/app/base.yaml' \
 		'  deploy-ec2-secrets-prepare  Create EC2 deploy secret files under secrets/ec2' \
 		'  deploy-ec2-check     Validate EC2 deploy env and compose config' \
 		'  deploy-ec2-up        Pull images and start the EC2 deploy stack' \
@@ -245,6 +269,30 @@ frontend-image-build:
 	docker build -f frontend/apps/admin/Dockerfile -t "$(DOCKER_IMAGE_NAME_FRONTEND)" .
 
 image-build-all: image-build frontend-image-build
+
+release-check-clean:
+	@test -z "$$(git status --porcelain)" || { echo "working tree dirty; commit or remove all tracked and untracked changes before releasing"; exit 1; }
+
+image-build-release: release-check-clean
+	DOCKER_IMAGE_NAME_WEB="$(RELEASE_DOCKER_IMAGE_NAME_WEB)" DOCKER_IMAGE_NAME_AI="$(RELEASE_DOCKER_IMAGE_NAME_AI)" $(MAKE) image-build
+
+frontend-image-build-release: release-check-clean
+	DOCKER_IMAGE_NAME_FRONTEND="$(RELEASE_DOCKER_IMAGE_NAME_FRONTEND)" $(MAKE) frontend-image-build
+
+image-build-all-release: image-build-release frontend-image-build-release
+
+release-image-env: release-check-clean
+	@printf '%s\n' \
+		'DOCKER_IMAGE_NAME_WEB=$(RELEASE_DOCKER_IMAGE_NAME_WEB)' \
+		'DOCKER_IMAGE_NAME_AI=$(RELEASE_DOCKER_IMAGE_NAME_AI)' \
+		'DOCKER_IMAGE_NAME_FRONTEND=$(RELEASE_DOCKER_IMAGE_NAME_FRONTEND)'
+
+release-tag: release-check-clean
+	@test -n "$(RELEASE_VERSION)" || { echo "VERSION not found in configs/app/base.yaml"; exit 1; }
+	@pyproject_version="$$(awk -F'"' '/^version =/{print $$2; exit}' pyproject.toml)"; \
+		test "$$pyproject_version" = "$(RELEASE_VERSION)" || { echo "version drift: pyproject.toml=$$pyproject_version != base.yaml VERSION=$(RELEASE_VERSION); sync them before tagging"; exit 1; }
+	git tag -a "v$(RELEASE_VERSION)" -m "release v$(RELEASE_VERSION)"
+	@printf 'tagged v%s; push with: git push origin v%s\n' "$(RELEASE_VERSION)" "$(RELEASE_VERSION)"
 
 deploy-ec2-secrets-prepare:
 	bash scripts/deploy/ec2-secrets-prepare.sh

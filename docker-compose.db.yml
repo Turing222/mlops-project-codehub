@@ -199,7 +199,7 @@ services:
     restart: "no"
 
   db_migrator:
-    image: dewflow-backend:2.0.0-web
+    image: ${DOCKER_IMAGE_NAME_WEB:?missing DOCKER_IMAGE_NAME_WEB (run make image-build then make env-smoke-up)}
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     secrets: *app-secrets
     environment:
@@ -271,7 +271,7 @@ services:
           memory: 64M
 
   api:
-    image: dewflow-backend:2.0.0-web
+    image: ${DOCKER_IMAGE_NAME_WEB:?missing DOCKER_IMAGE_NAME_WEB (run make image-build then make env-smoke-up)}
     logging: *default-logging
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     stop_grace_period: 40s
@@ -314,7 +314,7 @@ services:
       - "8000:8000"
 
   task_worker:
-    image: dewflow-backend:2.0.0-ai
+    image: ${DOCKER_IMAGE_NAME_AI:?missing DOCKER_IMAGE_NAME_AI (run make image-build then make env-smoke-up)}
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     logging: *default-logging
     stop_grace_period: 120s
