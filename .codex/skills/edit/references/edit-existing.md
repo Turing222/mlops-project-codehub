@@ -27,6 +27,7 @@ Frontend (see `.codex/skills/project/references/frontend.md`):
 - API calls go through `src/schemas` -> `src/api`; no raw requests in pages or components.
 - Server state lives in TanStack Query, client state in Zustand.
 - SSE / chunk stream parsing stays in `src/streams/`.
+- If the change alters frontend behavior or conventions, update the matching standard under `frontend/docs/` (or leave a TODO there) in the same change.
 
 ## Validation Choice
 

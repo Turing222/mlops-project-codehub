@@ -17,6 +17,7 @@ make frontend-lint
 make frontend-typecheck
 make frontend-test
 make frontend-build
+make frontend-bundle-check
 make frontend-e2e-mock
 make frontend-check
 ```
@@ -78,6 +79,16 @@ Pages 生产部署前至少确认：
 4. `pnpm --dir frontend --filter admin build` 会在 `dist/_headers` 生成真实 `Content-Security-Policy-Report-Only` header；Cloudflare Pages 环境下缺少 `VITE_API_BASE_URL` 会直接失败
 5. 后端已设置 `BACKEND_CORS_ORIGINS=https://app.<domain>`
 6. 若启用 Google OAuth，后端已设置 `GOOGLE_ALLOWED_REDIRECT_URIS=https://app.<domain>/auth/google/callback`
+
+部署完成后从任意机器运行发布检查（详见 [docs/deploy-ec2.md](../../../docs/deploy-ec2.md)）：
+
+```bash
+make verify-pages \
+  DEPLOY_FRONTEND_BASE_URL=https://app.<domain> \
+  DEPLOY_BASE_URL=https://api.<domain>
+```
+
+Node 与 pnpm 版本由 `frontend/.nvmrc` 与 `frontend/package.json` 的 `packageManager` 字段钉住，本地、CI 和 Pages 构建共用同一来源。bundle 体积基线在 `bundle-baseline.json`，构建后用 `make frontend-bundle-check` 校验；有意增长时在仓库根运行 `node frontend/apps/admin/scripts/check-bundle-size.mjs --update` 刷新基线。
 
 ### 3. 前端生产镜像构建（fallback / 演练）
 使用根目录的 `Makefile` 构建前端生产 Docker 镜像（支持多阶段构建和 pnpm store 缓存）：

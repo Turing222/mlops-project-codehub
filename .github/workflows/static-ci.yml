@@ -80,19 +80,18 @@ jobs:
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version-file: frontend/.nvmrc
           cache: "pnpm"
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install frontend dependencies
         run: pnpm --dir frontend install --frozen-lockfile
-
-      - name: Install Playwright Chromium
-        run: pnpm --dir frontend --filter admin exec playwright install --with-deps chromium
 
       - name: Lint
         run: make frontend-lint
@@ -106,5 +105,6 @@ jobs:
       - name: Build
         run: make frontend-build
 
-      - name: E2E mock tests
-        run: make frontend-e2e-mock
+      # Mock e2e runs in PR Gate CI only; merges are gated by branch protection.
+      - name: Bundle size check
+        run: make frontend-bundle-check

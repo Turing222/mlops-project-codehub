@@ -100,3 +100,13 @@
 6. 验证 `POST /api/v1/telemetry/errors` 在 Pages origin 下不返回 403
 7. 验证 `POST /api/v1/csp/reports` 在 Pages origin 下返回 204
 8. 验证 `/api/v1/chat/query_stream` 在公网 API 路径下保持增量流式输出
+
+除第 4 项（仅启用 Google OAuth 时手动确认）和第 8 项（需要登录会话）外，以上检查已脚本化：
+
+```bash
+make verify-pages \
+  DEPLOY_FRONTEND_BASE_URL=https://app.<domain> \
+  DEPLOY_BASE_URL=https://api.<domain>
+```
+
+脚本对 telemetry / CSP report 端点提交故意无效的 `{}` 请求体：返回 422 即证明 origin 守卫放行（403 表示 allowlist 缺失），且不会产生伪造的 telemetry / CSP 日志事件。若返回 204，说明端点接受了空请求体——origin 仍判定为放行，但可能已记录一条空事件，脚本会输出 WARN 提示检查后端校验。

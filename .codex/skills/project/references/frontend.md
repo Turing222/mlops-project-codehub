@@ -43,6 +43,15 @@ Read the smallest matching document before frontend work:
 - [frontend/docs/standards/styling.md](../../../../frontend/docs/standards/styling.md): antd first, localized styles.
 - [frontend/docs/standards/testing.md](../../../../frontend/docs/standards/testing.md): test layering and minimum-test guidance for new features.
 
+## Delivery And Release
+
+For release, CSP/CORS, Cloudflare Pages, or rollback work, read:
+
+- [docs/frontend-delivery-and-edge-responsibilities.md](../../../../docs/frontend-delivery-and-edge-responsibilities.md): Pages vs API edge responsibilities, CSP report-only wiring, release checklist.
+- [docs/deploy-ec2.md](../../../../docs/deploy-ec2.md): Pages dashboard config (source of truth), branch protection requirements, fallback image rollback.
+
+Post-deploy verification: `make verify-pages DEPLOY_FRONTEND_BASE_URL=... DEPLOY_BASE_URL=...`.
+
 ## Validation
 
 Use Make targets from the repository root:
@@ -52,9 +61,13 @@ make frontend-lint
 make frontend-typecheck
 make frontend-test
 make frontend-build
+make frontend-bundle-check
 make frontend-e2e-mock
 make frontend-check
+make frontend-check-full
 ```
+
+`frontend-bundle-check` compares the gzip bundle total against `frontend/apps/admin/bundle-baseline.json`; refresh the baseline with `node frontend/apps/admin/scripts/check-bundle-size.mjs --update` (from the repository root) when growth is intentional.
 
 Smoke e2e runs against a real backend, needs `E2E_SMOKE_USER` / `E2E_SMOKE_PASS`, and is not a default PR gate:
 

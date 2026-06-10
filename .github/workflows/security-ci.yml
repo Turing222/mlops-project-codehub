@@ -8,6 +8,10 @@ on:
       - "Dockerfile"
       - "pyproject.toml"
       - "uv.lock"
+      - "frontend/pnpm-lock.yaml"
+      - "frontend/package.json"
+      - "frontend/apps/admin/package.json"
+      - "frontend/apps/admin/Dockerfile"
       - ".github/dependabot.yml"
       - ".github/workflows/security-ci.yml"
   schedule:
@@ -91,6 +95,57 @@ jobs:
         uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: dewflow-backend:security-worker
+          vuln-type: "os,library"
+          severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+
+  frontend-dependencies:
+    name: Frontend dependency scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: frontend/.nvmrc
+
+      # pnpm audit works from the lockfile alone; no install step needed.
+      # The registry is pinned because mirror registries often lack the audit endpoint.
+      - name: Audit production dependencies
+        run: pnpm --dir frontend audit --prod --audit-level high --registry https://registry.npmjs.org
+
+      - name: Audit dev dependencies
+        run: pnpm --dir frontend audit --dev --audit-level critical --registry https://registry.npmjs.org
+
+  # Also exercises the frontend fallback image build (Pages rollback path),
+  # which no other workflow builds.
+  frontend-image:
+    name: Frontend image scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Build frontend fallback image
+        run: docker build -f frontend/apps/admin/Dockerfile -t dewflow-frontend:security .
+
+      - name: Scan frontend fallback image
+        uses: aquasecurity/trivy-action@v0.33.1
+        with:
+          image-ref: dewflow-frontend:security
           vuln-type: "os,library"
           severity: "HIGH,CRITICAL"
           ignore-unfixed: true

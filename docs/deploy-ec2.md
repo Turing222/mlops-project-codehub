@@ -61,13 +61,37 @@ EC2 默认部署栈包含：
 
 Cloudflare Tunnel 本身暂不纳入 Compose，也不提交 token。生产主机上应将 Tunnel 的 public hostname（如 `api.<domain>`）指向 `http://127.0.0.1:8081`；Cloudflare credential / token 只保存在目标主机或 Cloudflare 托管配置中。`api-nginx` 只能允许 Cloudflare Tunnel / 本机访问，默认 `API_NGINX_BIND=127.0.0.1` 就是这个安全边界；不要把它直接绑定到 `0.0.0.0` 或公网 / 私网入口，否则客户端可以伪造 `CF-Connecting-IP`，绕过按 IP 的认证限流。
 
-Cloudflare Pages 推荐使用 GitHub 集成：
+Cloudflare Pages 推荐使用 GitHub 集成。Dashboard 配置以下面这份清单为 source of truth：在 Dashboard 改了任何一项，必须回写本清单。
 
 ```text
+Production branch: main
 Root directory: frontend
 Build command: pnpm install --frozen-lockfile && pnpm --filter admin build
 Build output: apps/admin/dist
-Environment: VITE_API_BASE_URL=https://api.<domain>
+Environment (Production): VITE_API_BASE_URL=https://api.<domain>
+Environment (Preview): VITE_API_BASE_URL=<可用的 API origin；缺失时 CF_PAGES=1 构建会直接失败>
+```
+
+版本钉住不依赖 Dashboard 配置：Node 版本由 `frontend/.nvmrc` 决定（当前 22），pnpm 版本由 `frontend/package.json` 的 `packageManager` 字段决定（corepack）。CI 与 Pages 构建读取同一来源，避免环境漂移。唯一例外是 fallback 镜像：`frontend/apps/admin/Dockerfile` 通过 `corepack prepare` 单独钉住相同的 pnpm 版本，升级 `packageManager` 时必须同步修改该行。
+
+### main 分支保护是 Pages 部署的前提
+
+Pages GitHub 集成在 push 到 production branch 时**立即**构建部署，与 GitHub CI 并行——CI 失败不会阻止 Pages 发布。因此部署 gate 必须前移到合并时：
+
+1. GitHub → Settings → Branches → 为 `main` 添加 branch protection rule（或 ruleset）。
+2. 勾选 "Require status checks to pass"，required checks 至少包含：`Backend static`、`Frontend static`、`PR gate`。
+3. 勾选 "Require a pull request before merging"，禁止直接 push `main`。
+
+未配置以上规则时，任何直接 push 到 `main` 的代码都会在 CI 结果出来之前发布到生产 Pages。
+
+### 上线后验证
+
+Pages 部署完成后，从任意机器运行发布检查（脚本化了 CORS、CSP header、telemetry / CSP report origin 守卫等检查项）：
+
+```bash
+make verify-pages \
+  DEPLOY_FRONTEND_BASE_URL=https://app.<domain> \
+  DEPLOY_BASE_URL=https://api.<domain>
 ```
 
 ## 前置条件

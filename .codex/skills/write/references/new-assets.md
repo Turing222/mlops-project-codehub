@@ -18,6 +18,7 @@ Use this reference when adding new files or a new capability.
 - Keep new abstractions small until at least two real call sites need them.
 - Do not introduce scripts, generated workflows, or automation scaffolding unless requested.
 - For Python code, include public return types and `__init__ -> None`.
+- If a new asset introduces or changes a frontend convention, update the matching standard under `frontend/docs/` (or leave a TODO there) in the same change.
 
 ## Validation
 

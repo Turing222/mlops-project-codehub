@@ -1,16 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
-const scriptDir = dirname(fileURLToPath(import.meta.url));
-const appDir = join(scriptDir, '..');
-const baseHeadersPath = join(appDir, 'public', '_headers');
-const distHeadersPath = join(appDir, 'dist', '_headers');
-
-const apiBaseUrl = process.env.VITE_API_BASE_URL?.trim();
-const isCloudflarePages = process.env.CF_PAGES === '1';
-
-function resolveApiOrigin(value) {
+export function resolveApiOrigin(value, { isCloudflarePages }) {
     if (!value) {
         if (isCloudflarePages) {
             throw new Error('VITE_API_BASE_URL is required for Cloudflare Pages CSP headers.');
@@ -29,7 +21,7 @@ function resolveApiOrigin(value) {
     return url.origin;
 }
 
-function buildCsp(apiOrigin) {
+export function buildCsp(apiOrigin) {
     return [
         "default-src 'self'",
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
@@ -44,24 +36,43 @@ function buildCsp(apiOrigin) {
     ].join('; ');
 }
 
-const apiOrigin = resolveApiOrigin(apiBaseUrl);
-let headers = await readFile(baseHeadersPath, 'utf8');
+export function renderHeaders(baseHeaders, apiOrigin) {
+    let headers = baseHeaders;
 
-if (apiOrigin) {
-    headers = headers.replace(
-        '  Referrer-Policy: strict-origin-when-cross-origin',
-        [
+    if (apiOrigin) {
+        headers = headers.replace(
             '  Referrer-Policy: strict-origin-when-cross-origin',
-            `  Content-Security-Policy-Report-Only: ${buildCsp(apiOrigin)}`,
-        ].join('\n'),
-    );
-    if (!headers.includes('Content-Security-Policy-Report-Only')) {
-        throw new Error('Generated _headers must include Content-Security-Policy-Report-Only.');
+            [
+                '  Referrer-Policy: strict-origin-when-cross-origin',
+                `  Content-Security-Policy-Report-Only: ${buildCsp(apiOrigin)}`,
+            ].join('\n'),
+        );
+        if (!headers.includes('Content-Security-Policy-Report-Only')) {
+            throw new Error('Generated _headers must include Content-Security-Policy-Report-Only.');
+        }
     }
+
+    if (headers.includes('<domain>')) {
+        throw new Error('Generated _headers must not contain placeholder tokens.');
+    }
+
+    return headers;
 }
 
-if (headers.includes('<domain>')) {
-    throw new Error('Generated _headers must not contain placeholder tokens.');
+async function main() {
+    const scriptDir = dirname(fileURLToPath(import.meta.url));
+    const appDir = join(scriptDir, '..');
+    const baseHeadersPath = join(appDir, 'public', '_headers');
+    const distHeadersPath = join(appDir, 'dist', '_headers');
+
+    const apiOrigin = resolveApiOrigin(process.env.VITE_API_BASE_URL?.trim(), {
+        isCloudflarePages: process.env.CF_PAGES === '1',
+    });
+
+    const headers = renderHeaders(await readFile(baseHeadersPath, 'utf8'), apiOrigin);
+    await writeFile(distHeadersPath, headers, 'utf8');
 }
 
-await writeFile(distHeadersPath, headers, 'utf8');
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    await main();
+}
