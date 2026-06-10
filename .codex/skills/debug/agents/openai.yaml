@@ -1,4 +1,4 @@
 interface:
   display_name: "Debug"
-  short_description: "Read-only backend troubleshooting"
-  default_prompt: "Investigate backend issues with evidence-first hypotheses before proposing fixes."
+  short_description: "Read-only troubleshooting"
+  default_prompt: "Investigate backend or frontend issues with evidence-first hypotheses before proposing fixes."

@@ -9,6 +9,7 @@ Use this reference when adding new files or a new capability.
 - Data access lives in `backend/repositories/` and receives `session` explicitly.
 - Contracts live in `backend/contracts/` when web and worker need a shared interface.
 - Worker tasks live in `backend/worker/`; web code dispatches only through `AbstractTaskDispatcher`.
+- Frontend assets live under `frontend/apps/admin/src/` per the directory map in `.codex/skills/project/references/frontend.md`.
 - Local Codex skills live under `.codex/skills/<skill-name>/`.
 
 ## Creation Rules
@@ -22,6 +23,7 @@ Use this reference when adding new files or a new capability.
 
 Choose the narrowest useful check:
 
-- Local skill changes: inspect changed `SKILL.md`, `references/`, and `agents/openai.yaml` for valid YAML frontmatter, working relative links, and clear trigger boundaries. If a skill validator exists, run it.
+- Local skill changes: run `make qa-skill-check`, then inspect trigger boundaries and instruction semantics that deterministic validation cannot assess.
 - Python source changes: run `make qa-lint` or the focused test command.
+- Frontend source changes: run `make frontend-lint`, `make frontend-typecheck`, or the focused frontend test command.
 - Boundary-sensitive changes: run `make qa-boundaries`.

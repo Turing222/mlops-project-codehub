@@ -71,7 +71,7 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-standards-fast qa-claude-fast qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
+	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-skill-check qa-standards-fast qa-claude-fast qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all release-check-clean image-build-release frontend-image-build-release image-build-all-release release-image-env release-tag \
 	deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down \
@@ -111,6 +111,7 @@ help:
 		'  qa-perf-chat-locust  Run exploratory chat load test with Locust' \
 		'  qa-agent-flow        Reserved entrypoint for agent/C2C flow tests' \
 		'  qa-checks            Run lint and typecheck via scripts' \
+		'  qa-skill-check       Validate local Codex skill contracts' \
 		'  qa-standards-fast    Run fast standards checks for files or default project paths' \
 		'  qa-claude-fast       Alias for qa-standards-fast (kept for Claude hook wiring)' \
 		'  frontend-lint        Run frontend ESLint checks' \
@@ -230,7 +231,10 @@ qa-agent-flow:
 qa-checks:
 	bash scripts/qa/run_checks.sh
 
-qa-standards-fast:
+qa-skill-check:
+	uv run python scripts/qa/check_skills.py
+
+qa-standards-fast: qa-skill-check
 	uv run python scripts/qa/check_claude_fast.py $(if $(strip $(FILES)),$(FILES),$(QA_STANDARDS_FAST_TARGETS))
 
 qa-claude-fast: qa-standards-fast

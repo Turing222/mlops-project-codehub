@@ -16,6 +16,13 @@
 - `AbstractUnitOfWork` wraps transactions and repositories.
 - Repository methods receive `session` as an explicit parameter.
 
+## Application Layer
+
+- `backend/application/` holds workflows grouped by process boundary (chat, knowledge, repo_analysis).
+- Web-side workflows are injected through `api/deps/workflows.py`; worker-side workflows are called from `worker/tasks/*`.
+- A workflow composes services and may also use `AbstractUnitOfWork` repositories directly for persistence steps (see `application/chat/web_stream_workflow.py`); the call chain becomes endpoint -> (application workflow) -> service / repository.
+- Workflows follow the same import rules as their host process: web-side workflows must not import `backend.worker`.
+
 ## 3-Tier Call Chain
 
 ```text

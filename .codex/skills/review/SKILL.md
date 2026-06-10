@@ -34,6 +34,11 @@ Check against `.codex/skills/project/references/coding.md` conventions:
 - **Comments**: module header format, inline comments only explain WHY/WHAT RISK, no narrative comments (`# 获取用户`, `# execute query`)
 - **Error messages**: `message` in Chinese, `error_code` in UPPER_SNAKE_CASE English
 
+For frontend changes, check against `frontend/docs/standards/components.md` and `styling.md`:
+
+- **Component granularity**: pages compose only; tables, modals, forms, and hooks live under `features/*`
+- **Styling**: antd components first, `lucide-react` icons, page styles co-located with the page directory
+
 ### Pass 2: Architecture (medium — diff + contracts)
 
 For backend code changes, read the diff + `backend/contracts/interfaces.py` + directory structure.
@@ -45,6 +50,13 @@ Check:
 - Dependencies injected via constructor, not global singletons
 - New code follows 3-tier chain: endpoint → service → repository (no ORM queries in endpoints)
 - New files placed in the correct directory per the directory map
+
+For frontend code changes, read the diff + `.codex/skills/project/references/frontend.md`:
+
+- Pages do NOT issue raw HTTP requests; calls go through `src/schemas` -> `src/api` -> query hooks (`api.md`)
+- Server state lives in TanStack Query, client state in Zustand, transient values stay in components (`state.md`)
+- SSE / chunk stream parsing stays in `src/streams/`, not in pages or feature hooks (`streaming.md`)
+- Business logic sinks into `features/*`; new files follow the frontend directory map (`components.md`)
 
 For non-code artifacts, apply the relevant contract checks instead of forcing
 backend architecture checks:
@@ -68,6 +80,14 @@ Check:
 - **Error handling**: exceptions caught at the right layer, no bare `except: pass`
 - **Resource cleanup**: file handles, Redis connections, DB sessions properly closed
 - **Idempotency**: duplicate requests handled safely (check for `idempotency_lock_key` patterns)
+
+For frontend changes, check against `frontend/docs/architecture.md`:
+
+- **Schema validation**: responses and stream events parsed with zod schemas; no unchecked `as` casts at API boundaries
+- **Retry safety**: non-idempotent POST is never auto-retried; idempotency keys passed where the API requires them
+- **Query correctness**: stable query keys; mutation invalidation targets the right keys
+- **Stream lifecycle**: `error`, `done`, and abort paths handled; readers and subscriptions cleaned up
+- **Token lifecycle**: login, bootstrap restore, and unauthorized cleanup follow the documented flow
 
 ## Output Format
 

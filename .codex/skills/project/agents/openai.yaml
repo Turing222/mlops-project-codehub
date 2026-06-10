@@ -1,4 +1,4 @@
 interface:
   display_name: "Project"
-  short_description: "Dewflow backend project rules"
-  default_prompt: "Load Dewflow backend architecture, conventions, commands, and handoff rules."
+  short_description: "Dewflow monorepo project rules"
+  default_prompt: "Load Dewflow backend and frontend architecture, conventions, commands, and handoff rules."

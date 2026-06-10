@@ -4,11 +4,13 @@ Use this reference when a request could fit more than one local skill.
 
 ## Modes
 
+All modes cover both backend and frontend assets; load the matching project reference (`context.md` for backend, `frontend.md` for frontend) first.
+
 - `read`: inspect, explain, summarize, compare, diagnose, or answer without file changes.
 - `task-plan`: create or update durable work-item artifacts when the task needs persistent tracking, checkpoint updates, dependency alignment, or complex multi-stage/multi-PR planning.
 - `write`: create new code, docs, config, migrations, scripts, or skill assets.
 - `edit`: change existing code, docs, config, migrations, scripts, or skill assets.
-- `add-tests`: create or update pytest coverage.
+- `add-tests`: create or update test coverage (pytest, Vitest, Playwright).
 
 ## Ambiguity Rule
 
@@ -17,7 +19,7 @@ Prefer the least invasive mode that satisfies the latest user request. If implem
 ## Collaboration Flow
 
 - For broad implementation planning, prefer Claude Code built-in `/plan`; use `task-plan` to persist approved conclusions and checkpoint state into `work-items/`.
-- For complex方案/计划/里程碑 requests with multiple PRs, phases, dependencies, or rollout checkpoints, use `task-plan` to confirm whether the user wants durable work-item tracking in `work-items/` before producing only an in-chat plan.
+- For complex 方案/计划/里程碑 requests with multiple PRs, phases, dependencies, or rollout checkpoints, use `task-plan` to confirm whether the user wants durable work-item tracking in `work-items/` before producing only an in-chat plan.
 - After `task-plan`, switch to the mode skill that owns the next executable step.
 - After `write` or `edit`, consider `add-tests` when coverage gaps exist or behavior changed.
 

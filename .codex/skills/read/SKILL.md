@@ -1,6 +1,6 @@
 ---
 name: read
-description: Read-only repository investigation and explanation for Dewflow backend. Use when the user asks to inspect, analyze, locate, summarize, explain, compare, or answer questions without requesting file edits, implementation, commits, or new tests.
+description: Read-only repository investigation and explanation for Dewflow. Use when the user asks to inspect, analyze, locate, summarize, explain, compare, or answer questions without requesting file edits, implementation, commits, or new tests.
 ---
 
 # Read
