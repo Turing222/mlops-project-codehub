@@ -523,7 +523,9 @@ export DEPLOY_ENABLE_BIFROST=true
 - 当前生产部署路径以 EC2 + 云端托管监控服务为准；`deploy/monitoring/` 下的 Prometheus / Grafana / Loki 资产主要用于本地自托管观察与排障，不是 AWS 生产监控的 source of truth。
 - 默认 `deploy-ec2-up` 不会启动 self-hosted observability profile。
 - 当前 EC2 observability profile 的真实能力边界是：
-  - metrics 通过 backend OTLP exporter **直接推到 Prometheus receiver**（`OTEL_METRICS_ENDPOINT=http://prometheus:9090/api/v1/otlp`）
+  - metrics 通过 backend OTLP exporter **直接推到 Prometheus receiver**（`OTEL_METRICS_ENDPOINT=http://prometheus:9090/api/v1/otlp/v1/metrics`）
+  - HTTP metrics 使用稳定语义约定（`OTEL_SEMCONV_STABILITY_OPT_IN=http`），与告警和面板中的 `http_server_request_duration_seconds_*` 指标保持一致
+  - Prometheus 将 `service.name` 提升为 `service_name` 标签，API 指标告警按 `service_name="fastapi-backend"` 选择业务指标
   - traces 默认关闭；active EC2 stack **没有** `otel-collector` / trace backend
   - [deploy/monitoring/alert_rules.yml](../deploy/monitoring/alert_rules.yml) 会被加载，但当前 **没有 Alertmanager / alert delivery path**
   - Prometheus 目前抓取的是 `prometheus`、`api`、`postgres_exporter`、`redis_exporter`；**不包含 worker app metrics**

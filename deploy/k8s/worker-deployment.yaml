@@ -32,6 +32,7 @@ spec:
             - backend.infra.task_broker:broker
             - backend.worker.tasks.llm_tasks
             - backend.worker.tasks.knowledge_tasks
+            - backend.worker.tasks.repo_analysis_tasks
             - --workers
             - "2"
             - --wait-tasks-timeout

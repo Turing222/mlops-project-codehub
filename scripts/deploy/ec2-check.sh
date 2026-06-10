@@ -22,7 +22,7 @@ fi
 
 load_deploy_env
 
-deploy_env_file_value() {
+raw_deploy_env_file_value() {
     local var_name="$1"
 
     awk -F= -v key="$var_name" '
@@ -44,7 +44,7 @@ reject_plaintext_secret_env_value() {
     local var_name="$1"
     local value
 
-    if value="$(deploy_env_file_value "$var_name")" && [[ -n "$value" ]]; then
+    if value="$(raw_deploy_env_file_value "$var_name")" && [[ -n "$value" ]]; then
         log_error "$var_name must be stored in secrets/ec2, not in $deploy_env_path"
         log_info "Run 'make deploy-ec2-secrets-prepare' and move the value into the matching secrets/ec2/*.txt file"
         exit 1

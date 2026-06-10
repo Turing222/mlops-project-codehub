@@ -425,7 +425,10 @@ load_deploy_env() {
     DEPLOY_SECRET_DIR="$(deploy_control_env_value "DEPLOY_SECRET_DIR" "secrets/ec2")"
     DEPLOY_EXTRA_COMPOSE_FILES="$(deploy_control_env_value "DEPLOY_EXTRA_COMPOSE_FILES" "")"
     DEPLOY_BASE_URL="$(deploy_control_env_value "DEPLOY_BASE_URL" "http://localhost")"
-    DEPLOY_FRONTEND_BASE_URL="$(deploy_control_env_value "DEPLOY_FRONTEND_BASE_URL" "$DEPLOY_BASE_URL")"
+    # 默认值用空串占位:动态默认 ($DEPLOY_BASE_URL) 会让显式传值因等于默认值而被
+    # 文件值吞掉;空串默认保证非空显式值永远生效,回退逻辑放在下一行。
+    DEPLOY_FRONTEND_BASE_URL="$(deploy_control_env_value "DEPLOY_FRONTEND_BASE_URL" "")"
+    DEPLOY_FRONTEND_BASE_URL="${DEPLOY_FRONTEND_BASE_URL:-$DEPLOY_BASE_URL}"
     DEPLOY_FRONTEND_HEALTH_PATH="$(deploy_control_env_value "DEPLOY_FRONTEND_HEALTH_PATH" "/healthz")"
     DEPLOY_API_LIVE_PATH="$(deploy_control_env_value "DEPLOY_API_LIVE_PATH" "/api/v1/health_check/live")"
     DEPLOY_API_READY_PATH="$(deploy_control_env_value "DEPLOY_API_READY_PATH" "/api/v1/health_check/db_ready")"
@@ -433,7 +436,7 @@ load_deploy_env() {
     DEPLOY_ENABLE_OBSERVABILITY="$(deploy_control_env_value "DEPLOY_ENABLE_OBSERVABILITY" "false")"
     DEPLOY_ENABLE_FRONTEND_FALLBACK="$(deploy_control_env_value "DEPLOY_ENABLE_FRONTEND_FALLBACK" "false")"
     DEPLOY_CHECK_FRONTEND_HEALTH="$(deploy_control_env_value "DEPLOY_CHECK_FRONTEND_HEALTH" "false")"
-    DEPLOY_PULL_IMAGES="$(deploy_control_env_value "DEPLOY_PULL_IMAGES" "${DEPLOY_PULL_IMAGES:-false}")"
+    DEPLOY_PULL_IMAGES="$(deploy_control_env_value "DEPLOY_PULL_IMAGES" "false")"
     DEPLOY_LOG_TAIL="$(deploy_control_env_value "DEPLOY_LOG_TAIL" "200")"
     DEPLOY_SMOKE_PYTEST_TARGETS="$(deploy_control_env_value "DEPLOY_SMOKE_PYTEST_TARGETS" "$DEPLOY_SMOKE_PYTEST_TARGETS")"
     # No 2.0.0 fallback: an unset image variable must fail deploy-ec2-check
@@ -580,6 +583,7 @@ compose_deploy() {
         append_profile_arg "bifrost"
         append_profile_arg "observability"
         append_profile_arg "frontend-fallback"
+        append_profile_arg "debug"
     elif [[ "${DEPLOY_ENABLE_OBSERVABILITY:-false}" == "true" ]]; then
         append_profile_arg "observability"
     fi
@@ -621,6 +625,8 @@ wait_for_http_ok() {
     local url="$1"
     local timeout="${2:-$SMOKE_TIMEOUT_SECONDS}"
     local interval="${3:-$SMOKE_POLL_INTERVAL_SECONDS}"
+    # 单次请求超时与轮询间隔解耦,避免响应慢于 interval 的端点被永久误判失败
+    local request_timeout=10
     local elapsed=0
     local status
 
@@ -630,7 +636,7 @@ wait_for_http_ok() {
         status="$(
             curl \
                 --connect-timeout 2 \
-                --max-time "$interval" \
+                --max-time "$request_timeout" \
                 -sS \
                 -o /dev/null \
                 -w '%{http_code}' \

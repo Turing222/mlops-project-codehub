@@ -72,7 +72,7 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     # ── Observability ───────────────────────────────────────────────
     ENABLE_OTEL_METRICS: bool = True
     ENABLE_OTEL_TRACES: bool = False
-    OTEL_METRICS_ENDPOINT: str = "http://prometheus:9090/api/v1/otlp"
+    OTEL_METRICS_ENDPOINT: str = "http://prometheus:9090/api/v1/otlp/v1/metrics"
     OTEL_TRACES_ENDPOINT: str = "http://jaeger:4318/v1/traces"
 
     # ── GrowthBook ──────────────────────────────────────────────────

@@ -1,6 +1,11 @@
 global:
   scrape_interval: 15s # 每 15 秒抓取一次数据，默认是 1 分钟
 
+otlp:
+  promote_resource_attributes:
+    - service.name
+    - service.version
+
 rule_files:
   - "alert_rules.yml" # 仅加载规则；当前 profile 未接 Alertmanager / delivery path
 

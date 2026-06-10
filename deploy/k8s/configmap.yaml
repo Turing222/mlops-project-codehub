@@ -33,5 +33,6 @@ data:
   ENABLE_OTEL_METRICS: "false"
   ENABLE_OTEL_TRACES: "false"
   # Set OTEL_TRACES_ENDPOINT only after adding a trace backend/collector.
-  OTEL_METRICS_ENDPOINT: "http://prometheus:9090/api/v1/otlp"
+  OTEL_METRICS_ENDPOINT: "http://prometheus:9090/api/v1/otlp/v1/metrics"
+  OTEL_SEMCONV_STABILITY_OPT_IN: "http"
   LANGFUSE_BASE_URL: "https://us.cloud.langfuse.com"

@@ -3,18 +3,32 @@ kind: Deployment
 metadata:
   name: dewflow-worker
   namespace: dewflow
+  labels:
+    app.kubernetes.io/name: dewflow-worker
+    app.kubernetes.io/component: worker
 spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dewflow-worker
   template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dewflow-worker
+        app.kubernetes.io/component: worker
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
       containers:
         - name: worker
+          image: dewflow-backend:2.0.0-ai
           imagePullPolicy: Never
           command:
             - python
             - -c
             - "import time; time.sleep(3600)"
-          livenessProbe: null
-          readinessProbe: null
           resources:
             requests:
               cpu: 50m

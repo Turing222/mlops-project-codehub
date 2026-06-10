@@ -79,12 +79,18 @@ x-backend-aws-env: &backend-aws-env
   S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
   S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
   POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-disable}
+  ENABLE_OTEL_METRICS: ${ENABLE_OTEL_METRICS:-false}
+  ENABLE_OTEL_TRACES: ${ENABLE_OTEL_TRACES:-false}
+  OTEL_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-http://prometheus:9090/api/v1/otlp/v1/metrics}
+  OTEL_TRACES_ENDPOINT: ${OTEL_TRACES_ENDPOINT:-http://jaeger:4318/v1/traces}
+  OTEL_SEMCONV_STABILITY_OPT_IN: ${OTEL_SEMCONV_STABILITY_OPT_IN:-http}
 
 services:
 
   postgres:
     image: pgvector/pgvector:0.8.1-pg17-bookworm
     container_name: postgres
+    restart: unless-stopped
     env_file: *deploy-env-file
     environment:
       POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
@@ -110,6 +116,7 @@ services:
   redis:
     image: redis:7.4-alpine
     container_name: redis
+    restart: unless-stopped
     env_file: *deploy-env-file
     secrets:
       - REDIS_PASSWORD
@@ -143,8 +150,6 @@ services:
       PYTHONMALLOC: default
       WEB_CONCURRENCY: "1"
       LOCAL_STORAGE_ROOT: /data/knowledge_files
-    cap_add:
-      - SYS_PTRACE
     restart: unless-stopped
     deploy:
       resources:
@@ -168,13 +173,16 @@ services:
       start_period: 10s
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 30
     networks:
-      - app_net
-      - monitor_net
-      - edge_net
+      app_net:
+      monitor_net:
+      edge_net:
+        aliases:
+          - dewflow-api
 
   api-nginx:
     image: nginx:1.27-alpine
     container_name: api-nginx
+    restart: unless-stopped
     logging: *default-logging
     depends_on:
       api:
@@ -203,6 +211,7 @@ services:
     image: ${DOCKER_IMAGE_NAME_FRONTEND:?missing DOCKER_IMAGE_NAME_FRONTEND (set in deploy/.env.ec2 via make release-image-env)}
     container_name: frontend
     profiles: [ "frontend-fallback" ]
+    restart: unless-stopped
     logging: *default-logging
     depends_on:
       api:
@@ -223,6 +232,7 @@ services:
     image: maximhq/bifrost:v1.4.11
     container_name: bifrost
     profiles: [ "bifrost" ]
+    restart: unless-stopped
     logging: *default-logging
     environment:
       APP_HOST: 0.0.0.0
@@ -246,7 +256,7 @@ services:
       - -c
       - "export BIFROST_API_KEY=\"$$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" && export BIFROST_ENCRYPTION_KEY=\"$$(cat /run/secrets/BIFROST_ENCRYPTION_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY=\"$$(cat /run/secrets/DEEPSEEK_API_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY_2=\"$$(cat /run/secrets/DEEPSEEK_API_KEY_2 | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY=\"$$(cat /run/secrets/DASHSCOPE_API_KEY | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY_2=\"$$(cat /run/secrets/DASHSCOPE_API_KEY_2 | tr -d '\\015\\012')\" && export COHERE_API_KEY=\"$$(cat /run/secrets/COHERE_API_KEY | tr -d '\\015\\012')\" && export COHERE_API_KEY_2=\"$$(cat /run/secrets/COHERE_API_KEY_2 | tr -d '\\015\\012')\" && exec /app/main -app-dir /app/data -port \"$${APP_PORT}\" -host \"$${APP_HOST}\" -log-level \"$${BIFROST_LOG_LEVEL}\" -log-style \"$${LOG_STYLE}\""
     ports:
-      - "${BIFROST_PORT:-18080}:8080"
+      - "${BIFROST_BIND:-127.0.0.1}:${BIFROST_PORT:-18080}:8080"
     healthcheck:
       test: [ "CMD-SHELL", "wget -qO- --header=\"x-bf-vk: $$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" http://localhost:8080/v1/models >/dev/null || exit 1" ]
       interval: 5s
@@ -254,7 +264,6 @@ services:
       retries: 10
     networks:
       - app_net
-    restart: "no"
     deploy:
       resources:
         limits:
@@ -266,6 +275,7 @@ services:
     image: prom/prometheus:v3.1.0
     container_name: prometheus
     profiles: [ "observability" ]
+    restart: unless-stopped
     logging: *default-logging
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -287,6 +297,8 @@ services:
     image: prometheuscommunity/postgres-exporter:v0.17.1
     container_name: postgres_exporter
     profiles: [ "observability" ]
+    restart: unless-stopped
+    logging: *default-logging
     env_file: *deploy-env-file
     secrets:
       - POSTGRES_PASSWORD
@@ -310,6 +322,8 @@ services:
     image: oliver006/redis_exporter:v1.67.0
     container_name: redis_exporter
     profiles: [ "observability" ]
+    restart: unless-stopped
+    logging: *default-logging
     secrets:
       - REDIS_PASSWORD
     environment:
@@ -331,6 +345,7 @@ services:
     image: grafana/grafana-oss:11.5.8-ubuntu
     container_name: grafana
     profiles: [ "observability" ]
+    restart: unless-stopped
     logging: *default-logging
     environment:
       - GF_ANALYTICS_REPORTING_ENABLED=false
@@ -352,6 +367,8 @@ services:
     image: timberio/vector:0.50.0-debian
     container_name: vector
     profiles: [ "observability" ]
+    restart: unless-stopped
+    logging: *default-logging
     volumes:
       - ./logging/vector.yaml:/etc/vector/vector.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -369,6 +386,8 @@ services:
     image: grafana/loki:3.4.0
     container_name: loki
     profiles: [ "observability" ]
+    restart: unless-stopped
+    logging: *default-logging
     volumes:
       - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
@@ -384,6 +403,7 @@ services:
   db_migrator:
     image: ${DOCKER_IMAGE_NAME_WEB:?missing DOCKER_IMAGE_NAME_WEB (set in deploy/.env.ec2 via make release-image-env)}
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -408,8 +428,9 @@ services:
       - ../tests:/mnt/locust
     command: -f /mnt/locust/performance/locustfile.py --host http://api:8000
     profiles: [ "debug" ]
+    logging: *default-logging
     ports:
-      - "8089:8089"
+      - "127.0.0.1:8089:8089"
     networks:
       - app_net
       - monitor_net
@@ -432,12 +453,23 @@ services:
     environment:
       <<: [ *backend-aws-env, *secret-file-env ]
       LOCAL_STORAGE_ROOT: /data/knowledge_files
-    command: taskiq worker backend.infra.task_broker:broker backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks --workers 2 --wait-tasks-timeout 105 --shutdown-timeout 10
+      TASKIQ_HEALTH_MIN_PROCESSES: "2"
+    healthcheck:
+      test: [ "CMD-SHELL", "python -m backend.worker.tasks.healthcheck || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    command: taskiq worker backend.infra.task_broker:broker backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks --workers 2 --wait-tasks-timeout 105 --shutdown-timeout 10
     restart: unless-stopped
     logging: *default-logging
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+      db_migrator:
+        condition: service_completed_successfully
     networks:
       - app_net
     deploy:

@@ -73,9 +73,8 @@ Worker 压力来自后台任务积压，示例策略为：
 
 4. 集群部署（标准部署入口使用 Kustomize 编排，`kubectl apply -k deploy/k8s` 会一并创建 `namespace.yaml`、`configmap.yaml`、`knowledge-files-pvc.yaml`、`db-migrator-job.yaml`，以及 API / Worker / Frontend 对应的 Deployment、Service、HPA 和 KEDA 资源）：
    ```bash
-   kubectl apply -f deploy/k8s/namespace.yaml
-   kubectl apply -f /tmp/dewflow-secret.yaml
    kubectl apply -k deploy/k8s
+   kubectl apply -f /tmp/dewflow-secret.yaml
    kubectl apply -f /tmp/dewflow-ingress.yaml
    ```
 
