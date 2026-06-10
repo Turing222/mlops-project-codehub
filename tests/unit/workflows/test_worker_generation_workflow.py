@@ -167,34 +167,21 @@ class StaticRAGOrchestrator:
 
 
 def make_rerank_impl(
-    llm_service: StreamingLLM,
+    rankings: list[tuple[int, float]],
 ) -> Callable[[str, list[dict], int | None], Awaitable[list[dict]]]:
-    """Wire rerank through RAGService public helpers so LLM response affects chunk survival."""
+    """Apply native-style rerank scores to candidates."""
 
     async def _rerank_impl(
         query_text: str, candidates: list[dict], top_k: int | None = None
     ) -> list[dict]:
         from backend.services.rag_service import RAGService
 
-        prompt = RAGService.build_rerank_prompt(
-            query_text=query_text, candidates=candidates
-        )
-        result = await llm_service.generate_response(
-            type(
-                "LLMDTO",
-                (),
-                {
-                    "session_id": uuid.uuid4(),
-                    "query_text": prompt,
-                    "conversation_history": [],
-                },
-            )()
-        )
-        if not result.success:
-            raise ValueError(result.error_message or "LLM rerank failed")
-        rankings = RAGService.parse_rerank_response(result.content)
         return RAGService.apply_rankings(
-            candidates=candidates, rankings=rankings, limit=top_k or 4
+            candidates=candidates,
+            rankings=rankings,
+            limit=top_k or 4,
+            score_kind="bifrost_rerank",
+            index_base=0,
         )
 
     return _rerank_impl
@@ -1411,13 +1398,10 @@ async def test_worker_generation_reranks_candidates_when_enabled(
 
     uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
-    llm_service = StreamingLLM(
-        ["answer"],
-        rerank_content='{"rankings": [{"index": 2, "score": 9}]}',
-    )
+    llm_service = StreamingLLM(["answer"])
     rag_service = RecordingRAGService([])
 
-    rag_service.rerank = AsyncMock(side_effect=make_rerank_impl(llm_service))
+    rag_service.rerank = AsyncMock(side_effect=make_rerank_impl([(1, 9.0)]))
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
         redis_client=FakeRedisClient(redis),
@@ -1492,13 +1476,10 @@ async def test_worker_generation_refuses_low_rerank_score(monkeypatch) -> None:
 
     uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
-    llm_service = StreamingLLM(
-        ["should not stream"],
-        rerank_content='{"rankings": [{"index": 1, "score": 2}]}',
-    )
+    llm_service = StreamingLLM(["should not stream"])
     rag_service = RecordingRAGService([make_rag_hit(content="weak rerank context")])
 
-    rag_service.rerank = AsyncMock(side_effect=make_rerank_impl(llm_service))
+    rag_service.rerank = AsyncMock(side_effect=make_rerank_impl([(0, 2.0)]))
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
         redis_client=FakeRedisClient(redis),
@@ -1545,12 +1526,9 @@ async def test_worker_generation_uses_hybrid_rerank_plan(monkeypatch) -> None:
             reason="需要精选",
         )
     )
-    llm_service = StreamingLLM(
-        ["answer"],
-        rerank_content='{"rankings": [{"index": 2, "score": 9}]}',
-    )
+    llm_service = StreamingLLM(["answer"])
 
-    rag_service.rerank = AsyncMock(side_effect=make_rerank_impl(llm_service))
+    rag_service.rerank = AsyncMock(side_effect=make_rerank_impl([(1, 9.0)]))
     uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(

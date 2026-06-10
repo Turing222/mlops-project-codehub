@@ -32,6 +32,7 @@ from typing import Any
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.ai.providers.llm.factory import LLMProviderFactory
+from backend.ai.providers.rerank.factory import RerankProviderFactory
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
 from backend.infra.database import create_db_assets
@@ -78,7 +79,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--rerank",
         action="store_true",
-        help="Enable LLM rerank after candidate retrieval",
+        help="Enable rerank after candidate retrieval",
     )
     parser.add_argument(
         "--candidate-count",
@@ -157,11 +158,14 @@ async def run(args: argparse.Namespace) -> None:
         vector_index_service = VectorIndexService(uow=uow, embedder=embedder)
 
         llm_service = LLMProviderFactory.create()
+        reranker = (
+            RerankProviderFactory.create() if args.rerank or args.use_planner else None
+        )
         rag_service = build_rag_service(
             embedder=embedder,
             vector_index_service=vector_index_service,
             top_k=args.top_k,
-            llm_service=llm_service if args.rerank or args.use_planner else None,
+            reranker=reranker,
             rerank_candidate_count=args.candidate_count,
             rerank_top_k=args.rerank_top_k,
         )

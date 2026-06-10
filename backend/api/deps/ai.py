@@ -68,14 +68,7 @@ async def get_rag_service(
     embedder: AbstractRAGEmbedder = Depends(get_rag_embedder),
     vector_index_service: VectorIndexService = Depends(get_vector_index_service),
     reranker: AbstractRerankService | None = Depends(get_rerank_service),
-    feature_flag_service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> AbstractRAGService:
-    system_flags = await feature_flag_service.get_system_features()
-    llm_service = (
-        get_llm_service()
-        if system_flags.get("enable-rag-rerank", False) and reranker is None
-        else None
-    )
     rerank_score_kind = "bifrost_rerank"
     config = get_llm_model_config()
     if config.rerank_profiles and settings.RAG_RERANK_PROVIDER:
@@ -85,7 +78,6 @@ async def get_rag_service(
         embedder=embedder,
         vector_index_service=vector_index_service,
         top_k=settings.RAG_TOP_K,
-        llm_service=llm_service,
         reranker=reranker,
         rerank_candidate_count=settings.RAG_RERANK_CANDIDATE_COUNT,
         rerank_top_k=settings.RAG_RERANK_TOP_K,

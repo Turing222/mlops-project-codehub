@@ -1,6 +1,6 @@
 """RAG service unit tests.
 
-职责：验证 RAGService 的全文检索、混合检索和 rerank 排序行为；边界：使用 AsyncMock 替换 vector_index_service 和 LLM，不连接真实数据库或模型；副作用：无。
+职责：验证 RAGService 的全文检索、混合检索和 rerank 排序行为；边界：使用 AsyncMock 替换 vector_index_service 和 native reranker，不连接真实数据库或模型；副作用：无。
 """
 
 import uuid
@@ -14,12 +14,11 @@ from backend.services.rag_service import RAGService, select_rerank_fallback_cand
 pytestmark = pytest.mark.asyncio
 
 
-def _build_service(llm_service: object = None, reranker: object = None) -> RAGService:
+def _build_service(reranker: object = None) -> RAGService:
     return RAGService(
         embedder=MagicMock(),
         vector_index_service=MagicMock(),
         top_k=4,
-        llm_service=llm_service,
         reranker=reranker,
         rerank_candidate_count=3,
         rerank_top_k=2,
@@ -125,17 +124,8 @@ async def test_retrieve_hybrid_returns_empty_on_error() -> None:
     assert result == []
 
 
-async def test_retrieve_with_rerank_orders_results_by_llm_scores() -> None:
-    llm_service = SimpleNamespace(
-        generate_response=AsyncMock(
-            return_value=SimpleNamespace(
-                success=True,
-                content='{"rankings": [{"index": 2, "score": 9}, {"index": 1, "score": 3}]}',
-                error_message=None,
-            )
-        )
-    )
-    service = _build_service(llm_service=llm_service)
+async def test_retrieve_with_rerank_without_reranker_keeps_candidate_order() -> None:
+    service = _build_service()
     candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
     service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
         return_value=[(chunk, 0.1) for chunk in candidates]
@@ -146,16 +136,15 @@ async def test_retrieve_with_rerank_orders_results_by_llm_scores() -> None:
         kb_id=uuid.uuid4(),
     )
 
-    assert [chunk["content"] for chunk in result] == ["beta", "alpha"]
-    assert result[0]["rerank_score"] == 9
-    assert result[0]["score_kind"] == "llm_rerank"
+    assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
+    assert "rerank_score" not in result[0]
+    assert result[0]["score_kind"] == "hybrid_relative_rrf"
     assert "evidence_score" in result[0]
-    llm_service.generate_response.assert_awaited_once()
 
 
 async def test_retrieve_with_rerank_prefers_native_reranker() -> None:
     reranker = SimpleNamespace(rerank=AsyncMock(return_value=[(2, 0.97), (0, 0.42)]))
-    service = _build_service(llm_service=None, reranker=reranker)
+    service = _build_service(reranker=reranker)
     candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
     service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
         return_value=[(chunk, 0.1) for chunk in candidates]
@@ -176,17 +165,10 @@ async def test_retrieve_with_rerank_prefers_native_reranker() -> None:
     )
 
 
-async def test_retrieve_with_rerank_falls_back_to_candidate_order_on_bad_json() -> None:
-    llm_service = SimpleNamespace(
-        generate_response=AsyncMock(
-            return_value=SimpleNamespace(
-                success=True,
-                content="not json",
-                error_message=None,
-            )
-        )
-    )
-    service = _build_service(llm_service=llm_service)
+async def test_retrieve_with_rerank_without_native_reranker_returns_candidate_order() -> (
+    None
+):
+    service = _build_service()
     candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
     service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
         return_value=[(chunk, 0.1) for chunk in candidates]
@@ -200,8 +182,8 @@ async def test_retrieve_with_rerank_falls_back_to_candidate_order_on_bad_json() 
     assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
 
 
-async def test_retrieve_with_rerank_without_llm_returns_candidate_order() -> None:
-    service = _build_service(llm_service=None)
+async def test_retrieve_with_rerank_without_reranker_truncates_candidates() -> None:
+    service = _build_service()
     candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
     service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
         return_value=[(chunk, 0.1) for chunk in candidates]
@@ -221,7 +203,7 @@ async def test_retrieve_with_rerank_degrades_to_candidate_order_when_reranker_th
     reranker = SimpleNamespace(
         rerank=AsyncMock(side_effect=RuntimeError("reranker down"))
     )
-    service = _build_service(llm_service=None, reranker=reranker)
+    service = _build_service(reranker=reranker)
     candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
     service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
         return_value=[(chunk, 0.1) for chunk in candidates]
@@ -239,7 +221,7 @@ async def test_rerank_native_failure_preserves_web_candidate() -> None:
     reranker = SimpleNamespace(
         rerank=AsyncMock(side_effect=RuntimeError("reranker down"))
     )
-    service = _build_service(llm_service=None, reranker=reranker)
+    service = _build_service(reranker=reranker)
     candidates = [
         {"content": f"kb-{index}", "source_type": "file"} for index in range(20)
     ] + [{"content": f"web-{index}", "source_type": "web"} for index in range(4)]
@@ -255,10 +237,8 @@ async def test_rerank_native_failure_preserves_web_candidate() -> None:
     assert result[3]["content"] == "web-0"
 
 
-async def test_retrieve_with_rerank_returns_candidates_when_no_reranker_and_no_llm() -> (
-    None
-):
-    service = _build_service(llm_service=None, reranker=None)
+async def test_retrieve_with_rerank_preserves_web_candidate_without_reranker() -> None:
+    service = _build_service(reranker=None)
     candidates = [
         _chunk("alpha", 0),
         _chunk("beta", 1),

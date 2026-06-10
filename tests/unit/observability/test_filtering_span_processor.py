@@ -84,7 +84,7 @@ class TestShouldExportToLangfuse:
             "rag.retrieve.fulltext",
             "rag.retrieve.hybrid",
             "rag.rerank.retrieve_candidates",
-            "rag.rerank.llm",
+            "rag.rerank.native",
             "rag.planner.generate",
             "embedding.openai_compatible.encode",
             "embedding.google_genai.encode",

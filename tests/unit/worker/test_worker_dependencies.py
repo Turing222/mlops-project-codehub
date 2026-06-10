@@ -49,7 +49,7 @@ class DummyContainer:
     def get_rerank_service(self) -> object:
         return self.rerank_service
 
-    def get_rag_service(self, llm_service: object = None) -> object:  # type: ignore[override]
+    def get_rag_service(self) -> object:
         return self.rag_service
 
     def get_rag_planning_service(self) -> object:
@@ -274,7 +274,9 @@ def test_get_llm_service_for_provider_caches_create_errors(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_rag_service_prefers_reranker_over_llm(monkeypatch) -> None:
+async def test_get_rag_service_uses_native_reranker_without_initializing_llm(
+    monkeypatch,
+) -> None:
     from backend.worker.dependencies import WorkerContainer
 
     fake_reranker = AsyncMock()
@@ -308,4 +310,4 @@ async def test_get_rag_service_prefers_reranker_over_llm(monkeypatch) -> None:
 
     rag_service = container.get_rag_service()
     assert rag_service.reranker is fake_reranker
-    assert rag_service.llm_service is None
+    assert container._llm_service is None

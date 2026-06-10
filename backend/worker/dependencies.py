@@ -131,16 +131,10 @@ class WorkerContainer:
                     return None
         return self._rerank_service
 
-    def get_rag_service(
-        self,
-        llm_service: AbstractLLMService | None = None,
-    ) -> AbstractRAGService:
+    def get_rag_service(self) -> AbstractRAGService:
         """Return the cached worker-side RAG service for generation context retrieval."""
         if self._rag_service is None:
             reranker = self.get_rerank_service()
-            resolved_llm = (
-                None if reranker is not None else llm_service or self.get_llm_service()
-            )
             session_factory = self.get_session_factory()
             uow = SQLAlchemyUnitOfWork(session_factory)
             embedder = self.get_embedder()
@@ -159,7 +153,6 @@ class WorkerContainer:
                 embedder=embedder,
                 vector_index_service=vector_index_service,
                 top_k=ai_settings.RAG_TOP_K,
-                llm_service=resolved_llm,
                 reranker=reranker,
                 rerank_candidate_count=ai_settings.RAG_RERANK_CANDIDATE_COUNT,
                 rerank_top_k=ai_settings.RAG_RERANK_TOP_K,
@@ -265,11 +258,9 @@ def get_worker_embedder() -> AbstractRAGEmbedder:
     return get_worker_container().get_embedder()
 
 
-def get_worker_rag_service(
-    llm_service: AbstractLLMService | None = None,
-) -> AbstractRAGService:
+def get_worker_rag_service() -> AbstractRAGService:
     """Return the cached worker-side RAG service for generation context retrieval."""
-    return get_worker_container().get_rag_service(llm_service=llm_service)
+    return get_worker_container().get_rag_service()
 
 
 def get_worker_rag_planning_service() -> RAGPlanningService:

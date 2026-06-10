@@ -177,7 +177,7 @@ async def _generate_llm_stream_task(
         redis_client=redis_client,
         llm_service=llm_service,
         llm_service_resolver=get_worker_llm_service_for_provider,
-        rag_service=get_worker_rag_service(llm_service=llm_service),
+        rag_service=get_worker_rag_service(),
         rag_planning_service=get_worker_rag_planning_service(),
         external_context_provider=get_worker_external_context_provider(),
     )
@@ -270,7 +270,7 @@ async def _generate_llm_nonstream_task(
         redis_client=redis_client,
         llm_service=llm_service,
         llm_service_resolver=get_worker_llm_service_for_provider,
-        rag_service=get_worker_rag_service(llm_service=llm_service),
+        rag_service=get_worker_rag_service(),
         rag_planning_service=get_worker_rag_planning_service(),
         external_context_provider=get_worker_external_context_provider(),
     )

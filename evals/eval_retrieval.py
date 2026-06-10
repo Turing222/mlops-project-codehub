@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
+from backend.ai.providers.rerank.factory import RerankProviderFactory
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
 from backend.infra.database import create_db_assets
@@ -72,7 +73,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--rerank",
         action="store_true",
-        help="Enable LLM rerank after candidate retrieval",
+        help="Enable rerank after candidate retrieval",
     )
     parser.add_argument(
         "--candidate-count",
@@ -304,13 +305,12 @@ async def run(args: argparse.Namespace) -> None:
         )
 
         if args.compare:
-            # 对比模式：确保 rerank 需要 LLM service
-            llm_service = None
             compare_flags = FeatureFlags(enable_rag_rerank=True)
-            if compare_flags.enable_rag_rerank:
-                from backend.ai.providers.llm.factory import LLMProviderFactory
-
-                llm_service = LLMProviderFactory.create()
+            reranker = (
+                RerankProviderFactory.create()
+                if compare_flags.enable_rag_rerank
+                else None
+            )
 
             modes = [
                 ("vector", False),
@@ -324,7 +324,7 @@ async def run(args: argparse.Namespace) -> None:
                     embedder=embedder,
                     vector_index_service=vector_index_service,
                     top_k=args.top_k,
-                    llm_service=llm_service,
+                    reranker=reranker,
                     rerank_candidate_count=args.candidate_count,
                     rerank_top_k=args.rerank_top_k,
                 )
@@ -353,20 +353,20 @@ async def run(args: argparse.Namespace) -> None:
                 "comparison": comparison,
             }
         else:
-            llm_service = None
             eval_flags = FeatureFlags(
                 enable_rag_rerank=args.rerank,
                 enable_rag_planner=args.use_planner,
             )
-            if (args.rerank or args.use_planner) and eval_flags.enable_rag_rerank:
-                from backend.ai.providers.llm.factory import LLMProviderFactory
-
-                llm_service = LLMProviderFactory.create()
+            reranker = (
+                RerankProviderFactory.create()
+                if (args.rerank or args.use_planner) and eval_flags.enable_rag_rerank
+                else None
+            )
             rag_service = build_rag_service(
                 embedder=embedder,
                 vector_index_service=vector_index_service,
                 top_k=args.top_k,
-                llm_service=llm_service,
+                reranker=reranker,
                 rerank_candidate_count=args.candidate_count,
                 rerank_top_k=args.rerank_top_k,
             )
