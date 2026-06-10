@@ -55,6 +55,7 @@
 ## Platform / Deployment Notes
 
 - [deploy-ec2.md](deploy-ec2.md) — 单台 EC2 的手动部署入口与后续自动 CD 对接方式。
+- [deploy-hardening-backlog.md](deploy-hardening-backlog.md) — 部署评审遗留的加固待办清单(按优先级,完成即删)。
 - [frontend-delivery-and-edge-responsibilities.md](frontend-delivery-and-edge-responsibilities.md) — Cloudflare Pages、API origin 与容器 fallback 的职责边界。
 - [api-keys-and-degradation.md](api-keys-and-degradation.md) — API Key 需求分层、key→功能映射，以及缺失/故障时的告警与降级行为。
 - [k8s-scaling-strategy.md](k8s-scaling-strategy.md) — API / worker 扩缩容策略说明。
