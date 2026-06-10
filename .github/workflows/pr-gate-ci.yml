@@ -23,7 +23,7 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -80,11 +80,8 @@ jobs:
       - name: Sync Python dependencies
         run: uv sync --frozen --dev --all-extras
 
-      - name: Run backend integration tests
-        run: make qa-test-integration
-
       - name: Run backend CI test suite
-        run: DEWFLOW_TEST_PROFILE=ci uv run pytest -m "not performance and not local_only and not requires_llm and not requires_s3"
+        run: make qa-test-ci
 
       # Frontend mock e2e
       - name: Set up pnpm

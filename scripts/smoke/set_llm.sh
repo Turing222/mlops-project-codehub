@@ -109,6 +109,8 @@ if [[ "$PROVIDER" == "mock" ]]; then
         exit 1
     fi
     update_env_smoke "LLM_PROVIDER" "mock"
+    update_env_smoke "RAG_PLANNER_PROVIDER" "mock"
+    update_env_smoke "RAG_RERANK_PROVIDER" "mock"
     configure_model_routing
 else
     KEY=""

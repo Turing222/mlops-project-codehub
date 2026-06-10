@@ -12,6 +12,8 @@ on:
       - ".env.smoke.template"
       - "scripts/smoke/**"
       - "scripts/image/**"
+      - "scripts/lib/common.sh"
+      - "tests/smoke/**"
       - ".github/workflows/smoke-ci.yml"
   workflow_dispatch:
 
@@ -53,6 +55,9 @@ jobs:
 
       - name: Prepare smoke environment file
         run: make env-smoke-prepare
+
+      - name: Use mock AI providers for CI smoke
+        run: make set-llm PROVIDER=mock EMBED_PROVIDER=mock
 
       - name: Build Docker image
         run: make image-build
