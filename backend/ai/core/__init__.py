@@ -9,7 +9,8 @@ LLM Core — 对话能力核心模块
 - MessageCompressor: 消息压缩
 - AssembledPrompt: 组装结果数据类
 - render_system_prompt: Jinja2 模板渲染工具
-- count_tokens / count_messages_tokens: Token 计算工具
+- estimate_tokens / estimate_messages_tokens: Token 估算工具
+- count_tokens / count_messages_tokens: 兼容旧导入的估算别名
 - 模板对象
 """
 
@@ -24,7 +25,12 @@ from backend.ai.core.prompt_templates import (
     SUMMARIZE_TEMPLATE,
     render_system_prompt,
 )
-from backend.ai.core.token_counter import count_messages_tokens, count_tokens
+from backend.ai.core.token_counter import (
+    count_messages_tokens,
+    count_tokens,
+    estimate_messages_tokens,
+    estimate_tokens,
+)
 
 __all__ = [
     "DEFAULT_SYSTEM_TEMPLATE",
@@ -41,5 +47,7 @@ __all__ = [
     "PromptManager",
     "count_messages_tokens",
     "count_tokens",
+    "estimate_messages_tokens",
+    "estimate_tokens",
     "render_system_prompt",
 ]

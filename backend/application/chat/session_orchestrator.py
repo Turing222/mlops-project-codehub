@@ -29,7 +29,7 @@ from backend.services.chat_service import SessionManager
 from backend.services.credit_service import CreditService
 from backend.services.feature_flag_service import FeatureFlagService
 from backend.services.permission_service import PermissionService
-from backend.utils.token_estimation import count_messages_tokens, count_tokens
+from backend.utils.token_estimation import estimate_messages_tokens, estimate_tokens
 
 if TYPE_CHECKING:
     from backend.models.orm.chat import ChatMessage, ChatSession
@@ -298,10 +298,9 @@ def _estimate_credit_cost(
     model_name: str,
 ) -> int:
     """Estimate credit cost based on input tokens + estimated output tokens."""
-    model_for_counting = "gpt-4"
-    input_tokens = count_tokens(query_text, model_for_counting)
+    input_tokens = estimate_tokens(query_text, model_name)
     if conversation_history:
-        input_tokens += count_messages_tokens(conversation_history, model_for_counting)
+        input_tokens += estimate_messages_tokens(conversation_history, model_name)
 
     output_tokens = credit_settings.CREDIT_ESTIMATED_OUTPUT_TOKENS
     rates = credit_settings.CREDIT_MODEL_RATES.get(

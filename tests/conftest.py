@@ -5,7 +5,6 @@ Fixtures that require app startup should live in tests/component or tests/integr
 """
 
 import os
-from collections.abc import Iterator
 
 import pytest
 
@@ -47,14 +46,3 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     for marker_name in REQUIRED_PKG_BY_MARKER:
         if marker_name in marker_names and not pkgs_available_for_marker(marker_name):
             pytest.skip(f"{marker_name} requires missing Python package(s)")
-
-
-@pytest.fixture(autouse=True)
-def stable_token_counter(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Keep token counting local and deterministic in tests."""
-    from backend.utils import token_estimation
-
-    token_estimation._encoding_cache.clear()
-    monkeypatch.setattr(token_estimation, "_tiktoken_available", False)
-    yield
-    token_estimation._encoding_cache.clear()

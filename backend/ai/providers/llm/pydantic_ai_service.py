@@ -10,7 +10,6 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from backend.ai.core.token_counter import count_tokens
 from backend.ai.providers.llm.pydantic_ai_models import create_pydantic_ai_model
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import LLMProfile, get_llm_model_config
@@ -27,6 +26,7 @@ from backend.observability.trace_utils import (
     set_span_attributes,
     trace_span,
 )
+from backend.utils.token_estimation import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -202,9 +202,8 @@ class PydanticAILLMService(AbstractLLMService):
                 content = str(getattr(result, "output", ""))
                 latency_ms = int((time.perf_counter() - start) * 1000)
                 prompt_tokens, completion_tokens = _usage_tokens(result)
-                completion_tokens = completion_tokens or count_tokens(
-                    content, self.model_name
-                )
+                if completion_tokens is None:
+                    completion_tokens = estimate_tokens(content, self.model_name)
                 set_span_attributes(
                     span,
                     {

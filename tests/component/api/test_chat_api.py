@@ -9,7 +9,6 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from backend.ai.core import token_counter
 from backend.api.v1.endpoint import chat_api
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
 from backend.config.settings import settings
@@ -37,11 +36,6 @@ def _make_mock_feature_flag_service(
     svc = AsyncMock(spec=FeatureFlagService)
     svc.get_system_features = AsyncMock(return_value=flags)
     return svc
-
-
-class _FakeEncoding:
-    def encode(self, text: str):
-        return list(text or "")
 
 
 def make_user(**overrides):
@@ -350,18 +344,10 @@ class RecordingLLMService:
 
 @pytest.fixture(autouse=True)
 def stable_test_environment():
-    token_counter._encoding_cache.clear()
-    with (
-        patch(
-            "backend.utils.token_estimation.tiktoken.get_encoding",
-            return_value=_FakeEncoding(),
-        ),
-        patch(
-            "backend.application.chat.web_nonstream_workflow.set_langfuse_trace_metadata",
-        ),
+    with patch(
+        "backend.application.chat.web_nonstream_workflow.set_langfuse_trace_metadata",
     ):
         yield
-    token_counter._encoding_cache.clear()
 
 
 @pytest.fixture

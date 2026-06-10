@@ -68,7 +68,7 @@ from backend.services.rag_planning_service import (
     DEFAULT_MODEL_ROUTE_REASON,
     RAGPlanningService,
 )
-from backend.utils.token_estimation import count_tokens
+from backend.utils.token_estimation import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -366,7 +366,7 @@ class LLMGenerationWorkerWorkflow:
             "model_name",
             get_llm_model_config().resolve_profile().model,
         )
-        return count_tokens(content, model_name)
+        return estimate_tokens(content, model_name)
 
     @staticmethod
     def _model_route_metrics(selected_llm: _SelectedLLM) -> dict[str, object]:
@@ -577,14 +577,12 @@ class LLMGenerationWorkerWorkflow:
                             if "<think>" in full_so_far:
                                 in_thinking = True
                                 thinking_started_time = perf_start()
-                            else:
-                                if answer_started_time is None:
-                                    answer_started_time = perf_start()
-                        elif in_thinking:
-                            if "</think>" in full_so_far:
-                                in_thinking = False
-                                thinking_duration_ms = elapsed_ms(thinking_started_time)
+                            elif answer_started_time is None:
                                 answer_started_time = perf_start()
+                        elif in_thinking and "</think>" in full_so_far:
+                            in_thinking = False
+                            thinking_duration_ms = elapsed_ms(thinking_started_time)
+                            answer_started_time = perf_start()
 
                         if citation_filter is not None:
                             cleaned = citation_filter.push(chunk)
@@ -825,18 +823,30 @@ class LLMGenerationWorkerWorkflow:
                         {"citation_validate_ms": elapsed_ms(citation_validate_started)},
                     )
                     full_content = citation_result.cleaned_content
-            tokens_output = (
-                self._count_output_tokens(full_content)
-                if output_decision.triggered
-                else result.completion_tokens or self._count_output_tokens(full_content)
+            tokens_input_for_billing = (
+                result.prompt_tokens
+                if result.prompt_tokens is not None
+                else tokens_input
             )
+            tokens_input_source = (
+                "provider_usage" if result.prompt_tokens is not None else "estimate"
+            )
+            if output_decision.triggered:
+                tokens_output = self._count_output_tokens(full_content)
+                tokens_output_source = "estimate"
+            elif result.completion_tokens is not None:
+                tokens_output = result.completion_tokens
+                tokens_output_source = "provider_usage"
+            else:
+                tokens_output = self._count_output_tokens(full_content)
+                tokens_output_source = "estimate"
             worker_total_latency_ms = elapsed_ms(worker_started)
 
             await self._persist_success_and_idempotency(
                 assistant_message_id=assistant_message_id,
                 user_id=user_id,
                 content=full_content,
-                tokens_input=tokens_input,
+                tokens_input=tokens_input_for_billing,
                 tokens_output=tokens_output,
                 search_context=search_context,
                 start_time=start_time,
@@ -852,8 +862,10 @@ class LLMGenerationWorkerWorkflow:
                         **model_route_metrics,
                         "worker_total_latency_ms": worker_total_latency_ms,
                         "llm_generate_ms": llm_generate_ms,
-                        "tokens_input": tokens_input,
+                        "tokens_input": tokens_input_for_billing,
                         "tokens_output": tokens_output,
+                        "tokens_input_source": tokens_input_source,
+                        "tokens_output_source": tokens_output_source,
                         "tokens_per_second": tokens_per_second(
                             tokens_output,
                             llm_generate_ms,
@@ -872,7 +884,7 @@ class LLMGenerationWorkerWorkflow:
             return GenerationResult(
                 success=True,
                 content=full_content,
-                tokens_input=tokens_input,
+                tokens_input=tokens_input_for_billing,
                 tokens_output=tokens_output,
                 search_context=search_context,
                 latency_ms=result.latency_ms,

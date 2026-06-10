@@ -67,6 +67,48 @@ async def test_generate_response_uses_pydantic_agent(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_generate_response_reads_provider_usage(monkeypatch) -> None:
+    service = PydanticAILLMService(
+        api_key="test-key", model_name="gemini-test", provider_name="gemini"
+    )
+
+    class FakeAgent:
+        async def run(self, prompt: str, **kwargs):
+            return SimpleNamespace(
+                output="Gemini answer",
+                usage=lambda: SimpleNamespace(request_tokens=11, response_tokens=7),
+            )
+
+    monkeypatch.setattr(service, "_create_agent", lambda instructions: FakeAgent())
+
+    result = await service.generate_response(make_query())
+
+    assert result.prompt_tokens == 11
+    assert result.completion_tokens == 7
+
+
+@pytest.mark.asyncio
+async def test_generate_response_preserves_zero_completion_tokens(monkeypatch) -> None:
+    service = PydanticAILLMService(
+        api_key="test-key", model_name="gemini-test", provider_name="gemini"
+    )
+
+    class FakeAgent:
+        async def run(self, prompt: str, **kwargs):
+            return SimpleNamespace(
+                output="",
+                usage=lambda: SimpleNamespace(request_tokens=3, response_tokens=0),
+            )
+
+    monkeypatch.setattr(service, "_create_agent", lambda instructions: FakeAgent())
+
+    result = await service.generate_response(make_query())
+
+    assert result.prompt_tokens == 3
+    assert result.completion_tokens == 0
+
+
+@pytest.mark.asyncio
 async def test_generate_response_merges_extra_body(monkeypatch) -> None:
     service = PydanticAILLMService(
         api_key="test-key",

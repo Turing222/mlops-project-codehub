@@ -602,7 +602,12 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
     user_id = uuid.uuid4()
     uow.chat_repo.update_message_status.return_value = object()
     llm_service = NonStreamingLLM(
-        LLMResultDTO(content="full answer", completion_tokens=5, latency_ms=12)
+        LLMResultDTO(
+            content="full answer",
+            prompt_tokens=12,
+            completion_tokens=5,
+            latency_ms=12,
+        )
     )
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow, redis_client=FakeRedisClient(redis), llm_service=llm_service
@@ -627,9 +632,19 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
     update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
     assert update_kwargs["message_id"] == assistant_message_id
     assert update_kwargs["content"] == "full answer"
+    assert update_kwargs["tokens_input"] == 12
     assert update_kwargs["tokens_output"] == 5
     assert update_kwargs["message_metadata"]["schema_version"] == 1
     assert update_kwargs["message_metadata"]["response_outcome"] == "answered"
+    metrics = update_kwargs["message_metadata"]["metrics"]
+    assert metrics["tokens_input"] == 12
+    assert metrics["tokens_output"] == 5
+    assert metrics["tokens_input_source"] == "provider_usage"
+    assert metrics["tokens_output_source"] == "provider_usage"
+    create_usage_kwargs = uow.credit_repo.create_usage_record.call_args.kwargs
+    assert create_usage_kwargs["model_name"] == "fake-model"
+    assert create_usage_kwargs["input_tokens"] == 12
+    assert create_usage_kwargs["output_tokens"] == 5
     assert redis.set_calls == [("idempotency:test", str(assistant_message_id), 3600)]
     assert slot_calls == [
         {
@@ -639,6 +654,151 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
             "llm.model_tier": "balanced",
         }
     ]
+
+
+async def test_worker_nonstream_falls_back_to_prepared_input_tokens(
+    monkeypatch,
+) -> None:
+    redis = FakeRedis()
+    install_llm_slot_recorder(monkeypatch)
+
+    uow = FakeChatUow()
+    assistant_message_id = uuid.uuid4()
+    uow.chat_repo.update_message_status.return_value = object()
+    llm_service = NonStreamingLLM(
+        LLMResultDTO(content="answer", completion_tokens=5, latency_ms=12)
+    )
+    prepared_context = PreparedGenerationContext(
+        assembled_prompt=SimpleNamespace(
+            total_tokens=33,
+            messages=[{"role": "user", "content": "hi"}],
+        ),
+        search_context=None,
+    )
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=llm_service,
+        rag_orchestrator=StaticRAGOrchestrator(prepared_context),
+    )
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="hi",
+            conversation_history=[],
+        ),
+        assistant_message_id=assistant_message_id,
+        user_id=uuid.uuid4(),
+    )
+
+    assert result.tokens_input == 33
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    assert update_kwargs["tokens_input"] == 33
+    assert (
+        update_kwargs["message_metadata"]["metrics"]["tokens_input_source"]
+        == "estimate"
+    )
+    assert (
+        update_kwargs["message_metadata"]["metrics"]["tokens_output_source"]
+        == "provider_usage"
+    )
+
+
+async def test_worker_nonstream_preserves_zero_provider_prompt_tokens(
+    monkeypatch,
+) -> None:
+    redis = FakeRedis()
+    install_llm_slot_recorder(monkeypatch)
+
+    uow = FakeChatUow()
+    assistant_message_id = uuid.uuid4()
+    uow.chat_repo.update_message_status.return_value = object()
+    llm_service = NonStreamingLLM(
+        LLMResultDTO(
+            content="answer",
+            prompt_tokens=0,
+            completion_tokens=5,
+            latency_ms=12,
+        )
+    )
+    prepared_context = PreparedGenerationContext(
+        assembled_prompt=SimpleNamespace(
+            total_tokens=33,
+            messages=[{"role": "user", "content": "hi"}],
+        ),
+        search_context=None,
+    )
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=llm_service,
+        rag_orchestrator=StaticRAGOrchestrator(prepared_context),
+    )
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="hi",
+            conversation_history=[],
+        ),
+        assistant_message_id=assistant_message_id,
+        user_id=uuid.uuid4(),
+    )
+
+    assert result.tokens_input == 0
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    assert update_kwargs["tokens_input"] == 0
+    assert (
+        update_kwargs["message_metadata"]["metrics"]["tokens_input_source"]
+        == "provider_usage"
+    )
+    create_usage_kwargs = uow.credit_repo.create_usage_record.call_args.kwargs
+    assert create_usage_kwargs["input_tokens"] == 0
+
+
+async def test_worker_nonstream_falls_back_to_estimated_output_tokens(
+    monkeypatch,
+) -> None:
+    redis = FakeRedis()
+    install_llm_slot_recorder(monkeypatch)
+
+    uow = FakeChatUow()
+    assistant_message_id = uuid.uuid4()
+    uow.chat_repo.update_message_status.return_value = object()
+    llm_service = NonStreamingLLM(LLMResultDTO(content="answer", latency_ms=12))
+    prepared_context = PreparedGenerationContext(
+        assembled_prompt=SimpleNamespace(
+            total_tokens=33,
+            messages=[{"role": "user", "content": "hi"}],
+        ),
+        search_context=None,
+    )
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=llm_service,
+        rag_orchestrator=StaticRAGOrchestrator(prepared_context),
+    )
+    monkeypatch.setattr(workflow, "_count_output_tokens", lambda content: 9)
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="hi",
+            conversation_history=[],
+        ),
+        assistant_message_id=assistant_message_id,
+        user_id=uuid.uuid4(),
+    )
+
+    assert result.tokens_output == 9
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    assert update_kwargs["tokens_output"] == 9
+    assert (
+        update_kwargs["message_metadata"]["metrics"]["tokens_output_source"]
+        == "estimate"
+    )
 
 
 async def test_worker_input_guardrail_blocks_before_rag_or_llm(monkeypatch) -> None:
