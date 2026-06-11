@@ -54,6 +54,27 @@ make frontend-e2e-mock
 make frontend-check
 ```
 
+## Semantic Navigation MCP
+
+Project-scoped Serena MCP config is available for Codex and Claude Code.
+It is a navigation layer only; keep edits, shell commands, and validation in the
+host agent workflow.
+
+```bash
+# verify Serena can index Python and TypeScript symbols
+serena project index
+
+# verify the stdio server starts; it exits when stdin closes
+scripts/dev/serena-mcp.sh codex
+scripts/dev/serena-mcp.sh claude-code
+```
+
+- Codex reads `.codex/config.toml` after the project is trusted.
+- Claude Code reads `.mcp.json` at session start; approve the project-scoped server when prompted.
+- No manual server startup is needed for stdio mode. The client starts Serena as a subprocess.
+- Exposed tools are restricted to symbol overview, symbol search, declaration, references, and file diagnostics.
+- Serena uses LSP for `python` and `typescript`; TypeScript uses the project app's `typescript-language-server`.
+
 ## Operational Constraints
 
 - Do not modify code or files unless the user explicitly asks for implementation, code changes, or file edits.

@@ -102,6 +102,7 @@ dev = [
     "ruff>=0.15.2",
     "ty>=0.0.18",
     "ragas>=0.2.0",
+    "pyright>=1.1.410",
 ]
 
 [tool.uvicorn]

@@ -76,9 +76,11 @@ alembic/archive_versions
 test_demo.py
 .antigravityignore
 .codex/*
+!.codex/config.toml
 !.codex/skills/
 !.codex/skills/**
 .cache/
+.serena/project.local.yml
 
 # 测试快照归档（不提交到仓库）
 snapshots/*.json
