@@ -32,7 +32,11 @@ async def test_sms_send_never_returns_mock_code() -> None:
 
 def _route_dependencies(path: str, method: str) -> list[object]:
     for route in auth_api.router.routes:
-        if isinstance(route, APIRoute) and route.path == path and method in route.methods:
+        if (
+            isinstance(route, APIRoute)
+            and route.path == path
+            and method in route.methods
+        ):
             return [dependency.call for dependency in route.dependant.dependencies]
     raise AssertionError(f"Route not found: {method} {path}")
 

@@ -42,6 +42,12 @@ def _make_nonstream_positional_args() -> tuple:
     )
 
 
+def _make_stream_result():
+    from backend.models.schemas.chat.payloads import StreamGenerationResult
+
+    return StreamGenerationResult(success=True, output="answer")
+
+
 @pytest.mark.asyncio
 async def test_stream_task_unpacks_new_payload_dict() -> None:
     """New format: single LLMTaskPayload dict as args[0]."""
@@ -63,7 +69,7 @@ async def test_stream_task_unpacks_new_payload_dict() -> None:
         patch(
             "backend.worker.tasks.llm_tasks._generate_llm_stream_task",
             new_callable=AsyncMock,
-            return_value=None,
+            return_value=_make_stream_result(),
         ) as mock_inner,
         patch("backend.worker.tasks.llm_tasks.use_trace_context"),
         patch("backend.worker.tasks.llm_tasks.set_langfuse_trace_metadata"),
@@ -92,7 +98,7 @@ async def test_stream_task_unpacks_old_positional_args() -> None:
         patch(
             "backend.worker.tasks.llm_tasks._generate_llm_stream_task",
             new_callable=AsyncMock,
-            return_value=None,
+            return_value=_make_stream_result(),
         ) as mock_inner,
         patch("backend.worker.tasks.llm_tasks.use_trace_context"),
         patch("backend.worker.tasks.llm_tasks.set_langfuse_trace_metadata"),
@@ -131,7 +137,7 @@ async def test_stream_task_passes_external_context_provider_to_workflow() -> Non
         patch(
             "backend.worker.tasks.llm_tasks._generate_llm_stream_task",
             new_callable=AsyncMock,
-            return_value=None,
+            return_value=_make_stream_result(),
         ) as mock_inner,
         patch("backend.worker.tasks.llm_tasks.use_trace_context"),
         patch("backend.worker.tasks.llm_tasks.set_langfuse_trace_metadata"),

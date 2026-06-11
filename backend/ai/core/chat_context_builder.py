@@ -300,8 +300,9 @@ class ChatContextBuilder:
         current_query: str,
         extra_vars: dict[str, object],
     ) -> int:
-        system_template = prompt_manager.system_template or get_prompt_resolver().get_template(
-            prompt_manager.template_name
+        system_template = (
+            prompt_manager.system_template
+            or get_prompt_resolver().get_template(prompt_manager.template_name)
         )
         system_content = render_system_prompt(
             template=system_template,

@@ -295,10 +295,7 @@ class KnowledgeRepository:
                     ],
                 },
             )
-        return [
-            (row[0], float(row[1]) if row[1] is not None else 0.0)
-            for row in rows
-        ]
+        return [(row[0], float(row[1]) if row[1] is not None else 0.0) for row in rows]
 
 
 def _chunk_hit_debug_record(

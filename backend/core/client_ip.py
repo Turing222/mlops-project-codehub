@@ -29,9 +29,7 @@ class ClientIPResolver:
             ip_address = ipaddress.ip_address(peer_ip)
         except ValueError:
             return False
-        return any(
-            ip_address in network for network in self._trusted_proxy_networks
-        )
+        return any(ip_address in network for network in self._trusted_proxy_networks)
 
     @staticmethod
     def _is_valid_ip(value: str) -> bool:

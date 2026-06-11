@@ -87,9 +87,7 @@ description:
     }
 
     assert "frontmatter `name` must use kebab-case" in messages
-    assert (
-        "frontmatter `name` must match skill directory `demo-skill`" in messages
-    )
+    assert "frontmatter `name` must match skill directory `demo-skill`" in messages
     assert (
         "required frontmatter field `description` must be a non-empty string"
         in messages

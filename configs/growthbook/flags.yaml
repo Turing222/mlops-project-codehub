@@ -15,6 +15,18 @@ environments:
     enable-rag-planner-routing: true
     enable-llm-model-routing: true
 
+  smoke:
+    # Smoke tests dynamically create users; keep login deterministic while still
+    # exercising the GrowthBook evaluation path through the real SDK key.
+    # Keep AI feature flags on conservative defaults so HTTP smoke validates
+    # core runtime wiring instead of optional model-routing/RAG experiments.
+    enable-closed-beta-login: false
+    enable-external-context: false
+    enable-rag-rerank: false
+    enable-rag-planner: false
+    enable-rag-planner-routing: false
+    enable-llm-model-routing: false
+
   prod:
     # Production — start conservative, enable via GrowthBook panel as needed.
     enable-closed-beta-login: true

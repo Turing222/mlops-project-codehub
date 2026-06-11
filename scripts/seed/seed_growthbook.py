@@ -1,7 +1,7 @@
 """Seed GrowthBook feature flags from code definitions.
 
 职责：将代码中的 flag 定义同步到 GrowthBook 实例，确保代码与面板一致。
-边界：只创建不存在的 flag，不覆盖已有 flag 的规则；--force 时仅更新 defaultValue。
+边界：只创建不存在的 flag；--force 时同步脚本生成的环境默认规则并保留人工规则。
 失败处理：API 请求失败时逐个报错并继续，不中断整个批次。
 """
 
@@ -122,6 +122,7 @@ def _resolve_default_value(
 # ---------------------------------------------------------------------------
 
 API_TIMEOUT = 10.0
+GENERATED_RULE_ID_PREFIX = "env-override-"
 
 
 def _build_flag_payload(
@@ -139,10 +140,11 @@ def _build_flag_payload(
     for env_name in environments:
         env_enabled[env_name] = {"enabled": True}
 
-    rules: list[dict] = []
     for env_name, env_default in env_defaults.items():
         if env_default != code_default:
-            rules.append(
+            env_enabled.setdefault(env_name, {"enabled": True}).setdefault(
+                "rules", []
+            ).append(
                 {
                     "description": f"Override for {env_name}",
                     "condition": json.dumps({"env": env_name}),
@@ -150,7 +152,6 @@ def _build_flag_payload(
                     "enabled": True,
                     "type": "force",
                     "value": str(env_default).lower(),
-                    "environments": [env_name],
                 }
             )
 
@@ -167,9 +168,51 @@ def _build_flag_payload(
         payload["tags"] = FLAG_TAGS[flag_id]
     if env_enabled:
         payload["environments"] = env_enabled
-    if rules:
-        payload["rules"] = rules
     return payload
+
+
+def _merge_generated_rules(
+    existing_rules: list[dict],
+    generated_rules: list[dict],
+) -> list[dict]:
+    """Replace generated env override rules while preserving manual rules."""
+    manual_rules = [
+        rule
+        for rule in existing_rules
+        if not str(rule.get("id", "")).startswith(GENERATED_RULE_ID_PREFIX)
+    ]
+    return [*manual_rules, *generated_rules]
+
+
+def _merge_generated_environment_rules(
+    existing_environments: dict,
+    generated_environments: dict,
+    target_environments: list[str],
+) -> dict:
+    """Replace generated rules per environment while preserving manual settings."""
+    merged_environments = {
+        env_name: dict(env_settings)
+        for env_name, env_settings in existing_environments.items()
+        if isinstance(env_settings, dict)
+    }
+    for env_name in target_environments:
+        existing_env = merged_environments.get(env_name, {})
+        generated_env = generated_environments.get(env_name, {})
+        existing_rules = existing_env.get("rules", [])
+        if not isinstance(existing_rules, list):
+            existing_rules = []
+        generated_rules = generated_env.get("rules", [])
+        if not isinstance(generated_rules, list):
+            generated_rules = []
+
+        next_env = {**existing_env, **generated_env, "enabled": True}
+        next_rules = _merge_generated_rules(existing_rules, generated_rules)
+        if next_rules:
+            next_env["rules"] = next_rules
+        else:
+            next_env.pop("rules", None)
+        merged_environments[env_name] = next_env
+    return merged_environments
 
 
 def _sync_flags(
@@ -200,11 +243,11 @@ def _sync_flags(
 
     try:
         # Pre-fetch existing flag IDs to avoid repeated list queries
-        existing_ids: set[str] = set()
+        existing_features: dict[str, dict] = {}
         list_resp = client.get("/api/v2/features")
         if list_resp.status_code == 200:
             for f in list_resp.json().get("features", []):
-                existing_ids.add(f.get("id"))
+                existing_features[f.get("id")] = f
 
         for flag_id, code_default in ALL_FLAGS.items():
             payload = _build_flag_payload(
@@ -213,23 +256,41 @@ def _sync_flags(
 
             if dry_run:
                 print(f"[DRY-RUN] Would create: {flag_id} (default={code_default})")
-                if payload.get("rules"):
-                    for rule in payload["rules"]:
-                        print(f"           rule: {rule['id']} -> {rule['value']}")
+                for env_name, env_payload in payload.get("environments", {}).items():
+                    for rule in env_payload.get("rules", []):
+                        print(f"           {env_name}: {rule['id']} -> {rule['value']}")
                 created += 1
                 continue
 
-            if flag_id in existing_ids:
+            if flag_id in existing_features:
                 if force:
+                    existing_feature = existing_features[flag_id]
+                    existing_environments = existing_feature.get("environments", {})
+                    if not isinstance(existing_environments, dict):
+                        existing_environments = {}
+                    merged_environments = _merge_generated_environment_rules(
+                        existing_environments,
+                        payload.get("environments", {}),
+                        environments,
+                    )
                     update_payload = {
                         "defaultValue": str(code_default).lower(),
+                        "environments": merged_environments,
                     }
                     resp = client.post(
                         f"/api/v2/features/{flag_id}",
                         json=update_payload,
                     )
                     if resp.status_code in (200, 201):
-                        print(f"[UPDATED] {flag_id} (defaultValue only)")
+                        print(f"[UPDATED] {flag_id} (defaults and env rules)")
+                        for env_name, env_payload in payload.get(
+                            "environments", {}
+                        ).items():
+                            for rule in env_payload.get("rules", []):
+                                print(
+                                    f"           {env_name}: {rule['id']} -> "
+                                    f"{rule['value']}"
+                                )
                         updated += 1
                     else:
                         print(f"[FAILED]  {flag_id}: {resp.status_code}")
@@ -253,9 +314,9 @@ def _sync_flags(
             resp = client.post("/api/v2/features", json=payload)
             if resp.status_code in (200, 201):
                 print(f"[CREATED] {flag_id} (default={code_default})")
-                if payload.get("rules"):
-                    for rule in payload["rules"]:
-                        print(f"           rule: {rule['id']} -> {rule['value']}")
+                for env_name, env_payload in payload.get("environments", {}).items():
+                    for rule in env_payload.get("rules", []):
+                        print(f"           {env_name}: {rule['id']} -> {rule['value']}")
                 created += 1
             else:
                 print(f"[FAILED]  {flag_id}: {resp.status_code}")
@@ -310,8 +371,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--environments",
-        default="local,prod",
-        help="Comma-separated environment names (default: local,prod).",
+        default="local,smoke,prod",
+        help="Comma-separated environment names (default: local,smoke,prod).",
     )
     parser.add_argument(
         "--env-overrides",

@@ -598,14 +598,26 @@ class LLMGenerationWorkerWorkflow:
 
                 # Finalize thinking and answer durations
                 if in_thinking:
-                    thinking_duration_ms = elapsed_ms(thinking_started_time) if thinking_started_time is not None else 0
+                    thinking_duration_ms = (
+                        elapsed_ms(thinking_started_time)
+                        if thinking_started_time is not None
+                        else 0
+                    )
                     answer_duration_ms = 0
                 else:
                     if thinking_duration_ms is None:
                         thinking_duration_ms = 0
-                        answer_duration_ms = elapsed_ms(answer_started_time) if answer_started_time is not None else 0
+                        answer_duration_ms = (
+                            elapsed_ms(answer_started_time)
+                            if answer_started_time is not None
+                            else 0
+                        )
                     else:
-                        answer_duration_ms = elapsed_ms(answer_started_time) if answer_started_time is not None else 0
+                        answer_duration_ms = (
+                            elapsed_ms(answer_started_time)
+                            if answer_started_time is not None
+                            else 0
+                        )
 
                 full_content = "".join(accumulated_content)
                 if output_blocked:

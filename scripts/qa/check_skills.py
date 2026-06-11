@@ -86,7 +86,9 @@ def _extract_frontmatter(path: Path, text: str) -> tuple[str | None, list[Violat
     lines = text.splitlines()
     if not lines or lines[0] != "---":
         return None, [
-            Violation(path=path, line=1, message="SKILL.md must start with YAML frontmatter")
+            Violation(
+                path=path, line=1, message="SKILL.md must start with YAML frontmatter"
+            )
         ]
 
     try:

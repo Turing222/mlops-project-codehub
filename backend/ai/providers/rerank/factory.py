@@ -58,7 +58,9 @@ class RerankProviderFactory:
         if normalized in _DASHSCOPE_COMPATIBLE_PROVIDERS:
             api_key = ai_settings.DASHSCOPE_API_KEY
             if not api_key:
-                raise ValueError("DashScope rerank 配置不完整，请检查 DASHSCOPE_API_KEY")
+                raise ValueError(
+                    "DashScope rerank 配置不完整，请检查 DASHSCOPE_API_KEY"
+                )
             return DashScopeRerankService(
                 api_key=api_key,
                 model_name=ai_settings.RAG_RERANK_MODEL,

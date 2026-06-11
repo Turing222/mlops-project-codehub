@@ -37,6 +37,8 @@ DEPLOY_ENABLE_OBSERVABILITY ?= false
 DEPLOY_LOG_TAIL ?= 200
 FRONTEND_DIR ?= frontend
 FRONTEND_APP ?= admin
+E2E_SMOKE_USER ?= seed_admin
+E2E_SMOKE_PASS ?= SeedPass123!
 UNIT_TARGETS ?= tests/unit
 COMPONENT_TARGETS ?= tests/component
 INTEGRATION_TARGETS ?= tests/integration
@@ -65,6 +67,7 @@ export DEPLOY_COMPOSE_FILE DEPLOY_ENV_FILE DEPLOY_BASE_URL
 export DEPLOY_EXTRA_COMPOSE_FILES
 export DEPLOY_FRONTEND_BASE_URL DEPLOY_FRONTEND_HEALTH_PATH DEPLOY_API_LIVE_PATH DEPLOY_API_READY_PATH
 export DEPLOY_ENABLE_BIFROST DEPLOY_ENABLE_OBSERVABILITY DEPLOY_LOG_TAIL
+export E2E_SMOKE_USER E2E_SMOKE_PASS
 export EVAL_DATASET EVAL_OUTPUT EVAL_API_OUTPUT EVAL_RETRIEVAL_OUTPUT
 export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
@@ -158,7 +161,7 @@ help:
 		'  flow-dev-check       Run the full dev verification flow (static + runtime)' \
 		'  flow-fast            Quick feedback: backend static + unit + component; frontend check' \
 		'  flow-local           Full local verify: flow-fast + smoke stack + integration + e2e' \
-		'  flow-local-full      Everything in flow-local + LLM and performance tests' \
+		'  flow-local-full      flow-local + performance tests; runs LLM tests when present' \
 		'  flow-ci              PR gate baseline: flow-fast + integration (CI env) + e2e-mock'
 
 qa-lint:
@@ -426,9 +429,9 @@ flow-local: flow-fast
 	bash scripts/qa/run_with_smoke_env.sh uv run pytest -m "not performance and not requires_llm" $(PYTEST_ARGS)
 	$(MAKE) frontend-e2e-smoke
 
-# flow-local-full: full local verify including LLM and performance tests
+# flow-local-full: full local verify plus performance tests; LLM tests run when present
 flow-local-full: flow-local
-	bash scripts/qa/run_with_smoke_env.sh uv run pytest -m "requires_llm" $(PYTEST_ARGS)
+	bash scripts/qa/run_with_smoke_env.sh uv run pytest -m "requires_llm" $(PYTEST_ARGS); status=$$?; if [ $$status -eq 5 ]; then echo "No requires_llm tests are currently collected; skipping optional LLM suite."; elif [ $$status -ne 0 ]; then exit $$status; fi
 	bash scripts/qa/run_with_smoke_env.sh uv run pytest -m "performance" $(PYTEST_ARGS)
 
 # flow-ci: PR gate baseline; Docker smoke/full-stack coverage lives in smoke-ci.

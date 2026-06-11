@@ -59,6 +59,7 @@ x-secret-file-env: &secret-file-env
 x-infra-env: &infra-env
   CURRENT_UID: ${CURRENT_UID:-1000}
   CURRENT_GID: ${CURRENT_GID:-1000}
+  APP_ENV: ${APP_ENV:-local}
   POSTGRES_USER: ${POSTGRES_USER:-admin}
   POSTGRES_DB: ${POSTGRES_DB:-postgres}
   POSTGRES_SERVER: ${POSTGRES_SERVER:-postgres}
