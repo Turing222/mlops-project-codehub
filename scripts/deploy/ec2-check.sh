@@ -83,6 +83,21 @@ is_deploy_true() {
     [[ "$value" == "1" || "$value" == "true" || "$value" == "yes" || "$value" == "on" ]]
 }
 
+selfhost_postgres_enabled() {
+    local extra_compose_file
+    local extra_compose_path
+
+    for extra_compose_file in $DEPLOY_EXTRA_COMPOSE_FILES; do
+        extra_compose_path="$(resolve_project_path "$extra_compose_file")"
+        case "$extra_compose_file:$extra_compose_path" in
+            *deploy/docker-compose.local-postgres.yml*)
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
 require_deploy_secret_file() {
     local file_env_name="$1"
     local secret_path="${!file_env_name}"
@@ -169,6 +184,8 @@ require_bifrost_runtime_secrets() {
 required_vars=(
     POSTGRES_USER
     POSTGRES_DB
+    POSTGRES_SERVER
+    POSTGRES_PORT
 )
 
 google_oauth_enabled="$(deploy_env_value "GOOGLE_OAUTH_ENABLED" "false")"
@@ -223,6 +240,13 @@ if [[ "$storage_backend" == "s3" && -z "$(deploy_env_value "S3_BUCKET" "")" ]]; 
     exit 1
 fi
 
+postgres_server="$(deploy_env_value "POSTGRES_SERVER" "")"
+if [[ "$postgres_server" == "postgres" ]] && ! selfhost_postgres_enabled; then
+    log_error "POSTGRES_SERVER=postgres requires DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-postgres.yml"
+    log_info "For production RDS, set POSTGRES_SERVER to the RDS endpoint and keep POSTGRES_SSL_MODE=require"
+    exit 1
+fi
+
 if [[ -z "$DOCKER_IMAGE_NAME_WEB" || -z "$DOCKER_IMAGE_NAME_AI" || -z "$DOCKER_IMAGE_NAME_FRONTEND" ]]; then
     log_error "All deploy image variables must be set: DOCKER_IMAGE_NAME_WEB / DOCKER_IMAGE_NAME_AI / DOCKER_IMAGE_NAME_FRONTEND"
     exit 1
@@ -234,6 +258,7 @@ if [[ -z "$DEPLOY_BASE_URL" ]]; then
 fi
 
 placeholder_checked_vars=(
+    POSTGRES_SERVER
 )
 
 for var_name in "${placeholder_checked_vars[@]}"; do

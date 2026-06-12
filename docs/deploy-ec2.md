@@ -9,13 +9,13 @@
 - 单台 EC2
 - Docker Engine + Docker Compose plugin
 - 使用 [deploy/docker-compose.yml](../deploy/docker-compose.yml) 作为正式部署入口
+- 使用 RDS 或其它外部 PostgreSQL 作为生产数据库
 - 使用 [docker-compose.db.yml](../docker-compose.db.yml) 继续承担本地 / CI smoke 与测试环境职责
 
 ## 部署结构
 
 EC2 默认部署栈包含：
 
-- `postgres`
 - `redis`
 - `db_migrator`
 - `api`
@@ -25,9 +25,12 @@ EC2 默认部署栈包含：
 其中：
 
 - `api` / `db_migrator` / `task_worker` 共享同一套后端运行时配置。
+- `POSTGRES_SERVER` 指向 RDS / 外部 PostgreSQL；默认 compose 不再启动自管 Postgres。
 - `STORAGE_BACKEND=s3` 时，优先让 boto3 走 **EC2 instance profile / 默认 credential chain**，不要在部署文件中长期写死 AWS AK/SK。
 - `api-nginx` 是 EC2 本机 API edge，默认只绑定 `127.0.0.1:8081`，供 Cloudflare Tunnel 或本机部署验证访问。
 - `frontend` 容器不再默认启动；它只在 `DEPLOY_ENABLE_FRONTEND_FALLBACK=true` 时作为本地演练、回滚预案或自托管 fallback 使用。
+
+如果确实需要单机自管 PostgreSQL，显式叠加 [deploy/docker-compose.local-postgres.yml](../deploy/docker-compose.local-postgres.yml)。该形态不是推荐生产默认值，必须自行负责备份、恢复演练和磁盘告警。
 
 ## 前端上线拓扑（Cloudflare Pages + 独立 API）
 
@@ -288,6 +291,28 @@ docker push <registry>/dewflow-frontend:${IMAGE_TAG}
 
 如果本次发布包含数据库 migration，先确认 migration 是否向后兼容。不可逆或破坏性 schema 变更不能只靠镜像回退修复；需要按“生产数据库备份与恢复”小节使用 snapshot / PITR 恢复或执行明确的反向迁移。
 
+### 数据库配置
+
+生产默认使用 RDS / 外部 PostgreSQL。`deploy/.env.ec2` 中保持：
+
+```dotenv
+POSTGRES_SERVER=<rds-endpoint>
+POSTGRES_PORT=5432
+POSTGRES_SSL_MODE=require
+```
+
+数据库密码仍写入 `secrets/ec2/postgres_password.txt`，不要写进 `.env.ec2`。RDS security group 需要允许 EC2 实例访问 5432；RDS backup retention / snapshot / PITR 策略在 AWS 侧配置和演练。
+
+低成本自管 fallback 才使用 compose 内置 Postgres：
+
+```dotenv
+POSTGRES_SERVER=postgres
+POSTGRES_SSL_MODE=disable
+DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-postgres.yml
+```
+
+该 override 会创建 `prod_db_volume` 并恢复 `postgres` healthcheck 依赖；删除卷或迁移到 RDS 前必须先完成备份。
+
 ### 前端回退流程
 
 Cloudflare Pages 前端优先在 Cloudflare Dashboard 回退到上一条成功 deployment。只有 Pages 故障或需要自托管临时入口时，才启用 `frontend-fallback` profile，并把 `DOCKER_IMAGE_NAME_FRONTEND` 指向已验证的 fallback 镜像 tag。
@@ -397,7 +422,7 @@ make deploy-ec2-logs ARGS="api"
 make deploy-ec2-down
 ```
 
-如果要连 volume 一起删除，可在后续通过环境变量扩展控制。
+如果要连 volume 一起删除，必须显式设置 `DEPLOY_CONFIRM_VOLUME_WIPE=yes`；无确认时默认保留命名卷。
 
 ## 生产数据库备份与恢复（RDS）
 
@@ -409,7 +434,7 @@ make deploy-ec2-down
 
 ### 当前状态
 
-- 当前仓库中的 `postgres` 服务只属于 [deploy/docker-compose.yml](../deploy/docker-compose.yml) 的本地 / 自管形态，不应被当成 RDS 生产备份策略的一部分。
+- 当前仓库中的 `postgres` 服务只属于 [deploy/docker-compose.local-postgres.yml](../deploy/docker-compose.local-postgres.yml) 的本地 / 自管 fallback 形态，不应被当成 RDS 生产备份策略的一部分。
 - 如果生产库已经迁到 RDS，那么之前删除的容器内数据库备份脚本不需要恢复到当前生产入口。
 
 ### 条件成立时可用
@@ -576,6 +601,7 @@ API P99、5xx 错误率、Redis 内存、Postgres 连接数这类指标告警不
 请保持以下职责分离：
 
 - [deploy/docker-compose.yml](../deploy/docker-compose.yml) → **EC2 / 正式部署入口**
+- [deploy/docker-compose.local-postgres.yml](../deploy/docker-compose.local-postgres.yml) → **可选自管 PostgreSQL fallback**
 - [deploy/docker-compose.local-s3.yml](../deploy/docker-compose.local-s3.yml) → **本地生产形态演练，使用 MinIO 模拟 S3**
 - [deploy/docker-compose.local-logging.yml](../deploy/docker-compose.local-logging.yml) → **本地生产形态演练，把 awslogs 降级为 json-file**
 - [docker-compose.db.yml](../docker-compose.db.yml) → **本地 / CI smoke 和测试环境**（包含 `otel-collector` 等 smoke-only 组件）
@@ -597,6 +623,7 @@ make deploy-local-prod-verify
 这套命令会：
 
 - 使用 `deploy/docker-compose.yml` 作为主体。
+- 叠加 `deploy/docker-compose.local-postgres.yml`，在本机提供 PostgreSQL fallback。
 - 叠加 `deploy/docker-compose.local-s3.yml`，额外加入 MinIO 模拟 S3。
 - 叠加 `deploy/docker-compose.local-logging.yml`，把 CloudWatch Logs 降级为本机 `json-file`。
 - 使用 `secrets/local-prod`，不复用 `secrets/ec2` 的真实部署 secret。

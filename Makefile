@@ -34,8 +34,8 @@ DEPLOY_API_LIVE_PATH ?= /api/v1/health_check/live
 DEPLOY_API_READY_PATH ?= /api/v1/health_check/db_ready
 DEPLOY_ENABLE_BIFROST ?= false
 DEPLOY_LOG_TAIL ?= 200
-LOCAL_PROD_DEPLOY_EXTRA_COMPOSE_FILES ?= deploy/docker-compose.local-s3.yml deploy/docker-compose.local-logging.yml
-LOCAL_PROD_DEPLOY_ENV := DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES="$(LOCAL_PROD_DEPLOY_EXTRA_COMPOSE_FILES)" DEPLOY_ENABLE_FRONTEND_FALLBACK=true DEPLOY_CHECK_FRONTEND_HEALTH=true FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 DEPLOY_FRONTEND_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod
+LOCAL_PROD_DEPLOY_EXTRA_COMPOSE_FILES ?= deploy/docker-compose.local-postgres.yml deploy/docker-compose.local-s3.yml deploy/docker-compose.local-logging.yml
+LOCAL_PROD_DEPLOY_ENV := DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES="$(LOCAL_PROD_DEPLOY_EXTRA_COMPOSE_FILES)" DEPLOY_ENABLE_FRONTEND_FALLBACK=true DEPLOY_CHECK_FRONTEND_HEALTH=true FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 DEPLOY_FRONTEND_BASE_URL=http://localhost:8080 POSTGRES_SERVER=postgres POSTGRES_SSL_MODE=disable S3_BUCKET=dewflow-local-prod
 FRONTEND_DIR ?= frontend
 FRONTEND_APP ?= admin
 E2E_SMOKE_USER ?= seed_admin

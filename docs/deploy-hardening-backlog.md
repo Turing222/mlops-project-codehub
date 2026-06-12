@@ -6,12 +6,12 @@
 
 ## P1 — 数据 / 安全实质风险
 
-### 1. 生产数据库零备份
+### 1. 自管 Postgres fallback 缺备份自动化
 
-- 位置:`deploy/docker-compose.yml`(自管 postgres)、[deploy-ec2.md](deploy-ec2.md) 备份章节
-- 问题:备份文档以 RDS 为前提,实际生产是自管容器 PG,当前没有任何备份通道;`ec2-down.sh` 的删卷保护已补,但没有备份时仍无法恢复误删或磁盘故障。
+- 位置:`deploy/docker-compose.local-postgres.yml`、[deploy-ec2.md](deploy-ec2.md) 备份章节
+- 问题:生产主路径已切到 RDS / 外部 Postgres,但 selfhost fallback 仍没有任何备份通道;`ec2-down.sh` 的删卷保护已补,但没有备份时仍无法恢复误删或磁盘故障。
 - 建议:
-  - compose 增加 `pg_dump` 定时备份 sidecar(如 `prodrigestivill/postgres-backup-local`)并推送 S3,或宿主 cron 调 `pg_dump` + `aws s3 cp`;
+  - selfhost override 增加 `pg_dump` 定时备份 sidecar(如 `prodrigestivill/postgres-backup-local`)并推送 S3,或宿主 cron 调 `pg_dump` + `aws s3 cp`;
   - 备份恢复流程写入 [deploy-ec2.md](deploy-ec2.md) 并演练一次。
 
 ## P2 — 一致性 / 可维护性
@@ -101,4 +101,4 @@
 
 ## 已修复项的去向
 
-评审的 10 项"必须修复"与以下建议项已落地,不在本清单中:worker 任务模块补齐、全栈 restart 策略、SSE 断连透传、smoke CI mock 切换、OTLP 路径与语义约定、Loki compactor、ec2-check 函数遮蔽、k8s local-scaling 重构、frontend 跨栈服务名、告警阈值/选择器/annotation、worker healthcheck 与依赖、SYS_PTRACE、bifrost/locust 端口绑定、日志轮转锚点、minio 钉版、nginx 动态解析与 `server_tokens`/`nosniff`、pr-gate 测试去重与 pg17、smoke path filter、deploy 校验 CI(`deploy-validate-ci.yml`)、`wait_for_http_ok` 超时解耦、`compose_deploy down` debug profile、local-prod 前端探测 URL 与取值优先级、`ec2-down.sh` 删卷显式确认、Dockerfile `FORWARDED_ALLOW_IPS` 安全默认值、deploy compose api/worker CMD 收敛、credit scheduler 装配、GitHub Actions SHA pinning、k8s 外部依赖/迁移 Job/镜像 tag runbook 补齐。具体见 git history 中引用本文件的提交。
+评审的 10 项"必须修复"与以下建议项已落地,不在本清单中:worker 任务模块补齐、全栈 restart 策略、SSE 断连透传、smoke CI mock 切换、OTLP 路径与语义约定、Loki compactor、ec2-check 函数遮蔽、k8s local-scaling 重构、frontend 跨栈服务名、告警阈值/选择器/annotation、worker healthcheck 与依赖、SYS_PTRACE、bifrost/locust 端口绑定、日志轮转锚点、minio 钉版、nginx 动态解析与 `server_tokens`/`nosniff`、pr-gate 测试去重与 pg17、smoke path filter、deploy 校验 CI(`deploy-validate-ci.yml`)、`wait_for_http_ok` 超时解耦、`compose_deploy down` debug profile、local-prod 前端探测 URL 与取值优先级、`ec2-down.sh` 删卷显式确认、Dockerfile `FORWARDED_ALLOW_IPS` 安全默认值、deploy compose api/worker CMD 收敛、credit scheduler 装配、GitHub Actions SHA pinning、k8s 外部依赖/迁移 Job/镜像 tag runbook 补齐、deploy compose 默认切到 RDS / 外部 Postgres。具体见 git history 中引用本文件的提交。

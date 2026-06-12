@@ -79,7 +79,7 @@ x-backend-aws-env: &backend-aws-env
   S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
   S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
   S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
-  POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-disable}
+  POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-require}
   ENABLE_OTEL_METRICS: ${ENABLE_OTEL_METRICS:-false}
   ENABLE_OTEL_TRACES: ${ENABLE_OTEL_TRACES:-false}
   OTEL_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-}
@@ -87,32 +87,6 @@ x-backend-aws-env: &backend-aws-env
   OTEL_SEMCONV_STABILITY_OPT_IN: ${OTEL_SEMCONV_STABILITY_OPT_IN:-http}
 
 services:
-
-  postgres:
-    image: pgvector/pgvector:0.8.1-pg17-bookworm
-    container_name: postgres
-    restart: unless-stopped
-    env_file: *deploy-env-file
-    environment:
-      POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
-    secrets:
-      - POSTGRES_PASSWORD
-    volumes:
-      - pg_data_v17:/var/lib/postgresql/data
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          memory: 1024M
-    command: >
-      postgres -c shared_buffers=256MB -c work_mem=32MB -c maintenance_work_mem=128MB -c effective_cache_size=768MB -c max_connections=200 -c logging_collector=off
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - app_net
 
   redis:
     image: redis:7.4-alpine
@@ -161,8 +135,6 @@ services:
         reservations:
           memory: 256M
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       db_migrator:
@@ -275,9 +247,6 @@ services:
     image: ${DOCKER_IMAGE_NAME_WEB:?missing DOCKER_IMAGE_NAME_WEB (set in deploy/.env.ec2 via make release-image-env)}
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     logging: *default-logging
-    depends_on:
-      postgres:
-        condition: service_healthy
     command: alembic upgrade head
     env_file: *deploy-env-file
     secrets: *db-migration-secrets
@@ -341,8 +310,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
       db_migrator:
         condition: service_completed_successfully
     networks:
@@ -378,8 +345,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
       db_migrator:
         condition: service_completed_successfully
     networks:
@@ -403,8 +368,6 @@ networks:
         - subnet: ${EDGE_NETWORK_SUBNET:-172.30.0.0/24}
 
 volumes:
-  pg_data_v17:
-    name: prod_db_volume
   bifrost_data:
     name: bifrost_data_volume
   knowledge_files_volume:
