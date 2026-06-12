@@ -328,6 +328,7 @@ Cloudflare Pages 前端优先在 Cloudflare Dashboard 回退到上一条成功 d
 - `make deploy-ec2-verify`
 - `make deploy-ec2-logs`
 - `make deploy-ec2-down`
+- `make deploy-cloudwatch-setup`
 
 这些命令底层调用：
 
@@ -338,6 +339,7 @@ Cloudflare Pages 前端优先在 Cloudflare Dashboard 回退到上一条成功 d
 - `scripts/deploy/ec2-verify.sh`
 - `scripts/deploy/ec2-logs.sh`
 - `scripts/deploy/ec2-down.sh`
+- `deploy/monitoring/cloudwatch-setup.sh`
 
 ## 推荐部署顺序
 
@@ -555,14 +557,14 @@ CloudWatch Logs 变量来自 `deploy/.env.ec2`：
 DEPLOY_CW_LOG_GROUP=/dewflow/prod
 DEPLOY_AWS_REGION=us-east-1
 DEPLOY_CW_LOG_STREAM_PREFIX=dewflow
+DEPLOY_CW_METRIC_NAMESPACE=Dewflow/Logs
+DEPLOY_ALERTS_SNS_TOPIC_NAME=dewflow-prod-alerts
 ```
 
-首次部署前先预建 log group：
+首次部署前创建或更新 CloudWatch log group、SNS topic、metric filters 和 alarms：
 
 ```bash
-aws logs create-log-group \
-  --log-group-name "$DEPLOY_CW_LOG_GROUP" \
-  --region "$DEPLOY_AWS_REGION"
+make deploy-cloudwatch-setup
 ```
 
 EC2 instance role 至少需要对该 log group 具备：
@@ -571,18 +573,20 @@ EC2 instance role 至少需要对该 log group 具备：
 - `logs:DescribeLogStreams`
 - `logs:PutLogEvents`
 
-最少告警接入步骤：
+运行 `make deploy-cloudwatch-setup` 的人或 CI role 还需要 `logs:CreateLogGroup`、`logs:DescribeLogGroups`、`logs:PutMetricFilter`、`cloudwatch:PutMetricAlarm`、`sns:CreateTopic`。
 
-1. 确认 `api` 和 `task_worker` 日志进入同一个 CloudWatch Logs log group。
-2. 建立 SNS topic，并添加 email subscription；收件人必须在邮件中确认订阅。
-3. 为第一批生产信号创建 metric filters：
+最少告警验证步骤：
+
+1. 运行 `make deploy-cloudwatch-setup`。
+2. 确认 `api`、`task_worker` 和 `credit_scheduler` 日志进入同一个 CloudWatch Logs log group。
+3. 在 SNS topic 上添加 email / ChatOps subscription；收件人必须完成确认。
+4. 确认第一批生产信号的 metric filters 已创建：
    - `level=CRITICAL`
    - `event=circuit_breaker_opened`
    - `event=worker_rerank_init_degraded`
    - `error_code=LLM_ROUTING_FAILED`
    - `error_code=KNOWLEDGE_FILE_INGEST_FAILED`
-4. 为每个 metric 建 CloudWatch alarm，alarm action 指向同一个 SNS topic。
-5. 触发一次 test alarm，确认 email 能收到 `ALARM` 和恢复通知。
+5. 触发一次 test alarm，确认通知渠道能收到 `ALARM` 和恢复通知。
 
 查看生产日志：
 

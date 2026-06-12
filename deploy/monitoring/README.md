@@ -18,6 +18,8 @@ and `span_id`.
 
 ## Files
 
+- `cloudwatch-setup.sh` creates the log group, SNS topic, CloudWatch Logs metric
+  filters, and first-pass alarms from `deploy/.env.ec2`.
 - `alarms-cloudwatch.md` documents the first CloudWatch metric filters, alarm
   intent, SNS target shape, and verification commands.
 - `dashboard-promql-export.md` preserves the PromQL / LogQL expressions from
@@ -34,3 +36,14 @@ and `span_id`.
   that changes deploy-stack logging back to `json-file`.
 - `deploy/docker-compose.local-s3.yml` is the non-EC2 rehearsal override that
   replaces AWS S3 with MinIO.
+
+## Setup
+
+Run this after `deploy/.env.ec2` has the production AWS region and log group:
+
+```bash
+make deploy-cloudwatch-setup
+```
+
+The script is idempotent for the log group, metric filters, and alarms. Subscribe
+email, ChatOps, or incident tooling recipients to the SNS topic it prints.

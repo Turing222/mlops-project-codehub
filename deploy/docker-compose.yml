@@ -261,26 +261,6 @@ services:
         reservations:
           memory: 64M
 
-  locust:
-    image: locustio/locust:2.33.0
-    container_name: locust
-    volumes:
-      - ../tests:/mnt/locust
-    command: -f /mnt/locust/performance/locustfile.py --host http://api:8000
-    profiles: [ "debug" ]
-    logging: *default-logging
-    ports:
-      - "127.0.0.1:8089:8089"
-    networks:
-      - app_net
-      - monitor_net
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 128M
-
   task_worker:
     image: ${DOCKER_IMAGE_NAME_AI:?missing DOCKER_IMAGE_NAME_AI (set in deploy/.env.ec2 via make release-image-env)}
     container_name: task_worker
@@ -358,8 +338,6 @@ services:
 
 networks:
   app_net:
-    driver: bridge
-  monitor_net:
     driver: bridge
   edge_net:
     driver: bridge

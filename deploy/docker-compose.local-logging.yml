@@ -29,8 +29,8 @@ services:
   db_migrator:
     logging: *local-logging
 
-  locust:
+  task_worker:
     logging: *local-logging
 
-  task_worker:
+  credit_scheduler:
     logging: *local-logging

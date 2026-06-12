@@ -79,7 +79,7 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-skill-check qa-standards-fast qa-claude-fast qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	frontend-lint frontend-typecheck frontend-test frontend-build frontend-bundle-check frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all release-check-clean image-build-release frontend-image-build-release image-build-all-release release-image-env release-tag \
-	deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down \
+		deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down deploy-cloudwatch-setup \
 	deploy-local-prod-secrets-prepare deploy-local-prod-check deploy-local-prod-up deploy-local-prod-wait deploy-local-prod-verify deploy-local-prod-logs deploy-local-prod-down \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-up-debug env-smoke-wait env-smoke-down env-smoke-logs \
 	set-llm seed-dev \
@@ -140,10 +140,11 @@ help:
 		'  deploy-ec2-check     Validate EC2 deploy env and compose config' \
 		'  deploy-ec2-up        Pull images and start the EC2 deploy stack' \
 		'  deploy-ec2-wait      Wait until the EC2 deploy endpoints are reachable' \
-		'  deploy-ec2-verify    Run remote-safe smoke checks against the EC2 deploy stack' \
-		'  deploy-ec2-logs      Show recent EC2 deploy logs' \
-		'  deploy-ec2-down      Stop the EC2 deploy stack' \
-		'  deploy-local-prod-up Start local production-shape rehearsal stack with MinIO S3' \
+			'  deploy-ec2-verify    Run remote-safe smoke checks against the EC2 deploy stack' \
+			'  deploy-ec2-logs      Show recent EC2 deploy logs' \
+			'  deploy-ec2-down      Stop the EC2 deploy stack' \
+			'  deploy-cloudwatch-setup  Create/update CloudWatch log alarms and SNS topic' \
+			'  deploy-local-prod-up Start local production-shape rehearsal stack with MinIO S3' \
 		'  deploy-local-prod-down Stop local production-shape rehearsal stack' \
 		'  env-smoke-prepare    Generate the smoke env file from template' \
 		'  env-smoke-check      Run preflight checks for smoke environment (API keys)' \
@@ -328,6 +329,9 @@ deploy-ec2-logs:
 
 deploy-ec2-down:
 	bash scripts/deploy/ec2-down.sh
+
+deploy-cloudwatch-setup:
+	bash deploy/monitoring/cloudwatch-setup.sh
 
 deploy-local-prod-secrets-prepare:
 	DEPLOY_SECRET_DIR=secrets/local-prod bash scripts/deploy/local-prod-secrets-prepare.sh

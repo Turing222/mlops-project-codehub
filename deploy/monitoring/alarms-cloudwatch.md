@@ -7,24 +7,32 @@ through the `awslogs` driver. The deploy stack uses these defaults:
 log group: ${DEPLOY_CW_LOG_GROUP:-/dewflow/prod}
 region: ${DEPLOY_AWS_REGION:-us-east-1}
 stream prefix: ${DEPLOY_CW_LOG_STREAM_PREFIX:-dewflow}
+metric namespace: ${DEPLOY_CW_METRIC_NAMESPACE:-Dewflow/Logs}
+SNS topic: ${DEPLOY_ALERTS_SNS_TOPIC_NAME:-dewflow-prod-alerts}
 ```
 
-Create the log group before the first deploy:
+Create or update the log group, SNS topic, log metric filters, and alarms:
 
 ```bash
-aws logs create-log-group \
-  --log-group-name "${DEPLOY_CW_LOG_GROUP:-/dewflow/prod}" \
-  --region "${DEPLOY_AWS_REGION:-us-east-1}"
+make deploy-cloudwatch-setup
 ```
 
 The EC2 instance role needs CloudWatch Logs write access for this group,
 including `logs:CreateLogStream`, `logs:DescribeLogStreams`, and
 `logs:PutLogEvents`.
 
+The human or CI role that runs `make deploy-cloudwatch-setup` also needs:
+
+- `logs:CreateLogGroup`
+- `logs:DescribeLogGroups`
+- `logs:PutMetricFilter`
+- `cloudwatch:PutMetricAlarm`
+- `sns:CreateTopic`
+
 ## Phase 1 Log Metric Filters
 
-Create metric filters in a dedicated namespace such as `Dewflow/Logs`, then
-attach CloudWatch alarms to an SNS topic:
+`make deploy-cloudwatch-setup` creates metric filters in a dedicated namespace
+such as `Dewflow/Logs`, then attaches CloudWatch alarms to an SNS topic:
 
 ```text
 SNS topic ARN: arn:aws:sns:${DEPLOY_AWS_REGION}:${AWS_ACCOUNT_ID}:dewflow-prod-alerts
@@ -42,6 +50,10 @@ Recommended first alarm threshold: `>= 1` event in 5 minutes, with both alarm
 and OK actions pointing to the SNS topic. Tune noisy warning signals after
 production baselines are known.
 
+If the SNS topic is managed elsewhere, set `DEPLOY_ALERTS_SNS_TOPIC_ARN` in
+`deploy/.env.ec2`; otherwise the setup script creates
+`${DEPLOY_ALERTS_SNS_TOPIC_NAME:-dewflow-prod-alerts}`.
+
 ## Phase 2 Metric Alarms
 
 The retired Prometheus rules captured these metric intents:
@@ -51,10 +63,15 @@ The retired Prometheus rules captured these metric intents:
 | `ApiHighLatency` | EMF, ADOT to CloudWatch, or AMP | Needs request duration distribution before P99 is meaningful. |
 | `ApiErrorRateHigh` | EMF, ADOT to CloudWatch, or AMP | Needs request and 5xx counts with route/status dimensions. |
 | `RedisMemoryUsageHigh` | CloudWatch custom metric or ElastiCache metric | Current compose Redis has no managed ElastiCache metric. |
-| `PostgresConnectionsExhausted` | CloudWatch custom metric or RDS metric | Current compose Postgres has no managed RDS metric. |
+| `PostgresConnectionsExhausted` | RDS metric | Main deploy path now uses external Postgres / RDS. |
 
 Do not replace these with plain log metric filters unless the application first
 emits explicit structured metrics for the required values.
+
+Recommended first RDS alarms after the RDS instance identifier is known:
+`DatabaseConnections`, `FreeStorageSpace`, `CPUUtilization`, `FreeableMemory`,
+and `ReadLatency` / `WriteLatency`. EC2 memory and disk alarms require
+CloudWatch Agent; default EC2 metrics only cover CPU, network, and status checks.
 
 ## Verification
 
