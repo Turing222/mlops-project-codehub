@@ -13,10 +13,10 @@ RELEASE_DOCKER_IMAGE_NAME_FRONTEND ?= $(FRONTEND_IMAGE_REPOSITORY):$(IMAGE_TAG)
 DOCKER_IMAGE_NAME_WEB ?= $(RELEASE_DOCKER_IMAGE_NAME_WEB)
 DOCKER_IMAGE_NAME_AI ?= $(RELEASE_DOCKER_IMAGE_NAME_AI)
 DOCKER_IMAGE_NAME_FRONTEND ?= $(RELEASE_DOCKER_IMAGE_NAME_FRONTEND)
-explicit_image_override = $(if $(filter command line,$(origin $(1))),1,$(if $(filter environment environment override,$(origin $(1)_EXPLICIT)),$($(1)_EXPLICIT),$(if $(filter environment environment override,$(origin $(1))),1,)))
-DOCKER_IMAGE_NAME_WEB_EXPLICIT := $(call explicit_image_override,DOCKER_IMAGE_NAME_WEB)
-DOCKER_IMAGE_NAME_AI_EXPLICIT := $(call explicit_image_override,DOCKER_IMAGE_NAME_AI)
-DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT := $(call explicit_image_override,DOCKER_IMAGE_NAME_FRONTEND)
+explicit_env_override = $(if $(filter command line,$(origin $(1))),1,$(if $(filter environment environment override,$(origin $(1)_EXPLICIT)),$($(1)_EXPLICIT),$(if $(filter environment environment override,$(origin $(1))),1,)))
+DOCKER_IMAGE_NAME_WEB_EXPLICIT := $(call explicit_env_override,DOCKER_IMAGE_NAME_WEB)
+DOCKER_IMAGE_NAME_AI_EXPLICIT := $(call explicit_env_override,DOCKER_IMAGE_NAME_AI)
+DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT := $(call explicit_env_override,DOCKER_IMAGE_NAME_FRONTEND)
 # Semantic version for release tagging; single source of truth is base.yaml.
 RELEASE_VERSION ?= $(shell awk -F': *' '/^VERSION:/{print $$2}' configs/app/base.yaml 2>/dev/null)
 SMOKE_COMPOSE_FILE ?= docker-compose.db.yml
@@ -34,8 +34,32 @@ DEPLOY_API_LIVE_PATH ?= /api/v1/health_check/live
 DEPLOY_API_READY_PATH ?= /api/v1/health_check/db_ready
 DEPLOY_ENABLE_BIFROST ?= false
 DEPLOY_LOG_TAIL ?= 200
+DEPLOY_COMPOSE_FILE_EXPLICIT := $(call explicit_env_override,DEPLOY_COMPOSE_FILE)
+DEPLOY_EXTRA_COMPOSE_FILES_EXPLICIT := $(call explicit_env_override,DEPLOY_EXTRA_COMPOSE_FILES)
+DEPLOY_BASE_URL_EXPLICIT := $(call explicit_env_override,DEPLOY_BASE_URL)
+DEPLOY_FRONTEND_BASE_URL_EXPLICIT := $(call explicit_env_override,DEPLOY_FRONTEND_BASE_URL)
+DEPLOY_FRONTEND_HEALTH_PATH_EXPLICIT := $(call explicit_env_override,DEPLOY_FRONTEND_HEALTH_PATH)
+DEPLOY_API_LIVE_PATH_EXPLICIT := $(call explicit_env_override,DEPLOY_API_LIVE_PATH)
+DEPLOY_API_READY_PATH_EXPLICIT := $(call explicit_env_override,DEPLOY_API_READY_PATH)
+DEPLOY_ENABLE_BIFROST_EXPLICIT := $(call explicit_env_override,DEPLOY_ENABLE_BIFROST)
+DEPLOY_ENABLE_FRONTEND_FALLBACK_EXPLICIT := $(call explicit_env_override,DEPLOY_ENABLE_FRONTEND_FALLBACK)
+DEPLOY_CHECK_FRONTEND_HEALTH_EXPLICIT := $(call explicit_env_override,DEPLOY_CHECK_FRONTEND_HEALTH)
+DEPLOY_PULL_IMAGES_EXPLICIT := $(call explicit_env_override,DEPLOY_PULL_IMAGES)
+DEPLOY_LOG_TAIL_EXPLICIT := $(call explicit_env_override,DEPLOY_LOG_TAIL)
+DEPLOY_SECRET_DIR_EXPLICIT := $(call explicit_env_override,DEPLOY_SECRET_DIR)
+DEPLOY_SMOKE_PYTEST_TARGETS_EXPLICIT := $(call explicit_env_override,DEPLOY_SMOKE_PYTEST_TARGETS)
 LOCAL_PROD_DEPLOY_EXTRA_COMPOSE_FILES ?= deploy/docker-compose.local-postgres.yml deploy/docker-compose.local-s3.yml deploy/docker-compose.local-logging.yml
-LOCAL_PROD_DEPLOY_ENV := DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES="$(LOCAL_PROD_DEPLOY_EXTRA_COMPOSE_FILES)" DEPLOY_ENABLE_FRONTEND_FALLBACK=true DEPLOY_CHECK_FRONTEND_HEALTH=true FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 DEPLOY_FRONTEND_BASE_URL=http://localhost:8080 POSTGRES_SERVER=postgres POSTGRES_SSL_MODE=disable S3_BUCKET=dewflow-local-prod
+LOCAL_PROD_DEPLOY_ENV := \
+	DEPLOY_ENV_FILE=deploy/.env.ec2.template \
+	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_SECRET_DIR_EXPLICIT=1 \
+	DEPLOY_EXTRA_COMPOSE_FILES="$(LOCAL_PROD_DEPLOY_EXTRA_COMPOSE_FILES)" DEPLOY_EXTRA_COMPOSE_FILES_EXPLICIT=1 \
+	DEPLOY_ENABLE_FRONTEND_FALLBACK=true DEPLOY_ENABLE_FRONTEND_FALLBACK_EXPLICIT=1 \
+	DEPLOY_CHECK_FRONTEND_HEALTH=true DEPLOY_CHECK_FRONTEND_HEALTH_EXPLICIT=1 \
+	FRONTEND_PUBLIC_PORT=8080 \
+	DEPLOY_BASE_URL=http://localhost:8080 DEPLOY_BASE_URL_EXPLICIT=1 \
+	DEPLOY_FRONTEND_BASE_URL=http://localhost:8080 DEPLOY_FRONTEND_BASE_URL_EXPLICIT=1 \
+	DOCKER_IMAGE_NAME_WEB_EXPLICIT=1 DOCKER_IMAGE_NAME_AI_EXPLICIT=1 DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT=1 \
+	POSTGRES_SERVER=postgres POSTGRES_SSL_MODE=disable S3_BUCKET=dewflow-local-prod
 FRONTEND_DIR ?= frontend
 FRONTEND_APP ?= admin
 E2E_SMOKE_USER ?= seed_admin
@@ -68,6 +92,10 @@ export DEPLOY_COMPOSE_FILE DEPLOY_ENV_FILE DEPLOY_BASE_URL
 export DEPLOY_EXTRA_COMPOSE_FILES
 export DEPLOY_FRONTEND_BASE_URL DEPLOY_FRONTEND_HEALTH_PATH DEPLOY_API_LIVE_PATH DEPLOY_API_READY_PATH
 export DEPLOY_ENABLE_BIFROST DEPLOY_LOG_TAIL
+export DEPLOY_COMPOSE_FILE_EXPLICIT DEPLOY_EXTRA_COMPOSE_FILES_EXPLICIT DEPLOY_BASE_URL_EXPLICIT
+export DEPLOY_FRONTEND_BASE_URL_EXPLICIT DEPLOY_FRONTEND_HEALTH_PATH_EXPLICIT DEPLOY_API_LIVE_PATH_EXPLICIT DEPLOY_API_READY_PATH_EXPLICIT
+export DEPLOY_ENABLE_BIFROST_EXPLICIT DEPLOY_ENABLE_FRONTEND_FALLBACK_EXPLICIT DEPLOY_CHECK_FRONTEND_HEALTH_EXPLICIT
+export DEPLOY_PULL_IMAGES_EXPLICIT DEPLOY_LOG_TAIL_EXPLICIT DEPLOY_SECRET_DIR_EXPLICIT DEPLOY_SMOKE_PYTEST_TARGETS_EXPLICIT
 export E2E_SMOKE_USER E2E_SMOKE_PASS
 export EVAL_DATASET EVAL_OUTPUT EVAL_API_OUTPUT EVAL_RETRIEVAL_OUTPUT
 export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
@@ -334,7 +362,7 @@ deploy-cloudwatch-setup:
 	bash deploy/monitoring/cloudwatch-setup.sh
 
 deploy-local-prod-secrets-prepare:
-	DEPLOY_SECRET_DIR=secrets/local-prod bash scripts/deploy/local-prod-secrets-prepare.sh
+	$(LOCAL_PROD_DEPLOY_ENV) bash scripts/deploy/local-prod-secrets-prepare.sh
 
 deploy-local-prod-check:
 	$(LOCAL_PROD_DEPLOY_ENV) bash scripts/deploy/ec2-check.sh
@@ -464,4 +492,8 @@ ARGS = $(filter-out $@,$(MAKECMDGOALS))
 check-context:
 	@echo "上线文变量查询: $(ARGS) : $($(ARGS))"
 %:
-	@:
+	@if [ "$@" = "$(firstword $(MAKECMDGOALS))" ]; then \
+		printf 'warning: unknown make target: %s\n' "$@" >&2; \
+	else \
+		printf 'warning: treating extra make goal as positional ARGS value: %s\n' "$@" >&2; \
+	fi

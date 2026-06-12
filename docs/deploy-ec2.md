@@ -27,6 +27,8 @@ EC2 默认部署栈包含：
 - `api` / `db_migrator` / `task_worker` 共享同一套后端运行时配置。
 - `POSTGRES_SERVER` 指向 RDS / 外部 PostgreSQL；默认 compose 不再启动自管 Postgres。
 - `STORAGE_BACKEND=s3` 时，优先让 boto3 走 **EC2 instance profile / 默认 credential chain**，不要在部署文件中长期写死 AWS AK/SK。
+- `deploy/docker-compose.yml` 不支持 `STORAGE_BACKEND=local`；local storage 只用于 `docker-compose.db.yml` 的本地 / CI smoke 场景。
+- 后端容器使用镜像内置非 root 用户 `appuser`(UID/GID `10001`)；正式 deploy 不再通过 `CURRENT_UID` / `CURRENT_GID` 对齐宿主用户。
 - `api-nginx` 是 EC2 本机 API edge，默认只绑定 `127.0.0.1:8081`，供 Cloudflare Tunnel 或本机部署验证访问。
 - `frontend` 容器不再默认启动；它只在 `DEPLOY_ENABLE_FRONTEND_FALLBACK=true` 时作为本地演练、回滚预案或自托管 fallback 使用。
 
@@ -197,6 +199,7 @@ make deploy-ec2-secrets-prepare
 - 为 `SECRET_KEY` / `POSTGRES_PASSWORD` / `REDIS_PASSWORD` 生成缺失的随机 secret 文件。
 - 为可选集成 secret 创建空文件，后续只需要填启用 provider 所需的文件。
 - 保留已有非空 secret，不会覆盖。
+- 将 secret 目录设为 `0700`，并将 secret 文件设为容器内 UID `10001` 可读；如果手工改过权限，重新运行该命令。
 
 真实 secret 文件不会提交到 Git。
 
@@ -312,6 +315,19 @@ DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-postgres.yml
 ```
 
 该 override 会创建 `prod_db_volume` 并恢复 `postgres` healthcheck 依赖；删除卷或迁移到 RDS 前必须先完成备份。
+
+### 存储配置
+
+EC2 deploy 栈只支持 S3-compatible object storage：
+
+```dotenv
+STORAGE_BACKEND=s3
+S3_BUCKET=<bucket-name>
+S3_PREFIX=knowledge_files
+S3_REGION=<aws-region>
+```
+
+`make deploy-ec2-check` 会拒绝 `STORAGE_BACKEND=local`。如果需要验证本地文件存储，请使用 [docker-compose.db.yml](../docker-compose.db.yml) 的本地 / CI smoke 栈，不要在正式 deploy 栈补 `knowledge_storage_init`。
 
 ### 前端回退流程
 
@@ -611,6 +627,27 @@ API P99、5xx 错误率、Redis 内存、Postgres 连接数这类指标告警不
 - [docker-compose.db.yml](../docker-compose.db.yml) → **本地 / CI smoke 和测试环境**（包含 `otel-collector` 等 smoke-only 组件）
 
 不要把两者重新揉成一套，否则会让部署面和测试面相互污染。
+
+## 钉版基础设施镜像核查
+
+Dependabot 的 `docker` ecosystem 主要覆盖 Dockerfile,不会完整跟踪 compose 中的钉版基础设施镜像。当前先采用季度人工核查,后续如果人工流程开始漏检,再接入 Renovate 的 docker-compose manager。
+
+每季度至少检查一次以下范围：
+
+- `deploy/docker-compose.yml`
+- `deploy/docker-compose.local-postgres.yml`
+- `deploy/docker-compose.local-s3.yml`
+- `deploy/docker-compose.local-logging.yml`
+- `docker-compose.db.yml`
+- `.github/workflows/*.yml` 中的 service image
+
+核查步骤：
+
+```bash
+rg -n "image:" deploy docker-compose*.yml .github/workflows | sort
+```
+
+对每个钉版镜像记录当前 tag、最新兼容 tag、相关 CVE / release note、是否需要 PR。重点关注 `pgvector/pgvector`、`redis`、`nginx`、`maximhq/bifrost`、`quay.io/minio/minio` 和 `quay.io/minio/mc`。发现安全修复或兼容 patch 时,按普通 deploy 变更走 `make deploy-ec2-check` 和本地生产形态演练。
 
 ## 本地生产形态演练
 

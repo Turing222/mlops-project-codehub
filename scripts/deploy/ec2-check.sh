@@ -98,6 +98,33 @@ selfhost_postgres_enabled() {
     return 1
 }
 
+deploy_secret_file_allows_runtime_read() {
+    local secret_path="$1"
+    local mode
+    local owner_uid
+    local owner_gid
+    local perms
+    local owner_perm
+    local group_perm
+    local other_perm
+
+    mode="$(stat -c "%a" "$secret_path")"
+    owner_uid="$(stat -c "%u" "$secret_path")"
+    owner_gid="$(stat -c "%g" "$secret_path")"
+    perms="${mode: -3}"
+    owner_perm="${perms:0:1}"
+    group_perm="${perms:1:1}"
+    other_perm="${perms:2:1}"
+
+    if [[ "$owner_uid" == "10001" ]] && (((10#$owner_perm & 4) != 0)); then
+        return 0
+    fi
+    if [[ "$owner_gid" == "10001" ]] && (((10#$group_perm & 4) != 0)); then
+        return 0
+    fi
+    (((10#$other_perm & 4) != 0))
+}
+
 require_deploy_secret_file() {
     local file_env_name="$1"
     local secret_path="${!file_env_name}"
@@ -105,6 +132,11 @@ require_deploy_secret_file() {
     if [[ ! -f "$secret_path" ]]; then
         log_error "Missing deploy secret file: $file_env_name=$secret_path"
         log_info "Run 'make deploy-ec2-secrets-prepare' to create EC2 deploy secret files"
+        exit 1
+    fi
+    if ! deploy_secret_file_allows_runtime_read "$secret_path"; then
+        log_error "Deploy secret file is not readable by container UID 10001: $file_env_name=$secret_path"
+        log_info "Run 'make deploy-ec2-secrets-prepare' to refresh file permissions"
         exit 1
     fi
 }
@@ -235,10 +267,24 @@ for var_name in "${required_vars[@]}"; do
 done
 
 storage_backend="$(deploy_control_env_value "STORAGE_BACKEND" "s3")"
-if [[ "$storage_backend" == "s3" && -z "$(deploy_control_env_value "S3_BUCKET" "")" ]]; then
-    log_error "S3_BUCKET is required when STORAGE_BACKEND=s3"
-    exit 1
-fi
+case "${storage_backend,,}" in
+    s3)
+        if [[ -z "$(deploy_control_env_value "S3_BUCKET" "")" ]]; then
+            log_error "S3_BUCKET is required when STORAGE_BACKEND=s3"
+            exit 1
+        fi
+        ;;
+    local)
+        log_error "STORAGE_BACKEND=local is not supported by the EC2 deploy stack"
+        log_info "Use STORAGE_BACKEND=s3 for deploy/docker-compose.yml, or docker-compose.db.yml for local/smoke storage tests"
+        exit 1
+        ;;
+    *)
+        log_error "Unsupported STORAGE_BACKEND for the EC2 deploy stack: $storage_backend"
+        log_info "Use STORAGE_BACKEND=s3 for deploy/docker-compose.yml"
+        exit 1
+        ;;
+esac
 
 postgres_server="$(deploy_control_env_value "POSTGRES_SERVER" "")"
 if [[ "$postgres_server" == "postgres" ]] && ! selfhost_postgres_enabled; then

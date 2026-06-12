@@ -57,9 +57,11 @@ x-secret-file-env: &secret-file-env
   TAVILY_API_KEY_FILE: /run/secrets/TAVILY_API_KEY
 
 x-db-migration-secrets: &db-migration-secrets
+  - SECRET_KEY
   - POSTGRES_PASSWORD
 
 x-db-migration-secret-file-env: &db-migration-secret-file-env
+  SECRET_KEY_FILE: /run/secrets/SECRET_KEY
   POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
 
 x-infra-env: &infra-env

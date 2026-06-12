@@ -17,14 +17,14 @@ write_local_s3_secret_if_empty() {
     local secret_path="${!file_env_name}"
 
     if [[ -s "$secret_path" ]]; then
-        chmod 600 "$secret_path"
+        chmod_deploy_secret_file "$secret_path"
         return
     fi
 
     (
         umask 077
         printf '%s\n' "$value" >"$secret_path"
-        chmod 600 "$secret_path"
+        chmod_deploy_secret_file "$secret_path"
     )
     log_info "Wrote local S3 rehearsal secret: $secret_path"
 }

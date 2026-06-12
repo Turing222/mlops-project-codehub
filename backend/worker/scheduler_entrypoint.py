@@ -12,8 +12,8 @@ import importlib
 import os
 from typing import TYPE_CHECKING
 
-from taskiq.scheduler.scheduler import TaskiqScheduler
 from taskiq.schedule_sources.label_based import LabelScheduleSource
+from taskiq.scheduler.scheduler import TaskiqScheduler
 
 from backend.infra.task_broker import broker
 
@@ -70,7 +70,4 @@ def validate_scheduler_schedules() -> None:
             f"task_name={task_name} schedule_id={schedule_id}"
             for task_name, schedule_id in sorted(missing_keys)
         )
-        raise RuntimeError(
-            "Required scheduler tasks are not registered: "
-            f"{missing}"
-        )
+        raise RuntimeError(f"Required scheduler tasks are not registered: {missing}")

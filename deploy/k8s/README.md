@@ -12,6 +12,11 @@
 - **外部依赖前置**：主 overlay 不创建 PostgreSQL / Redis；应用前必须先提供可解析的 `postgres` / `redis` Service，或把 `configmap.yaml` 中的 `POSTGRES_SERVER` / `REDIS_HOST` 改成实际 RDS / ElastiCache endpoint。
 - **镜像占位**：清单中的 `dewflow-backend:2.0.0-*` 和 `dewflow-frontend:2.0.0` 只是示例 tag；实际部署前必须替换为 `make release-image-env` 和前端发布流程产出的不可变镜像 tag。
 
+## 已知实验缺口
+
+- 主 overlay 当前仍使用 `STORAGE_BACKEND=local` + RWO `knowledge-files-pvc.yaml` 示例,与 API HPA / Worker KEDA 多副本扩缩容不构成生产合同。
+- `configmap.yaml` 中的 `RAG_RERANK_PROVIDER=bifrost` 是占位配置,本目录没有提供 Bifrost Deployment;正式推进 k8s 前需要改为空值、接外部网关,或补齐 Bifrost 清单。
+
 ## 设计目标
 
 - API 和 Worker 分开部署，匹配现有 `Dockerfile` 的 `web` / `worker` 镜像目标。

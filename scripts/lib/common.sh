@@ -21,23 +21,37 @@ SMOKE_REQUIRED_VOLUME_NAMES=(
     prod_db_volume_test
     knowledge_files_volume_test
 )
-DEPLOY_COMPOSE_FILE_EXPLICIT="${DEPLOY_COMPOSE_FILE+x}"
-DEPLOY_EXTRA_COMPOSE_FILES_EXPLICIT="${DEPLOY_EXTRA_COMPOSE_FILES+x}"
-DEPLOY_BASE_URL_EXPLICIT="${DEPLOY_BASE_URL+x}"
-DEPLOY_FRONTEND_BASE_URL_EXPLICIT="${DEPLOY_FRONTEND_BASE_URL+x}"
-DEPLOY_FRONTEND_HEALTH_PATH_EXPLICIT="${DEPLOY_FRONTEND_HEALTH_PATH+x}"
-DEPLOY_API_LIVE_PATH_EXPLICIT="${DEPLOY_API_LIVE_PATH+x}"
-DEPLOY_API_READY_PATH_EXPLICIT="${DEPLOY_API_READY_PATH+x}"
-DEPLOY_ENABLE_BIFROST_EXPLICIT="${DEPLOY_ENABLE_BIFROST+x}"
-DEPLOY_ENABLE_FRONTEND_FALLBACK_EXPLICIT="${DEPLOY_ENABLE_FRONTEND_FALLBACK+x}"
-DEPLOY_CHECK_FRONTEND_HEALTH_EXPLICIT="${DEPLOY_CHECK_FRONTEND_HEALTH+x}"
-DEPLOY_PULL_IMAGES_EXPLICIT="${DEPLOY_PULL_IMAGES+x}"
-DEPLOY_LOG_TAIL_EXPLICIT="${DEPLOY_LOG_TAIL+x}"
-DEPLOY_SECRET_DIR_EXPLICIT="${DEPLOY_SECRET_DIR+x}"
-DEPLOY_SMOKE_PYTEST_TARGETS_EXPLICIT="${DEPLOY_SMOKE_PYTEST_TARGETS+x}"
-DOCKER_IMAGE_NAME_WEB_EXPLICIT="${DOCKER_IMAGE_NAME_WEB_EXPLICIT-${DOCKER_IMAGE_NAME_WEB+x}}"
-DOCKER_IMAGE_NAME_AI_EXPLICIT="${DOCKER_IMAGE_NAME_AI_EXPLICIT-${DOCKER_IMAGE_NAME_AI+x}}"
-DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT="${DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT-${DOCKER_IMAGE_NAME_FRONTEND+x}}"
+set_explicit_marker_default() {
+    local name="$1"
+    local marker="${name}_EXPLICIT"
+
+    if [[ -n "${!marker+x}" ]]; then
+        return
+    fi
+    if [[ -n "${!name+x}" ]]; then
+        printf -v "$marker" '%s' "1"
+    else
+        printf -v "$marker" '%s' ""
+    fi
+}
+
+set_explicit_marker_default "DEPLOY_COMPOSE_FILE"
+set_explicit_marker_default "DEPLOY_EXTRA_COMPOSE_FILES"
+set_explicit_marker_default "DEPLOY_BASE_URL"
+set_explicit_marker_default "DEPLOY_FRONTEND_BASE_URL"
+set_explicit_marker_default "DEPLOY_FRONTEND_HEALTH_PATH"
+set_explicit_marker_default "DEPLOY_API_LIVE_PATH"
+set_explicit_marker_default "DEPLOY_API_READY_PATH"
+set_explicit_marker_default "DEPLOY_ENABLE_BIFROST"
+set_explicit_marker_default "DEPLOY_ENABLE_FRONTEND_FALLBACK"
+set_explicit_marker_default "DEPLOY_CHECK_FRONTEND_HEALTH"
+set_explicit_marker_default "DEPLOY_PULL_IMAGES"
+set_explicit_marker_default "DEPLOY_LOG_TAIL"
+set_explicit_marker_default "DEPLOY_SECRET_DIR"
+set_explicit_marker_default "DEPLOY_SMOKE_PYTEST_TARGETS"
+set_explicit_marker_default "DOCKER_IMAGE_NAME_WEB"
+set_explicit_marker_default "DOCKER_IMAGE_NAME_AI"
+set_explicit_marker_default "DOCKER_IMAGE_NAME_FRONTEND"
 DEPLOY_COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-deploy/docker-compose.yml}"
 DEPLOY_EXTRA_COMPOSE_FILES="${DEPLOY_EXTRA_COMPOSE_FILES:-}"
 DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-deploy/.env.ec2}"
@@ -365,14 +379,25 @@ deploy_env_value() {
 deploy_control_env_value() {
     local name="$1"
     local default_value="$2"
-    local explicit_marker="${name}_EXPLICIT"
 
-    if [[ -n "${!explicit_marker:-}" && -n "${!name:-}" && "${!name}" != "$default_value" ]]; then
+    if deploy_control_env_is_explicit "$name" && [[ -n "${!name+x}" ]]; then
         printf '%s\n' "${!name}"
         return
     fi
 
     deploy_env_file_value "$name" "$default_value"
+}
+
+deploy_control_env_is_explicit() {
+    local name="$1"
+    local explicit_marker="${name}_EXPLICIT"
+
+    if [[ -n "${!explicit_marker+x}" ]]; then
+        [[ -n "${!explicit_marker}" ]]
+        return
+    fi
+
+    [[ -n "${!name+x}" ]]
 }
 
 deploy_env_file_value() {
@@ -424,8 +449,8 @@ load_deploy_env() {
     DEPLOY_SECRET_DIR="$(deploy_control_env_value "DEPLOY_SECRET_DIR" "secrets/ec2")"
     DEPLOY_EXTRA_COMPOSE_FILES="$(deploy_control_env_value "DEPLOY_EXTRA_COMPOSE_FILES" "")"
     DEPLOY_BASE_URL="$(deploy_control_env_value "DEPLOY_BASE_URL" "http://localhost")"
-    # 默认值用空串占位:动态默认 ($DEPLOY_BASE_URL) 会让显式传值因等于默认值而被
-    # 文件值吞掉;空串默认保证非空显式值永远生效,回退逻辑放在下一行。
+    # Keep the dynamic default outside deploy_control_env_value so env files can
+    # omit this setting and inherit DEPLOY_BASE_URL.
     DEPLOY_FRONTEND_BASE_URL="$(deploy_control_env_value "DEPLOY_FRONTEND_BASE_URL" "")"
     DEPLOY_FRONTEND_BASE_URL="${DEPLOY_FRONTEND_BASE_URL:-$DEPLOY_BASE_URL}"
     DEPLOY_FRONTEND_HEALTH_PATH="$(deploy_control_env_value "DEPLOY_FRONTEND_HEALTH_PATH" "/healthz")"
@@ -518,13 +543,14 @@ ensure_deploy_secret_file() {
 
     secret_dir="$(dirname "$secret_path")"
     mkdir -p "$secret_dir"
+    chmod 700 "$secret_dir"
 
     if [[ -s "$secret_path" ]]; then
-        chmod 600 "$secret_path"
+        chmod_deploy_secret_file "$secret_path"
         return
     fi
     if [[ -f "$secret_path" && "$mode" == "empty" ]]; then
-        chmod 600 "$secret_path"
+        chmod_deploy_secret_file "$secret_path"
         return
     fi
 
@@ -537,8 +563,17 @@ ensure_deploy_secret_file() {
             generate_smoke_secret >"$secret_path"
             log_info "Generated deploy secret: $secret_path"
         fi
-        chmod 600 "$secret_path"
+        chmod_deploy_secret_file "$secret_path"
     )
+}
+
+chmod_deploy_secret_file() {
+    local secret_path="$1"
+
+    # Docker Compose file-backed secrets preserve source file permissions. The
+    # backend image runs as UID 10001, so the file must be readable after mount;
+    # the host directory remains 0700 to keep traversal restricted.
+    chmod 644 "$secret_path"
 }
 
 ensure_deploy_secret_files() {

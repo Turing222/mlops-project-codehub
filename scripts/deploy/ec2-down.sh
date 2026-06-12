@@ -29,14 +29,12 @@ case "${volume_wipe,,}" in
     yes|1|true|on)
         log_warn "Volume wipe requested; this will destroy the following named volumes:"
         log_warn "  - prod_db_volume"
-        log_warn "  - knowledge_files_volume"
         log_warn "  - bifrost_data_volume"
         args+=(-v)
         ;;
     prompt|interactive)
         log_warn "Volume wipe requested; this will destroy the following named volumes:"
         log_warn "  - prod_db_volume"
-        log_warn "  - knowledge_files_volume"
         log_warn "  - bifrost_data_volume"
         if [[ -t 0 ]]; then
             read -r -p "Type 'yes' to continue: " reply
