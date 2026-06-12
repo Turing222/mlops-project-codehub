@@ -29,18 +29,18 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
-COPY alembic.ini .
-COPY alembic/ ./alembic/
-COPY configs/ ./configs/
-COPY backend/ ./backend/
-
 # ──────────────────────────────────────────
 # Stage 2a: Web builder —— 装 web extras
 # ──────────────────────────────────────────
 FROM builder-base AS builder-web
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra web
+    uv sync --frozen --no-dev --extra web --no-install-project
+
+COPY alembic.ini .
+COPY alembic/ ./alembic/
+COPY configs/ ./configs/
+COPY backend/ ./backend/
 
 
 # ──────────────────────────────────────────
@@ -49,7 +49,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM builder-base AS builder-worker
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra ai --extra worker
+    uv sync --frozen --no-dev --extra ai --extra worker --no-install-project
+
+COPY configs/ ./configs/
+COPY backend/ ./backend/
 
 
 # ──────────────────────────────────────────

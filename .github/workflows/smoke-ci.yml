@@ -22,7 +22,7 @@ permissions:
 
 concurrency:
   group: smoke-ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   smoke:
@@ -76,6 +76,16 @@ jobs:
       - name: Dump smoke logs on failure
         if: failure()
         run: make env-smoke-logs
+
+      - name: Upload smoke logs on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: smoke-logs
+          path: |
+            logs/smoke/*.log
+            logs/smoke/*.txt
+          if-no-files-found: ignore
 
       - name: Tear down smoke environment
         if: always()

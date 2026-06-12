@@ -56,6 +56,12 @@ x-secret-file-env: &secret-file-env
   S3_SECRET_ACCESS_KEY_FILE: ${S3_SECRET_ACCESS_KEY_FILE:-}
   TAVILY_API_KEY_FILE: /run/secrets/TAVILY_API_KEY
 
+x-db-migration-secrets: &db-migration-secrets
+  - POSTGRES_PASSWORD
+
+x-db-migration-secret-file-env: &db-migration-secret-file-env
+  POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
+
 x-infra-env: &infra-env
   CURRENT_UID: ${CURRENT_UID:-1000}
   CURRENT_GID: ${CURRENT_GID:-1000}
@@ -149,14 +155,14 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "5432:5432"
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:5432:5432"
 
   redis:
     image: redis:7.4-alpine
     secrets:
       - REDIS_PASSWORD
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:${REDIS_HOST_PORT:-6379}:6379"
     deploy:
       resources:
         limits:
@@ -181,8 +187,8 @@ services:
       - minio_data:/data
     command: server /data --address ":9000" --console-address ":9001"
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:${MINIO_API_PORT:-9000}:9000"
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
 
   minio_init:
     image: quay.io/minio/mc:latest
@@ -203,9 +209,9 @@ services:
   db_migrator:
     image: ${DOCKER_IMAGE_NAME_WEB:?missing DOCKER_IMAGE_NAME_WEB (run make image-build then make env-smoke-up)}
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
-    secrets: *app-secrets
+    secrets: *db-migration-secrets
     environment:
-      <<: [ *infra-env, *feature-env, *secret-file-env ]
+      <<: [ *infra-env, *db-migration-secret-file-env ]
     volumes:
       - ./backend:/app/backend
       - ./alembic:/app/alembic
@@ -258,7 +264,7 @@ services:
       - -c
       - "export BIFROST_API_KEY=\"$$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" && export BIFROST_ENCRYPTION_KEY=\"$$(cat /run/secrets/BIFROST_ENCRYPTION_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY=\"$$(cat /run/secrets/DEEPSEEK_API_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY_2=\"$$(cat /run/secrets/DEEPSEEK_API_KEY_2 | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY=\"$$(cat /run/secrets/DASHSCOPE_API_KEY | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY_2=\"$$(cat /run/secrets/DASHSCOPE_API_KEY_2 | tr -d '\\015\\012')\" && export COHERE_API_KEY=\"$$(cat /run/secrets/COHERE_API_KEY | tr -d '\\015\\012')\" && export COHERE_API_KEY_2=\"$$(cat /run/secrets/COHERE_API_KEY_2 | tr -d '\\015\\012')\" && exec /app/main -app-dir /app/data -port \"$${APP_PORT}\" -host \"$${APP_HOST}\" -log-level \"$${BIFROST_LOG_LEVEL}\" -log-style \"$${LOG_STYLE}\""
     ports:
-      - "${BIFROST_PORT:-18080}:8080"
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:${BIFROST_PORT:-18080}:8080"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --header=\"x-bf-vk: $$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" http://localhost:8080/v1/models >/dev/null || exit 1"]
       interval: 5s
@@ -311,9 +317,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --proxy-headers --timeout-graceful-shutdown 30
     ports:
-      - "8000:8000"
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:8000:8000"
 
   task_worker:
     image: ${DOCKER_IMAGE_NAME_AI:?missing DOCKER_IMAGE_NAME_AI (run make image-build then make env-smoke-up)}
@@ -330,13 +335,16 @@ services:
       <<: [ *infra-env, *feature-env, *secret-file-env ]
       BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-info}
       TASKIQ_HEALTH_MIN_PROCESSES: "2"
+      TASKIQ_MODULES: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks"
+      TASKIQ_WORKERS: "2"
+      TASKIQ_WAIT_TASKS_TIMEOUT: "105"
+      TASKIQ_SHUTDOWN_TIMEOUT: "10"
     healthcheck:
       test: [ "CMD-SHELL", "python -m backend.worker.tasks.healthcheck || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
-    command: taskiq worker backend.infra.task_broker:broker backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks --workers 2 --wait-tasks-timeout 105 --shutdown-timeout 10
     restart: "no"
     depends_on:
       redis:
@@ -365,8 +373,8 @@ services:
       tempo:
         condition: service_started
     ports:
-      - "4317:4317"
-      - "4318:4318"
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:4317:4317"
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:4318:4318"
     deploy:
       resources:
         limits:
@@ -383,7 +391,7 @@ services:
       - ./local/observability/tempo-db.yml:/etc/tempo.yml:ro
       - tempo_data_db:/tmp/tempo
     ports:
-      - "3200:3200"
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:3200:3200"
     deploy:
       resources:
         limits:
@@ -411,7 +419,7 @@ services:
       redis_exporter:
         condition: service_started
     ports:
-      - "9090:9090"
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:9090:9090"
     deploy:
       resources:
         limits:
@@ -440,7 +448,7 @@ services:
       tempo:
         condition: service_started
     ports:
-      - "3000:3000"
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:3000:3000"
     deploy:
       resources:
         limits:
@@ -457,7 +465,7 @@ services:
       - ./local/observability/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data_db:/loki
     ports:
-      - "3100:3100"
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:3100:3100"
     deploy:
       resources:
         limits:

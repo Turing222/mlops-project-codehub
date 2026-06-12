@@ -388,7 +388,7 @@ env-smoke-down:
 	bash scripts/smoke/down.sh
 
 env-smoke-logs:
-	SMOKE_ENV_FILE="$(SMOKE_ENV_FILE)" docker compose --env-file "$(SMOKE_ENV_FILE)" -f "$(SMOKE_COMPOSE_FILE)" logs --tail=200
+	bash scripts/smoke/logs.sh
 
 verify-smoke:
 	bash scripts/smoke/test.sh

@@ -17,6 +17,7 @@ jobs:
   # backend integration (requires PG + Redis) and frontend e2e-mock.
   # Docker smoke/full-stack coverage lives in Smoke CI.
   pr-gate:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: PR gate
     runs-on: ubuntu-latest
     timeout-minutes: 20

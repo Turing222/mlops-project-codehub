@@ -148,7 +148,7 @@ require_bifrost_runtime_secrets() {
     fi
 
     for provider_var in LLM_PROVIDER LLM_MODEL_ROUTE_FAST_PROVIDER LLM_MODEL_ROUTE_BALANCED_PROVIDER LLM_MODEL_ROUTE_REASONING_PROVIDER RAG_PLANNER_PROVIDER RAG_EMBED_PROVIDER RAG_RERANK_PROVIDER; do
-        provider_value="$(deploy_env_value "$provider_var" "")"
+        provider_value="$(deploy_control_env_value "$provider_var" "")"
         if provider_needs_bifrost_profile "$provider_value"; then
             profile_required=true
             case "$provider_var" in
@@ -188,7 +188,7 @@ required_vars=(
     POSTGRES_PORT
 )
 
-google_oauth_enabled="$(deploy_env_value "GOOGLE_OAUTH_ENABLED" "false")"
+google_oauth_enabled="$(deploy_control_env_value "GOOGLE_OAUTH_ENABLED" "false")"
 if is_deploy_true "$google_oauth_enabled"; then
     required_vars+=(
         GOOGLE_CLIENT_ID
@@ -228,19 +228,19 @@ for var_name in "${plaintext_secret_vars[@]}"; do
 done
 
 for var_name in "${required_vars[@]}"; do
-    if [[ -z "$(deploy_env_value "$var_name" "")" ]]; then
+    if [[ -z "$(deploy_control_env_value "$var_name" "")" ]]; then
         log_error "Required deploy variable is missing: $var_name"
         exit 1
     fi
 done
 
-storage_backend="$(deploy_env_value "STORAGE_BACKEND" "s3")"
-if [[ "$storage_backend" == "s3" && -z "$(deploy_env_value "S3_BUCKET" "")" ]]; then
+storage_backend="$(deploy_control_env_value "STORAGE_BACKEND" "s3")"
+if [[ "$storage_backend" == "s3" && -z "$(deploy_control_env_value "S3_BUCKET" "")" ]]; then
     log_error "S3_BUCKET is required when STORAGE_BACKEND=s3"
     exit 1
 fi
 
-postgres_server="$(deploy_env_value "POSTGRES_SERVER" "")"
+postgres_server="$(deploy_control_env_value "POSTGRES_SERVER" "")"
 if [[ "$postgres_server" == "postgres" ]] && ! selfhost_postgres_enabled; then
     log_error "POSTGRES_SERVER=postgres requires DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-postgres.yml"
     log_info "For production RDS, set POSTGRES_SERVER to the RDS endpoint and keep POSTGRES_SSL_MODE=require"

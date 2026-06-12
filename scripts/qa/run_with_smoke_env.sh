@@ -31,7 +31,7 @@ _smoke_env_value() {
 
 # Load infrastructure variables from .env.smoke.
 for var in POSTGRES_USER POSTGRES_DB POSTGRES_SERVER POSTGRES_PORT \
-           REDIS_HOST REDIS_PORT CURRENT_UID CURRENT_GID; do
+           REDIS_HOST REDIS_PORT REDIS_HOST_PORT CURRENT_UID CURRENT_GID; do
     val="$(_smoke_env_value "$var")"
     if [[ -n "$val" ]]; then
         export "$var=$val"
@@ -81,7 +81,7 @@ fi
 if [[ -n "$redis_pass" ]]; then
     export REDIS_PASSWORD="$redis_pass"
     redis_enc="$(_url_encode "$redis_pass")"
-    redis_port="${REDIS_PORT:-6379}"
+    redis_port="${REDIS_HOST_PORT:-${REDIS_PORT:-6379}}"
     export TEST_REDIS_URL="redis://:${redis_enc}@${REDIS_HOST}:${redis_port}/0"
     export TEST_TASKIQ_REDIS_URL="redis://:${redis_enc}@${REDIS_HOST}:${redis_port}/1"
 fi
