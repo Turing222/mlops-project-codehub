@@ -71,7 +71,7 @@ reject_placeholder_secret_file_value() {
 
     value="$(tr -d '\r\n' <"$secret_path")"
     case "$value" in
-        change-me*|replace-me*|your-domain.example.com*|*your-domain.example.com*)
+        *change-me*|*replace-me*|your-domain.example.com*|*your-domain.example.com*)
             log_error "Required deploy secret file still uses placeholder value: $secret_name"
             exit 1
             ;;
@@ -105,6 +105,65 @@ require_non_empty_deploy_secret_file() {
         exit 1
     fi
     reject_placeholder_secret_file_value "$secret_name" "$secret_path"
+}
+
+require_bifrost_api_key_format() {
+    local value
+
+    value="$(tr -d '\r\n' <"$DEPLOY_BIFROST_API_KEY_FILE")"
+    case "$value" in
+        sk-bf-*)
+            ;;
+        *)
+            log_error "BIFROST_API_KEY must start with sk-bf- for Bifrost v1.4.11"
+            exit 1
+            ;;
+    esac
+}
+
+require_bifrost_runtime_secrets() {
+    local profile_required=false
+    local chat_required=false
+    local dashscope_required=false
+    local provider_var
+    local provider_value
+
+    if is_deploy_true "${DEPLOY_ENABLE_BIFROST:-false}"; then
+        profile_required=true
+    fi
+
+    for provider_var in LLM_PROVIDER LLM_MODEL_ROUTE_FAST_PROVIDER LLM_MODEL_ROUTE_BALANCED_PROVIDER LLM_MODEL_ROUTE_REASONING_PROVIDER RAG_PLANNER_PROVIDER RAG_EMBED_PROVIDER RAG_RERANK_PROVIDER; do
+        provider_value="$(deploy_env_value "$provider_var" "")"
+        if provider_needs_bifrost_profile "$provider_value"; then
+            profile_required=true
+            case "$provider_var" in
+                RAG_EMBED_PROVIDER|RAG_RERANK_PROVIDER)
+                    dashscope_required=true
+                    ;;
+                *)
+                    chat_required=true
+                    ;;
+            esac
+        fi
+    done
+
+    if [[ "$profile_required" != "true" ]]; then
+        return
+    fi
+
+    require_non_empty_deploy_secret_file "DEPLOY_BIFROST_API_KEY_FILE" "BIFROST_API_KEY"
+    require_bifrost_api_key_format
+    require_non_empty_deploy_secret_file "DEPLOY_BIFROST_ENCRYPTION_KEY_FILE" "BIFROST_ENCRYPTION_KEY"
+
+    if [[ "$chat_required" == "true" ]]; then
+        require_non_empty_deploy_secret_file "DEPLOY_DEEPSEEK_API_KEY_FILE" "DEEPSEEK_API_KEY"
+        require_non_empty_deploy_secret_file "DEPLOY_DEEPSEEK_API_KEY_2_FILE" "DEEPSEEK_API_KEY_2"
+    fi
+
+    if [[ "$dashscope_required" == "true" ]]; then
+        require_non_empty_deploy_secret_file "DEPLOY_DASHSCOPE_API_KEY_FILE" "DASHSCOPE_API_KEY"
+        require_non_empty_deploy_secret_file "DEPLOY_DASHSCOPE_API_KEY_2_FILE" "DASHSCOPE_API_KEY_2"
+    fi
 }
 
 required_vars=(
@@ -197,6 +256,7 @@ done
 require_non_empty_deploy_secret_file "DEPLOY_SECRET_KEY_FILE" "SECRET_KEY"
 require_non_empty_deploy_secret_file "DEPLOY_POSTGRES_PASSWORD_FILE" "POSTGRES_PASSWORD"
 require_non_empty_deploy_secret_file "DEPLOY_REDIS_PASSWORD_FILE" "REDIS_PASSWORD"
+require_bifrost_runtime_secrets
 
 compose_deploy config >/dev/null
 

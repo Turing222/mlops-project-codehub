@@ -18,7 +18,6 @@ transforms:
         "db_migrator",
         "postgres",
         "redis",
-        "jaeger",
         "otel-collector",
         "tempo",
         "prometheus",

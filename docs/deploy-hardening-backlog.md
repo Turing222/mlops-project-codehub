@@ -15,51 +15,39 @@
   - `ec2-down.sh` 的删卷分支增加显式确认变量(如 `DEPLOY_CONFIRM_VOLUME_WIPE=yes`),默认拒绝;
   - 备份恢复流程写入 [deploy-ec2.md](deploy-ec2.md) 并演练一次。
 
-### 2. vector 直挂 `docker.sock`
-
-- 位置:`deploy/docker-compose.yml` vector 服务
-- 问题:`:ro` 挂载挡不住 Docker API 的写操作(挂载标志只限制 socket 文件本身),拿到 socket 等同宿主 root。
-- 建议:插一层 `tecnativa/docker-socket-proxy`(仅开 `CONTAINERS=1` 只读 API),vector 的 `docker_logs` source 指向 proxy;不想加组件就改纯文件采集(`/var/lib/docker/containers` 已挂),代价是丢失容器名元数据需自行 enrich。
-
-### 3. Dockerfile 默认 CMD `--forwarded-allow-ips "*"`,且三处启动命令漂移
+### 2. Dockerfile 默认 CMD `--forwarded-allow-ips "*"`,且三处启动命令漂移
 
 - 位置:`Dockerfile`(web 默认 CMD)、`deploy/docker-compose.yml` api `command`、`docker-compose.db.yml`
 - 问题:`*` 信任任意来源的代理头,可伪造客户端 IP;web 启动命令在三处各自维护、参数互不一致(deploy 无 proxy-headers、db.yml 有但无 allow-ips、镜像默认全开)。
 - 建议:镜像默认 CMD 收敛为生产形态(去掉 `--forwarded-allow-ips "*"`),代理头信任由 compose 按 `edge_net` 子网显式传入;worker 同理——删掉 compose / k8s 的 `command` 覆盖,以镜像默认 CMD 为单一事实源(这也是 worker 任务模块清单三处漂移的根治方案)。
 
-### 4. `credit_tasks` 模块无人加载、仓库无 scheduler 装配
+### 3. `credit_tasks` 模块无人加载、仓库无 scheduler 装配
 
 - 位置:`backend/worker/tasks/credit_tasks.py`;`Dockerfile` worker CMD、`deploy/docker-compose.yml`、`deploy/k8s/worker-deployment.yaml`
 - 问题:`expire_credits_task` 的文档声称"由外部 Scheduler/Cron 调度器每日调用",但所有 worker 启动命令都不加载该模块,仓库里也没有任何 taskiq scheduler 进程或 cron 资产——赠送额度过期在所有环境都不会执行。
 - 建议:先决策调度形态(taskiq scheduler 常驻服务,或宿主 cron / k8s CronJob 入队),再把 `backend.worker.tasks.credit_tasks` 加入 worker 默认 CMD;两步缺一不可,只加模块不会让任务自己跑起来。
 
-### 5. Grafana 使用默认 admin/admin
-
-- 位置:`deploy/docker-compose.yml` grafana 服务
-- 问题:EC2 栈未设管理员密码(当前未发布端口,属纵深防御缺口而非直接暴露)。
-- 建议:`GF_SECURITY_ADMIN_PASSWORD__FILE` 指向新的 secret 文件,纳入 `make deploy-ec2-secrets-prepare` 流程。
-
 ## P2 — 一致性 / 可维护性
 
-### 6. GitHub Actions 第三方 action 未做 SHA pinning
+### 4. GitHub Actions 第三方 action 未做 SHA pinning
 
 - 位置:`.github/workflows/*.yml`
 - 问题:所有 actions 按可变 tag 固定;第三方(`pnpm/action-setup`、`trivy-action`)供应链风险最高。
 - 建议:至少把第三方 action 钉到 commit SHA 并加 `# vX` 注释(Dependabot 支持 SHA 更新);官方 actions 可保留 tag。
 
-### 7. smoke 失败诊断不完整
+### 5. smoke 失败诊断不完整
 
 - 位置:`.github/workflows/smoke-ci.yml`、`scripts/lib/common.sh` 的日志转储路径
 - 问题:pytest 全量日志不上传 artifact(runner 销毁即丢);`env-smoke-logs` 不带 `--profile`,bifrost 容器日志(常见故障源)不在失败转储里。
 - 建议:失败分支加 `actions/upload-artifact` 上传 pytest 日志与 compose 日志;日志转储统一走 `compose_smoke` 并附加全部 profile。
 
-### 8. Makefile `%: @:` 规则静默吞掉拼错的目标
+### 6. Makefile `%: @:` 规则静默吞掉拼错的目标
 
 - 位置:`Makefile`(match-anything 规则)
 - 问题:`make deploy-ec2-upp` 之类的拼写错误显示成功但什么都不做,部署 runbook 场景的隐形地雷。
 - 建议:先确认该规则存在的原因(通常是为了把额外目标当参数的调用形态);若无依赖,改为 `@echo "unknown target: $@" >&2; exit 1`;若有依赖,至少打印 warning。
 
-### 9. k8s 主 overlay 本地可用性缺口
+### 7. k8s 主 overlay 本地可用性缺口
 
 - 位置:`deploy/k8s/`
 - 问题与建议(可拆为多个小 PR):
@@ -69,25 +57,25 @@
   - `configmap.yaml` 把 rerank provider 设为 bifrost 但清单里没有 bifrost → 改为 `""` 或补部署;
   - README 镜像构建步骤与 Makefile 不可变 tag 机制脱节,manifest 写死 `2.0.0` 伪版本 → README 改为引用 `make release-image-env` 产出的真实 tag。
 
-### 10. 缺 `knowledge_storage_init`(`STORAGE_BACKEND=local` 场景)
+### 8. 缺 `knowledge_storage_init`(`STORAGE_BACKEND=local` 场景)
 
 - 位置:`deploy/docker-compose.yml`(对照 `docker-compose.db.yml` 已有实现)
 - 问题:切换 `STORAGE_BACKEND=local` 时 uid 1000 对命名卷无写权限,立刻 PermissionError。生产默认 s3,优先级不高。
 - 建议:从 db.yml 移植 init 容器,或在文档中明确 deploy 栈不支持 local 存储。
 
-### 11. `REDIS_PORT` 双重用途
+### 9. `REDIS_PORT` 双重用途
 
 - 位置:`docker-compose.db.yml`
 - 问题:同一变量既控制宿主端口映射又控制应用连接端口,改端口避让会直接弄断应用。
 - 建议:拆成 `REDIS_HOST_PORT`(宿主映射)+ 容器内固定 6379。
 
-### 12. `ec2-check.sh` 变量校验优先级与 compose 插值相反
+### 10. `ec2-check.sh` 变量校验优先级与 compose 插值相反
 
 - 位置:`scripts/deploy/ec2-check.sh`(S3_BUCKET 等)
 - 问题:compose 插值是 shell env 优先于 env 文件,ec2-check 反之,Makefile 的环境变量覆盖对预检无效。
 - 建议:校验逻辑改用 `deploy_control_env_value`(已修复显式值吞没问题),与运行时取值同序。
 
-### 13. `deploy_control_env_value` 固有残缺
+### 11. `deploy_control_env_value` 固有残缺
 
 - 位置:`scripts/lib/common.sh`
 - 问题:"显式值必须不等于默认值"的启发式意味着显式传入恰好等于默认值的值,无法覆盖 env 文件里的不同值(如 `make deploy-ec2-up DEPLOY_PULL_IMAGES=false` 对抗文件里的 `true`)。动态默认值与自引用默认值两个触发面已修,机制本身仍在。
@@ -95,62 +83,37 @@
 
 ## P3 — 策略 / 卫生
 
-### 14. push main 的 `cancel-in-progress` 会跳过中间提交验证
+### 12. push main 的 `cancel-in-progress` 会跳过中间提交验证
 
 - 位置:三个工作流的 `concurrency` 配置
 - 建议:`group` 对 push 事件拼上 `github.run_id`,或 `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`。
 
-### 15. draft PR 跑全量 pr-gate
+### 13. draft PR 跑全量 pr-gate
 
 - 建议:job 加 `if: ${{ !github.event.pull_request.draft }}`(注意保留 `ready_for_review` 触发)。
 
-### 16. `deploy/patch.py` 已过期且非幂等
-
-- 问题:一次性看板改造脚本,再跑一次会重复追加告警面板、破坏现行 dashboard;写文件未指定 encoding。
-- 建议:直接删除(git history 可找回),或移入 `scripts/archive/`。
-
-### 17. 全栈未启用 `no-new-privileges`
+### 14. 全栈未启用 `no-new-privileges`
 
 - 建议:`deploy/docker-compose.yml` 增加 `x-security` 锚点(`security_opt: ["no-new-privileges:true"]`)逐服务挂载。
 
-### 18. `CURRENT_UID:-1000` 覆盖镜像内置 10001 用户
+### 15. `CURRENT_UID:-1000` 覆盖镜像内置 10001 用户
 
 - 问题:生产无 bind mount,无需宿主 uid 对齐;1000 与镜像设计的非特权用户不一致。
 - 建议:deploy 栈删除 `user:` 覆盖或默认改 10001(注意命名卷属主迁移)。
 
-### 19. Dockerfile extras 安装在源码 COPY 之后伤层缓存
+### 16. Dockerfile extras 安装在源码 COPY 之后伤层缓存
 
 - 建议:依赖安装步骤全部前置到源码 COPY 之前。
 
-### 20. `vector.yaml` `include_containers` 前缀匹配副作用
+### 17. Dependabot 不覆盖 compose 中钉版的基础设施镜像
 
-- 问题:前缀匹配会误纳同名前缀容器,与注释意图不符。
-- 建议:改精确容器名列表,或用 label 过滤。
-
-### 21. Dependabot 不覆盖 compose 中钉版的基础设施镜像
-
-- 问题:docker 生态只看 Dockerfile,pgvector / bifrost / loki 等 compose 钉版镜像的 CVE 无自动更新通道。
+- 问题:docker 生态只看 Dockerfile,pgvector / bifrost 等 compose 钉版镜像的 CVE 无自动更新通道。
 - 建议:接入 Renovate(支持 docker-compose manager),或建立季度人工核查清单。
 
-### 22. 本地测试栈(`docker-compose.db.yml`)弱凭据与 0.0.0.0 绑定
+### 18. 本地测试栈(`docker-compose.db.yml`)弱凭据与 0.0.0.0 绑定
 
 - 问题:postgres / redis / grafana / minio 绑 0.0.0.0 且使用弱凭据,grafana 匿名 Admin;smoke 的 db_migrator 注入全部 secret(生产已最小化,反差)。
 - 建议:明知是本地栈,仍建议端口默认收敛 127.0.0.1、db_migrator secret 收敛到 `POSTGRES_PASSWORD`,与生产对齐降低心智负担。
-
-### 23. 告警阈值双源硬编码
-
-- 位置:`deploy/monitoring/alert_rules.yml`(Redis 384MB、PG 200 连接)与 `deploy/docker-compose.yml` 的容器参数
-- 问题:两处独立维护,改 compose 参数不会同步告警分母。
-- 建议:暂以注释互相引用 + review checklist 兜底;彻底方案是用 `redis_memory_max_bytes` / `pg_settings_max_connections` 等 exporter 自带指标做分母,消除硬编码。
-
-### 24. monitoring README 文件清单遗漏、可观测口径过时
-
-- 建议:对照 `deploy/monitoring/` 现状重写文件清单,删除"可用 Grafana 观察"中与 EC2 未发布端口矛盾的表述(或注明需 SSH 隧道)。
-
-### 25. 待端到端验证项(配置已写、链路未实测)
-
-- db 栈(otel-collector 路径)下共享 `alert_rules.yml` 的 `service_name` 标签是否真实存在——collector 侧需确认 resource attribute 提升配置;
-- EC2 栈 observability profile 启用后,从 backend OTLP push 到 Prometheus 告警求值的整条链路实测一次(此前该链路从未端到端通过,本轮修复后仍只有静态推导)。
 
 ## 已修复项的去向
 

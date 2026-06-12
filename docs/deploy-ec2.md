@@ -516,43 +516,39 @@ export DEPLOY_ENABLE_BIFROST=true
 
 ## Observability
 
-[deploy/docker-compose.yml](../deploy/docker-compose.yml) 中的 observability 服务默认是 **可选 profile**，而不是默认启动。
+[deploy/docker-compose.yml](../deploy/docker-compose.yml) 是 EC2 / AWS 目标态，默认使用 Docker `awslogs` driver 将容器 stdout 写入 CloudWatch Logs。业务层仍输出 JSON 日志，日志字段合同见 [deploy/monitoring/README.md](../deploy/monitoring/README.md)。
 
-### 当前状态
-
-- 当前生产部署路径以 EC2 + 云端托管监控服务为准；`deploy/monitoring/` 下的 Prometheus / Grafana / Loki 资产主要用于本地自托管观察与排障，不是 AWS 生产监控的 source of truth。
-- 默认 `deploy-ec2-up` 不会启动 self-hosted observability profile。
-- 当前 EC2 observability profile 的真实能力边界是：
-  - metrics 通过 backend OTLP exporter **直接推到 Prometheus receiver**（`OTEL_METRICS_ENDPOINT=http://prometheus:9090/api/v1/otlp/v1/metrics`）
-  - HTTP metrics 使用稳定语义约定（`OTEL_SEMCONV_STABILITY_OPT_IN=http`），与告警和面板中的 `http_server_request_duration_seconds_*` 指标保持一致
-  - Prometheus 将 `service.name` 提升为 `service_name` 标签，API 指标告警按 `service_name="fastapi-backend"` 选择业务指标
-  - traces 默认关闭；active EC2 stack **没有** `otel-collector` / trace backend
-  - [deploy/monitoring/alert_rules.yml](../deploy/monitoring/alert_rules.yml) 会被加载，但当前 **没有 Alertmanager / alert delivery path**
-  - Prometheus 目前抓取的是 `prometheus`、`api`、`postgres_exporter`、`redis_exporter`；**不包含 worker app metrics**
-
-### 条件成立时可用
-
-如果确实要在本地或自托管环境启用这套 observability profile，可以在运行前设置：
-
-```bash
-export DEPLOY_ENABLE_OBSERVABILITY=true
-```
-
-然后再执行 `make deploy-ec2-up`。
-
-### 目标态说明
-
-生产推荐告警投递目标使用 AWS 托管链路，而不是当前 compose observability profile：
+生产告警投递目标：
 
 ```text
 backend/worker JSON logs -> CloudWatch Logs -> metric filters -> CloudWatch alarms -> SNS topic -> email subscription
 ```
 
-当前 [deploy/docker-compose.yml](../deploy/docker-compose.yml) 使用 `json-file` logging driver，没有配置 CloudWatch Agent、Docker `awslogs` driver 或 Fluent Bit，因此日志**不会自动进入 CloudWatch Logs**。在明确选择并部署一种日志 shipper 前，下面内容只是目标态，不是当前可执行的告警闭环。
+CloudWatch Logs 变量来自 `deploy/.env.ec2`：
 
-选定日志投递方式后，最少步骤：
+```env
+DEPLOY_CW_LOG_GROUP=/dewflow/prod
+DEPLOY_AWS_REGION=us-east-1
+DEPLOY_CW_LOG_STREAM_PREFIX=dewflow
+```
 
-1. 让 `api` 和 `worker` 日志进入同一个 CloudWatch Logs log group，EC2 instance role 需要具备写日志权限。
+首次部署前先预建 log group：
+
+```bash
+aws logs create-log-group \
+  --log-group-name "$DEPLOY_CW_LOG_GROUP" \
+  --region "$DEPLOY_AWS_REGION"
+```
+
+EC2 instance role 至少需要对该 log group 具备：
+
+- `logs:CreateLogStream`
+- `logs:DescribeLogStreams`
+- `logs:PutLogEvents`
+
+最少告警接入步骤：
+
+1. 确认 `api` 和 `task_worker` 日志进入同一个 CloudWatch Logs log group。
 2. 建立 SNS topic，并添加 email subscription；收件人必须在邮件中确认订阅。
 3. 为第一批生产信号创建 metric filters：
    - `level=CRITICAL`
@@ -563,9 +559,17 @@ backend/worker JSON logs -> CloudWatch Logs -> metric filters -> CloudWatch alar
 4. 为每个 metric 建 CloudWatch alarm，alarm action 指向同一个 SNS topic。
 5. 触发一次 test alarm，确认 email 能收到 `ALARM` 和恢复通知。
 
+查看生产日志：
+
+```bash
+aws logs tail "$DEPLOY_CW_LOG_GROUP" \
+  --region "$DEPLOY_AWS_REGION" \
+  --follow
+```
+
 CSP report-only 第一阶段只用于日志观察：`POST /api/v1/csp/reports` 会写 `event=csp_violation`，但不落库、不触发应用告警，也暂不建 CloudWatch alarm。等 report-only 噪声稳定并确认 allowlist 后，再决定是否为 CSP 加 metric filter。
 
-后续如果需要统一本地自托管栈与 AWS 云端监控，应优先统一 `event` / `error_code` / `request_id` / `trace_id` / OTLP endpoint / health endpoint 等应用层合同，而不是要求两边复用同一套 compose service host、Prometheus scrape wiring 或 Grafana datasource 配置。
+API P99、5xx 错误率、Redis 内存、Postgres 连接数这类指标告警不通过普通 log metric filter 伪装完成。它们需要 EMF、ADOT/CloudWatch exporter、AMP，或后续托管 RDS / ElastiCache 指标。迁移清单见 [deploy/monitoring/alarms-cloudwatch.md](../deploy/monitoring/alarms-cloudwatch.md)。
 
 ## 与本地 smoke 的边界
 
@@ -573,6 +577,7 @@ CSP report-only 第一阶段只用于日志观察：`POST /api/v1/csp/reports` �
 
 - [deploy/docker-compose.yml](../deploy/docker-compose.yml) → **EC2 / 正式部署入口**
 - [deploy/docker-compose.local-s3.yml](../deploy/docker-compose.local-s3.yml) → **本地生产形态演练，使用 MinIO 模拟 S3**
+- [deploy/docker-compose.local-logging.yml](../deploy/docker-compose.local-logging.yml) → **本地生产形态演练，把 awslogs 降级为 json-file**
 - [docker-compose.db.yml](../docker-compose.db.yml) → **本地 / CI smoke 和测试环境**（包含 `otel-collector` 等 smoke-only 组件）
 
 不要把两者重新揉成一套，否则会让部署面和测试面相互污染。
@@ -592,10 +597,11 @@ make deploy-local-prod-verify
 这套命令会：
 
 - 使用 `deploy/docker-compose.yml` 作为主体。
-- 叠加 `deploy/docker-compose.local-s3.yml`，只额外加入 MinIO 模拟 S3。
+- 叠加 `deploy/docker-compose.local-s3.yml`，额外加入 MinIO 模拟 S3。
+- 叠加 `deploy/docker-compose.local-logging.yml`，把 CloudWatch Logs 降级为本机 `json-file`。
 - 使用 `secrets/local-prod`，不复用 `secrets/ec2` 的真实部署 secret。
 - 显式启用 `frontend-fallback` profile，并把 frontend 暴露到 `http://localhost:8080`，避免占用本机 80 端口。
-- 不启动 observability profile，也不拉入 `docker-compose.db.yml` 中的 Tempo / smoke-only 组件。
+- 不拉入 `docker-compose.db.yml` 中的 Tempo / smoke-only 组件。
 
 查看日志和停止：
 

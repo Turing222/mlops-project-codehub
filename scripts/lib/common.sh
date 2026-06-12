@@ -29,7 +29,6 @@ DEPLOY_FRONTEND_HEALTH_PATH_EXPLICIT="${DEPLOY_FRONTEND_HEALTH_PATH+x}"
 DEPLOY_API_LIVE_PATH_EXPLICIT="${DEPLOY_API_LIVE_PATH+x}"
 DEPLOY_API_READY_PATH_EXPLICIT="${DEPLOY_API_READY_PATH+x}"
 DEPLOY_ENABLE_BIFROST_EXPLICIT="${DEPLOY_ENABLE_BIFROST+x}"
-DEPLOY_ENABLE_OBSERVABILITY_EXPLICIT="${DEPLOY_ENABLE_OBSERVABILITY+x}"
 DEPLOY_ENABLE_FRONTEND_FALLBACK_EXPLICIT="${DEPLOY_ENABLE_FRONTEND_FALLBACK+x}"
 DEPLOY_CHECK_FRONTEND_HEALTH_EXPLICIT="${DEPLOY_CHECK_FRONTEND_HEALTH+x}"
 DEPLOY_PULL_IMAGES_EXPLICIT="${DEPLOY_PULL_IMAGES+x}"
@@ -433,7 +432,6 @@ load_deploy_env() {
     DEPLOY_API_LIVE_PATH="$(deploy_control_env_value "DEPLOY_API_LIVE_PATH" "/api/v1/health_check/live")"
     DEPLOY_API_READY_PATH="$(deploy_control_env_value "DEPLOY_API_READY_PATH" "/api/v1/health_check/db_ready")"
     DEPLOY_ENABLE_BIFROST="$(deploy_control_env_value "DEPLOY_ENABLE_BIFROST" "false")"
-    DEPLOY_ENABLE_OBSERVABILITY="$(deploy_control_env_value "DEPLOY_ENABLE_OBSERVABILITY" "false")"
     DEPLOY_ENABLE_FRONTEND_FALLBACK="$(deploy_control_env_value "DEPLOY_ENABLE_FRONTEND_FALLBACK" "false")"
     DEPLOY_CHECK_FRONTEND_HEALTH="$(deploy_control_env_value "DEPLOY_CHECK_FRONTEND_HEALTH" "false")"
     DEPLOY_PULL_IMAGES="$(deploy_control_env_value "DEPLOY_PULL_IMAGES" "false")"
@@ -478,7 +476,6 @@ load_deploy_env() {
     export DEPLOY_API_LIVE_PATH
     export DEPLOY_API_READY_PATH
     export DEPLOY_ENABLE_BIFROST
-    export DEPLOY_ENABLE_OBSERVABILITY
     export DEPLOY_ENABLE_FRONTEND_FALLBACK
     export DEPLOY_CHECK_FRONTEND_HEALTH
     export DEPLOY_PULL_IMAGES
@@ -581,11 +578,8 @@ compose_deploy() {
 
     if [[ "$subcmd" == "down" ]]; then
         append_profile_arg "bifrost"
-        append_profile_arg "observability"
         append_profile_arg "frontend-fallback"
         append_profile_arg "debug"
-    elif [[ "${DEPLOY_ENABLE_OBSERVABILITY:-false}" == "true" ]]; then
-        append_profile_arg "observability"
     fi
     if [[ "$subcmd" != "down" ]]; then
         if [[ "${DEPLOY_ENABLE_FRONTEND_FALLBACK:-false}" == "true" ]]; then

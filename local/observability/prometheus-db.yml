@@ -1,5 +1,3 @@
-# Local-db / richer observability example.
-# Not mounted by the current EC2 observability profile unless explicitly wired.
 global:
   scrape_interval: 15s
 

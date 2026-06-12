@@ -1,9 +1,10 @@
 #通用的日志模板
 x-logging: &default-logging
-  driver: "json-file"
+  driver: "awslogs"
   options:
-    max-size: "10m"
-    max-file: "3"
+    awslogs-group: ${DEPLOY_CW_LOG_GROUP:-/dewflow/prod}
+    awslogs-region: ${DEPLOY_AWS_REGION:-us-east-1}
+    awslogs-stream-prefix: ${DEPLOY_CW_LOG_STREAM_PREFIX:-dewflow}
 
 x-deploy-env-file: &deploy-env-file
   - ${DEPLOY_SERVICE_ENV_FILE:-./.env.ec2}
@@ -81,8 +82,8 @@ x-backend-aws-env: &backend-aws-env
   POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-disable}
   ENABLE_OTEL_METRICS: ${ENABLE_OTEL_METRICS:-false}
   ENABLE_OTEL_TRACES: ${ENABLE_OTEL_TRACES:-false}
-  OTEL_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-http://prometheus:9090/api/v1/otlp/v1/metrics}
-  OTEL_TRACES_ENDPOINT: ${OTEL_TRACES_ENDPOINT:-http://jaeger:4318/v1/traces}
+  OTEL_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-}
+  OTEL_TRACES_ENDPOINT: ${OTEL_TRACES_ENDPOINT:-}
   OTEL_SEMCONV_STABILITY_OPT_IN: ${OTEL_SEMCONV_STABILITY_OPT_IN:-http}
 
 services:
@@ -271,135 +272,6 @@ services:
         reservations:
           memory: 64M
 
-  prometheus:
-    image: prom/prometheus:v3.1.0
-    container_name: prometheus
-    profiles: [ "observability" ]
-    restart: unless-stopped
-    logging: *default-logging
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=7d'
-      - '--web.enable-otlp-receiver'
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
-    networks:
-      - monitor_net
-
-  postgres_exporter:
-    image: prometheuscommunity/postgres-exporter:v0.17.1
-    container_name: postgres_exporter
-    profiles: [ "observability" ]
-    restart: unless-stopped
-    logging: *default-logging
-    env_file: *deploy-env-file
-    secrets:
-      - POSTGRES_PASSWORD
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_DB: ${POSTGRES_DB:-postgres}
-    command: >
-      sh -c 'export DATA_SOURCE_NAME="postgresql://$${POSTGRES_USER}:$$(cat /run/secrets/POSTGRES_PASSWORD)@postgres:5432/$${POSTGRES_DB}?sslmode=disable"; exec /bin/postgres_exporter'
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - app_net
-      - monitor_net
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  redis_exporter:
-    image: oliver006/redis_exporter:v1.67.0
-    container_name: redis_exporter
-    profiles: [ "observability" ]
-    restart: unless-stopped
-    logging: *default-logging
-    secrets:
-      - REDIS_PASSWORD
-    environment:
-      - REDIS_ADDR=redis:6379
-    command: >
-      sh -c 'export REDIS_PASSWORD="$$(cat /run/secrets/REDIS_PASSWORD)"; exec /redis_exporter'
-    depends_on:
-      redis:
-        condition: service_started
-    networks:
-      - app_net
-      - monitor_net
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  grafana:
-    image: grafana/grafana-oss:11.5.8-ubuntu
-    container_name: grafana
-    profiles: [ "observability" ]
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      - GF_ANALYTICS_REPORTING_ENABLED=false
-      - GF_AUTH_ANONYMOUS_ENABLED=false
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 64M
-    volumes:
-      - ./monitoring/grafana_datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
-      - ./monitoring/grafana_dashboards_provisioning.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
-      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards/dewflow:ro
-    networks:
-      - monitor_net
-
-  vector:
-    image: timberio/vector:0.50.0-debian
-    container_name: vector
-    profiles: [ "observability" ]
-    restart: unless-stopped
-    logging: *default-logging
-    volumes:
-      - ./logging/vector.yaml:/etc/vector/vector.yaml:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    networks:
-      - monitor_net
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 64M
-
-  loki:
-    image: grafana/loki:3.4.0
-    container_name: loki
-    profiles: [ "observability" ]
-    restart: unless-stopped
-    logging: *default-logging
-    volumes:
-      - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
-      - loki_data:/loki
-    networks:
-      - monitor_net
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 128M
-
   db_migrator:
     image: ${DOCKER_IMAGE_NAME_WEB:?missing DOCKER_IMAGE_NAME_WEB (set in deploy/.env.ec2 via make release-image-env)}
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
@@ -493,8 +365,6 @@ networks:
 volumes:
   pg_data_v17:
     name: prod_db_volume
-  loki_data:
-    name: loki_data_volume
   bifrost_data:
     name: bifrost_data_volume
   knowledge_files_volume:

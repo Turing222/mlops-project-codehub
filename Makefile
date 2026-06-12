@@ -33,8 +33,9 @@ DEPLOY_FRONTEND_HEALTH_PATH ?= /healthz
 DEPLOY_API_LIVE_PATH ?= /api/v1/health_check/live
 DEPLOY_API_READY_PATH ?= /api/v1/health_check/db_ready
 DEPLOY_ENABLE_BIFROST ?= false
-DEPLOY_ENABLE_OBSERVABILITY ?= false
 DEPLOY_LOG_TAIL ?= 200
+LOCAL_PROD_DEPLOY_EXTRA_COMPOSE_FILES ?= deploy/docker-compose.local-s3.yml deploy/docker-compose.local-logging.yml
+LOCAL_PROD_DEPLOY_ENV := DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES="$(LOCAL_PROD_DEPLOY_EXTRA_COMPOSE_FILES)" DEPLOY_ENABLE_FRONTEND_FALLBACK=true DEPLOY_CHECK_FRONTEND_HEALTH=true FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 DEPLOY_FRONTEND_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod
 FRONTEND_DIR ?= frontend
 FRONTEND_APP ?= admin
 E2E_SMOKE_USER ?= seed_admin
@@ -66,7 +67,7 @@ export SMOKE_READY_PATH
 export DEPLOY_COMPOSE_FILE DEPLOY_ENV_FILE DEPLOY_BASE_URL
 export DEPLOY_EXTRA_COMPOSE_FILES
 export DEPLOY_FRONTEND_BASE_URL DEPLOY_FRONTEND_HEALTH_PATH DEPLOY_API_LIVE_PATH DEPLOY_API_READY_PATH
-export DEPLOY_ENABLE_BIFROST DEPLOY_ENABLE_OBSERVABILITY DEPLOY_LOG_TAIL
+export DEPLOY_ENABLE_BIFROST DEPLOY_LOG_TAIL
 export E2E_SMOKE_USER E2E_SMOKE_PASS
 export EVAL_DATASET EVAL_OUTPUT EVAL_API_OUTPUT EVAL_RETRIEVAL_OUTPUT
 export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
@@ -332,22 +333,22 @@ deploy-local-prod-secrets-prepare:
 	DEPLOY_SECRET_DIR=secrets/local-prod bash scripts/deploy/local-prod-secrets-prepare.sh
 
 deploy-local-prod-check:
-	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-s3.yml DEPLOY_ENABLE_FRONTEND_FALLBACK=true DEPLOY_CHECK_FRONTEND_HEALTH=true FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 DEPLOY_FRONTEND_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod bash scripts/deploy/ec2-check.sh
+	$(LOCAL_PROD_DEPLOY_ENV) bash scripts/deploy/ec2-check.sh
 
 deploy-local-prod-up:
-	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-s3.yml DEPLOY_ENABLE_FRONTEND_FALLBACK=true DEPLOY_CHECK_FRONTEND_HEALTH=true FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 DEPLOY_FRONTEND_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod bash scripts/deploy/ec2-up.sh
+	$(LOCAL_PROD_DEPLOY_ENV) bash scripts/deploy/ec2-up.sh
 
 deploy-local-prod-wait:
-	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-s3.yml DEPLOY_ENABLE_FRONTEND_FALLBACK=true DEPLOY_CHECK_FRONTEND_HEALTH=true FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 DEPLOY_FRONTEND_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod bash scripts/deploy/ec2-wait.sh
+	$(LOCAL_PROD_DEPLOY_ENV) bash scripts/deploy/ec2-wait.sh
 
 deploy-local-prod-verify:
-	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-s3.yml DEPLOY_ENABLE_FRONTEND_FALLBACK=true DEPLOY_CHECK_FRONTEND_HEALTH=true FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 DEPLOY_FRONTEND_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod bash scripts/deploy/ec2-verify.sh
+	$(LOCAL_PROD_DEPLOY_ENV) bash scripts/deploy/ec2-verify.sh
 
 deploy-local-prod-logs:
-	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-s3.yml DEPLOY_ENABLE_FRONTEND_FALLBACK=true DEPLOY_CHECK_FRONTEND_HEALTH=true FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 DEPLOY_FRONTEND_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod bash scripts/deploy/ec2-logs.sh $(ARGS)
+	$(LOCAL_PROD_DEPLOY_ENV) bash scripts/deploy/ec2-logs.sh $(ARGS)
 
 deploy-local-prod-down:
-	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-s3.yml DEPLOY_ENABLE_FRONTEND_FALLBACK=true DEPLOY_CHECK_FRONTEND_HEALTH=true FRONTEND_PUBLIC_PORT=8080 DEPLOY_BASE_URL=http://localhost:8080 DEPLOY_FRONTEND_BASE_URL=http://localhost:8080 S3_BUCKET=dewflow-local-prod bash scripts/deploy/ec2-down.sh
+	$(LOCAL_PROD_DEPLOY_ENV) bash scripts/deploy/ec2-down.sh
 
 env-smoke-prepare:
 	bash scripts/smoke/prepare_env.sh

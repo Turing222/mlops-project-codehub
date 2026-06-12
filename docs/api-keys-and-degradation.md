@@ -173,7 +173,7 @@ Secret 文件位于 [secrets/ec2/](../secrets/ec2)（EC2）或 [secrets/local-pr
 2. **知识入库无重试**：transient 故障（如 429）也会让文件直接 `FAILED`，需手动重新上传；broker 是裸 `ListQueueBroker`，无 retry 中间件。
 3. **stale-ingestion sweeper 未接调度**：回收逻辑 `recover_stale_ingestions`（[knowledge_ingestion_recovery_service.py:42-63](../backend/services/knowledge_ingestion_recovery_service.py#L42-L63)）只标 `FAILED`、不重投；超时阈值 `KNOWLEDGE_INGEST_STALE_TIMEOUT_SECONDS`(1800s) 定义在 [ai_settings.py:158](../backend/config/ai_settings.py#L158)。它由 taskiq task `recover_stale_knowledge_ingestions`（[knowledge_tasks.py:70](../backend/worker/tasks/knowledge_tasks.py#L70)）包装，但代码内无 cron/scheduler 触发，需靠外部调度调用。
 4. ~~**rerank 构造期空 key 风险**~~ **（已修复，#4）**：worker `get_rerank_service` 已加 try/except，构造失败记 warning（`event=worker_rerank_init_degraded`）并退回无 rerank（[worker/dependencies.py:95-123](../backend/worker/dependencies.py#L95-L123)），不再崩生成任务。配置侧仍建议：填 `secrets/ec2/dashscope_api_key.txt`，或在 `.env.ec2` 显式设 `RAG_RERANK_PROVIDER=`（置空）直到要用 rerank。
-5. **无主动告警**：当前应用侧所有“告警”仍主要体现为 `logger.warning/error` 日志。`DEPLOY_ENABLE_OBSERVABILITY=true` 只能拉起本地 / 自托管的 Prometheus/Loki/Grafana 观察栈，不代表 AWS 生产环境已经具备告警投递出口。
+5. **主动告警分阶段落地**：EC2 deploy 栈默认通过 Docker `awslogs` 把 JSON stdout 写入 CloudWatch Logs。第一阶段只把日志类信号迁到 CloudWatch metric filters / alarms；P99、5xx、Redis、Postgres 这类指标告警仍需 EMF、ADOT/CloudWatch exporter、AMP 或托管服务指标。
 
 ---
 
@@ -198,11 +198,10 @@ Secret 文件位于 [secrets/ec2/](../secrets/ec2)（EC2）或 [secrets/local-pr
   - 重跑安全（`replace_file_chunks` 幂等）；重试耗尽 → 保留 FAILED 终态。
 - **#3 stale sweeper 接调度（P2）**：`recover_stale_knowledge_ingestions` 接 taskiq scheduler / 外部 cron；考虑改为**重投**而非只标 FAILED。与 #2 配套才完整。
 - **#5 主动告警（P1，上线即需）—— 现状 / 条件 / 目标态需区分**：
-  - **当前状态**：`deploy/monitoring/alert_rules.yml` 提供的是本地 / 自托管观察栈的规则定义；当前 `prometheus.yml` 无 `alerting:` 段、无 Alertmanager，且 worker 不在抓取目标内，所以这套配置不能直接视为 AWS 生产告警出口。
-  - **条件成立时可用**：如果在本地或自托管环境显式启用 `DEPLOY_ENABLE_OBSERVABILITY=true`，可以使用 Prometheus/Loki/Grafana 做排障观察，但仍需额外接入告警投递链路。
-  - **推荐生产目标（AWS 后端）**：backend / worker JSON logs → CloudWatch Logs → metric filters → CloudWatch alarms → SNS topic → email subscription。当前 production compose 仍使用 `json-file` logging driver，尚未选择 CloudWatch Agent、Docker `awslogs` 或 Fluent Bit，因此这条链路还不是可执行闭环。完成日志投递后，第一批信号盯 `level=CRITICAL`、`error_code=LLM_ROUTING_FAILED`、`error_code=KNOWLEDGE_FILE_INGEST_FAILED`、`event=circuit_breaker_opened`、`event=worker_rerank_init_degraded`。
+  - **当前状态**：EC2 deploy 栈默认使用 Docker `awslogs`，backend / worker JSON logs → CloudWatch Logs 已是生产日志路径；首次部署前需预建 log group 并给 EC2 instance role 写日志权限。
+  - **第一阶段告警**：CloudWatch Logs metric filters → CloudWatch alarms → SNS topic → email subscription。第一批信号盯 `level=CRITICAL`、`error_code=LLM_ROUTING_FAILED`、`error_code=KNOWLEDGE_FILE_INGEST_FAILED`、`event=circuit_breaker_opened`、`event=worker_rerank_init_degraded`。
+  - **指标类告警**：API P99、5xx 错误率、Redis 内存、Postgres 连接数不再依赖已移除的自托管 Prometheus profile；后续按 [alarms-cloudwatch.md](../deploy/monitoring/alarms-cloudwatch.md) 接 EMF、ADOT/CloudWatch exporter、AMP 或托管服务指标。
   - **CSP 单独处理**：`event=csp_violation` 来自 report-only 观察流，第一阶段只用于 CloudWatch Logs 查询，不建 alarm；等噪声稳定后再决定是否加入 metric filter。
-  - **自托管替代**：Grafana 11.x 内置告警（对 Loki 日志查询 + Prometheus 指标，无需额外 Alertmanager）；代价是运维 + 内存。本次生产投递闭环不接 Alertmanager。
 
 ### 后续可选（非必需）
 

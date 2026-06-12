@@ -153,7 +153,8 @@ make env-smoke-wait
 说明：
 
 - 该环境用于 Smoke，不追求完整生产拓扑。
-- `frontend`、`prometheus`、`grafana`、`vector`、`loki` 暂不作为日常 Smoke 的必需项；如需验证前端容器链路，先运行 `make frontend-image-build` 再启动 Compose 中的 `frontend` 服务。
+- `frontend` 暂不作为日常 Smoke 的必需项；如需验证前端容器链路，先运行 `make frontend-image-build` 再启动 Compose 中的 `frontend` 服务。
+- 本地 Prometheus / Grafana / Loki / Tempo / Vector 观测栈保留在 `local/observability/`，只在显式启用 `docker-compose.db.yml` 的 `observability` profile 时启动。
 - `env-smoke-prepare` 会基于仓库里的 `.env.smoke.template` 生成本地 `.env.smoke`，本地与 CI 共用同一份模板。
 
 ### Smoke Secrets 与 Feature Flags

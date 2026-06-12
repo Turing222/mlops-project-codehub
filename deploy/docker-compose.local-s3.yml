@@ -36,6 +36,11 @@ services:
   minio_init:
     image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
     container_name: local_prod_minio_init
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     env_file:
       - ${DEPLOY_SERVICE_ENV_FILE:-./.env.ec2}
     environment:
