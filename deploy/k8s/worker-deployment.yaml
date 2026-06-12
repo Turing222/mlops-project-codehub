@@ -26,27 +26,24 @@ spec:
         - name: worker
           image: dewflow-backend:2.0.0-ai
           imagePullPolicy: IfNotPresent
-          command:
-            - taskiq
-            - worker
-            - backend.infra.task_broker:broker
-            - backend.worker.tasks.llm_tasks
-            - backend.worker.tasks.knowledge_tasks
-            - backend.worker.tasks.repo_analysis_tasks
-            - --workers
-            - "2"
-            - --wait-tasks-timeout
-            - "105"
-            - --shutdown-timeout
-            - "10"
+          # Task modules live in env so the image default CMD picks them up
+          # (matches deploy/docker-compose.yml).
+          env:
+            - name: TASKIQ_HEALTH_MIN_PROCESSES
+              value: "2"
+            - name: TASKIQ_MODULES
+              value: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks"
+            - name: TASKIQ_WORKERS
+              value: "2"
+            - name: TASKIQ_WAIT_TASKS_TIMEOUT
+              value: "105"
+            - name: TASKIQ_SHUTDOWN_TIMEOUT
+              value: "10"
           envFrom:
             - configMapRef:
                 name: dewflow-config
             - secretRef:
                 name: dewflow-secret
-          env:
-            - name: TASKIQ_HEALTH_MIN_PROCESSES
-              value: "2"
           resources:
             requests:
               cpu: 250m

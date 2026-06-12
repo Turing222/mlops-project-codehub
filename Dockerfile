@@ -82,9 +82,13 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 EXPOSE 8000
 
-CMD ["uvicorn", "backend.main:app", \
-    "--host", "0.0.0.0", "--port", "8000", \
-    "--proxy-headers", "--forwarded-allow-ips", "*"]
+# FORWARDED_ALLOW_IPS must be set at runtime; the previous image default of "*"
+# let any client forge X-Real-IP. Loopback fallback keeps `docker run` safe.
+CMD ["sh", "-c", "exec uvicorn backend.main:app \
+    --host 0.0.0.0 --port 8000 \
+    --proxy-headers \
+    --forwarded-allow-ips ${FORWARDED_ALLOW_IPS:-127.0.0.1} \
+    --timeout-graceful-shutdown ${UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN:-30}"]
 
 # ──────────────────────────────────────────
 # Stage 3b: Worker Runtime (taskiq)
@@ -108,8 +112,10 @@ USER appuser
 
 RUN /app/.venv/bin/python -c "import backend; print('✅ Worker image: backend module OK')"
 
-CMD ["taskiq", "worker", "backend.infra.task_broker:broker", \
-    "backend.worker.tasks.llm_tasks", \
-    "backend.worker.tasks.knowledge_tasks", \
-    "backend.worker.tasks.repo_analysis_tasks", \
-    "--workers", "2"]
+# Task modules are driven by TASKIQ_MODULES so a single image serves the
+# standard task list and any future scheduled tasks without code changes.
+CMD ["sh", "-c", "exec taskiq worker backend.infra.task_broker:broker \
+    ${TASKIQ_MODULES:-backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks} \
+    --workers ${TASKIQ_WORKERS:-2} \
+    --wait-tasks-timeout ${TASKIQ_WAIT_TASKS_TIMEOUT:-105} \
+    --shutdown-timeout ${TASKIQ_SHUTDOWN_TIMEOUT:-10}"]

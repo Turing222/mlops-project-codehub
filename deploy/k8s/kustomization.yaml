@@ -12,3 +12,4 @@ resources:
   - api-hpa.yaml
   - worker-deployment.yaml
   - worker-keda-scaledobject.yaml
+  - credit-scheduler-deployment.yaml

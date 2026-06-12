@@ -33,10 +33,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.12"
 
@@ -73,13 +73,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Build backend web image
         run: docker build --target web -t dewflow-backend:security-web .
 
       - name: Scan backend web image
-        uses: aquasecurity/trivy-action@v0.33.1
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: dewflow-backend:security-web
           vuln-type: "os,library"
@@ -92,7 +92,7 @@ jobs:
         run: docker build --target worker -t dewflow-backend:security-worker .
 
       - name: Scan backend worker image
-        uses: aquasecurity/trivy-action@v0.33.1
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: dewflow-backend:security-worker
           vuln-type: "os,library"
@@ -108,15 +108,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           package_json_file: frontend/package.json
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version-file: frontend/.nvmrc
 
@@ -137,13 +137,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Build frontend fallback image
         run: docker build -f frontend/apps/admin/Dockerfile -t dewflow-frontend:security .
 
       - name: Scan frontend fallback image
-        uses: aquasecurity/trivy-action@v0.33.1
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: dewflow-frontend:security
           vuln-type: "os,library"

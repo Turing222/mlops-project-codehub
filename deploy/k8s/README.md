@@ -9,6 +9,8 @@
 - **当前主路径**：单台 EC2 + Docker Compose；本目录不是当前 production acceptance path。
 - **当前用途**：Kubernetes 参考清单、扩缩容讨论和本地/预演环境验证。
 - **使用方式**：需要继续推进 k8s 时，再按实际集群、域名、TLS 和监控方案细化；不要把这里的示例直接当成当前正式部署合同。
+- **外部依赖前置**：主 overlay 不创建 PostgreSQL / Redis；应用前必须先提供可解析的 `postgres` / `redis` Service，或把 `configmap.yaml` 中的 `POSTGRES_SERVER` / `REDIS_HOST` 改成实际 RDS / ElastiCache endpoint。
+- **镜像占位**：清单中的 `dewflow-backend:2.0.0-*` 和 `dewflow-frontend:2.0.0` 只是示例 tag；实际部署前必须替换为 `make release-image-env` 和前端发布流程产出的不可变镜像 tag。
 
 ## 设计目标
 
@@ -53,14 +55,19 @@ Worker 压力来自后台任务积压，示例策略为：
    cp deploy/k8s/secret.example.yaml /tmp/dewflow-secret.yaml
    ```
 
-2. 构建并推送前端镜像，或将 `frontend-deployment.yaml` 中的镜像名替换为已发布镜像：
+2. 构建并推送镜像，或将清单中的镜像名替换为已发布镜像：
    ```bash
-   make frontend-image-build
-   # docker tag dewflow-frontend:2.0.0 <registry>/dewflow-frontend:2.0.0
-   # docker push <registry>/dewflow-frontend:2.0.0
+   make image-build-release
+   make frontend-image-build-release
+   make release-image-env IMAGE_TAG="$(git describe --tags --always --abbrev=12)"
+   # docker push <registry>/dewflow-backend:<tag>-web
+   # docker push <registry>/dewflow-backend:<tag>-ai
+   # docker push <registry>/dewflow-frontend:<tag>
    ```
 
-3. 复制并根据实际域名配置 Ingress 示例（不包含在 Kustomize 资源内，需手动维护）：
+3. 提供外部 PostgreSQL / Redis 连接入口。主 overlay 默认解析 `postgres.dewflow.svc.cluster.local` 和 `redis.dewflow.svc.cluster.local`；可以手工创建 Service / ExternalName，也可以直接把 `configmap.yaml` 改为实际托管服务 endpoint。
+
+4. 复制并根据实际域名配置 Ingress 示例（不包含在 Kustomize 资源内，需手动维护）：
    ```bash
    cp deploy/k8s/frontend-ingress.example.yaml /tmp/dewflow-ingress.yaml
    # 修改 /tmp/dewflow-ingress.yaml 中的 host 等配置
@@ -71,13 +78,14 @@ Worker 压力来自后台任务积压，示例策略为：
    > - `api-ingress.example.yaml`：前后端分 host 的拆分入口方案。
    > 选择一种后再继续细化，不要直接混搭 path rewrite 和独立 host 规则。
 
-4. 集群部署（标准部署入口使用 Kustomize 编排，`kubectl apply -k deploy/k8s` 会一并创建 `namespace.yaml`、`configmap.yaml`、`knowledge-files-pvc.yaml`、`db-migrator-job.yaml`，以及 API / Worker / Frontend 对应的 Deployment、Service、HPA 和 KEDA 资源）：
+5. 集群部署（标准部署入口使用 Kustomize 编排，`kubectl apply -k deploy/k8s` 会一并创建 `namespace.yaml`、`configmap.yaml`、`knowledge-files-pvc.yaml`、`db-migrator-job.yaml`，以及 API / Worker / Frontend 对应的 Deployment、Service、HPA 和 KEDA 资源）：
    ```bash
+   kubectl delete job db-migrator -n dewflow --ignore-not-found
    kubectl apply -k deploy/k8s
    kubectl apply -f /tmp/dewflow-secret.yaml
    kubectl apply -f /tmp/dewflow-ingress.yaml
    ```
 
-   > 注意：`db-migrator-job.yaml` 属于这次 Kustomize apply 的一部分；当镜像和数据库连接已就绪时，这一步会创建并执行数据库迁移 Job。
+   > 注意：`db-migrator-job.yaml` 属于这次 Kustomize apply 的一部分；重复 apply 前需要先删除旧 Job，否则不可变字段会阻止重跑迁移。
 
 如果集群没有安装 KEDA，需要临时跳过 `worker-keda-scaledobject.yaml`，Worker 仍可按 `worker-deployment.yaml` 的固定副本运行。

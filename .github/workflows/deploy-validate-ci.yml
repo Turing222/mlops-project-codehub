@@ -29,13 +29,16 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Prepare deploy env file from template
         run: cp deploy/.env.ec2.template deploy/.env.ec2
 
       - name: Validate production compose (all profiles)
         run: docker compose -f deploy/docker-compose.yml --profile bifrost --profile debug --profile frontend-fallback config -q
+
+      - name: Build worker image for scheduler smoke
+        run: docker build --target worker -t "${DOCKER_IMAGE_NAME_AI}" .
 
       - name: Validate local production rehearsal overlays
         run: docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local-s3.yml -f deploy/docker-compose.local-logging.yml config -q
@@ -50,3 +53,12 @@ jobs:
         run: |
           kubectl kustomize deploy/k8s > /dev/null
           kubectl kustomize deploy/k8s/local-scaling > /dev/null
+
+      - name: Validate credit-scheduler entrypoint module loads
+        env:
+          TASKIQ_SCHEDULER_MODULES: backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks
+        run: |
+          docker run --rm --entrypoint python \
+            -e TASKIQ_SCHEDULER_MODULES \
+            "${DOCKER_IMAGE_NAME_AI}" \
+            -c "from backend.worker.scheduler_entrypoint import validate_scheduler_schedules; validate_scheduler_schedules()"

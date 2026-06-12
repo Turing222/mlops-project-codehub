@@ -14,12 +14,21 @@ from backend.worker.dependencies import get_worker_session_factory
 logger = logging.getLogger(__name__)
 
 
-@broker.task(task_name="expire_credits")
+@broker.task(
+    task_name="expire_credits",
+    schedule=[
+        {
+            "cron": "30 3 * * *",
+            "schedule_id": "expire_credits_daily",
+        }
+    ],
+)
 async def expire_credits_task() -> int:
-    """TaskIQ 定时后台任务：扫描并扣减已过期的赠送额度。
+    """TaskIQ scheduled task: scans and revokes expired bonus credits.
 
-    由外部 Scheduler/Cron 调度器每日调用。
-    expire_credits 内部使用 savepoint 逐账户独立处理，失败不影响其他账户。
+    Enqueued by the taskiq scheduler process via LabelScheduleSource and
+    executed by the worker pool. ``expire_credits`` uses a savepoint per
+    account so one failure does not block the rest.
     """
     logger.info("TaskIQ expire_credits_task started")
     uow = SQLAlchemyUnitOfWork(get_worker_session_factory())
