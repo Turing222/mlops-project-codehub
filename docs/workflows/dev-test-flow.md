@@ -296,6 +296,8 @@ make qa-test-integration INTEGRATION_TARGETS=tests/integration/test_user_api.py
 make flow-pr-preflight
 ```
 
+PR 描述写法见 [pr-description.md](pr-description.md)；本地 fact-first 草稿可用 `make pr-report`（输出在 `logs/pr/`，不入库）。
+
 轻量替代（不含 static-ci 全量后端项与 Pages build check）：
 
 ```bash

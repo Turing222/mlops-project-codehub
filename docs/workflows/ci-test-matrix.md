@@ -81,6 +81,7 @@ flowchart TB
 |------|------|
 | `make flow-local` | 本地聚合；日志落盘见 `scripts/flow/local_check.sh` |
 | `make flow-pr-preflight` | 开 PR 前预演 static-ci + pr-gate（无 Docker smoke） |
+| PR 描述模板 | [pr-description.md](pr-description.md) |
 | `make flow-local-full` | `flow-local` + `security-scan-full` + performance / LLM 可选套件 |
 | `make security-scan-fast` | 依赖审计（Python prod strict + frontend audit，~1 min） |
 | `make security-scan-full` | `security-scan-fast` + 三镜像 Trivy 扫描（需 Docker + trivy） |
