@@ -1,0 +1,78 @@
+{
+  "$description": "Dewflow color tokens. W3C Design Tokens Format. brandColor overrides primary at runtime on web.",
+  "color": {
+    "primary": {
+      "$type": "color",
+      "$value": { "light": "#1677ff", "dark": "#1677ff" }
+    },
+    "primary-hover": {
+      "$type": "color",
+      "$value": { "light": "#4096ff", "dark": "#4096ff" }
+    },
+    "primary-subtle": {
+      "$type": "color",
+      "$value": { "light": "rgba(22, 119, 255, 0.15)", "dark": "rgba(22, 119, 255, 0.15)" }
+    },
+    "bg-page": {
+      "$type": "color",
+      "$value": { "light": "#fafbfc", "dark": "#141414" }
+    },
+    "bg-container": {
+      "$type": "color",
+      "$value": { "light": "#ffffff", "dark": "#1f1f1f" }
+    },
+    "bg-subtle": {
+      "$type": "color",
+      "$value": { "light": "#fafafa", "dark": "#262626" }
+    },
+    "border": {
+      "$type": "color",
+      "$value": { "light": "#f0f0f0", "dark": "#303030" }
+    },
+    "text-main": {
+      "$type": "color",
+      "$value": { "light": "#1a1a2e", "dark": "#e5e7eb" }
+    },
+    "text-desc": {
+      "$type": "color",
+      "$value": { "light": "#999999", "dark": "#8c8c8c" }
+    },
+    "text-light": {
+      "$type": "color",
+      "$value": { "light": "#ffffff", "dark": "#ffffff" }
+    },
+    "icon-muted": {
+      "$type": "color",
+      "$value": { "light": "#bfbfbf", "dark": "#595959" }
+    },
+    "error": {
+      "$type": "color",
+      "$value": { "light": "#cf1322", "dark": "#ff4d4f" }
+    },
+    "error-bg": {
+      "$type": "color",
+      "$value": { "light": "#fff1f0", "dark": "#2a1215" }
+    },
+    "success": {
+      "$type": "color",
+      "$value": { "light": "#52c41a", "dark": "#73d13d" }
+    },
+    "coin": {
+      "$type": "color",
+      "$value": { "light": "#d97706", "dark": "#fbbf24" }
+    },
+    "admin-header": {
+      "$description": "Admin shell only; not used in Chat",
+      "$type": "color",
+      "$value": { "light": "#1e293b", "dark": "#1e293b" }
+    },
+    "admin-header-border": {
+      "$type": "color",
+      "$value": { "light": "#334155", "dark": "#334155" }
+    },
+    "overlay": {
+      "$type": "color",
+      "$value": { "light": "rgba(0, 0, 0, 0.45)", "dark": "rgba(0, 0, 0, 0.55)" }
+    }
+  }
+}

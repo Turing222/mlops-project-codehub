@@ -1,0 +1,26 @@
+{
+  "font-family": {
+    "sans": {
+      "$type": "fontFamily",
+      "$value": ["Inter", "Segoe UI", "system-ui", "-apple-system", "sans-serif"]
+    }
+  },
+  "font-size": {
+    "xs": { "$type": "dimension", "$value": "11px", "$description": "meta, tokens badge" },
+    "sm": { "$type": "dimension", "$value": "13px", "$description": "sidebar, admin user" },
+    "base": { "$type": "dimension", "$value": "14px", "$description": "body, bubble, input" },
+    "md": { "$type": "dimension", "$value": "15px", "$description": "chat header title" },
+    "lg": { "$type": "dimension", "$value": "16px", "$description": "admin header" },
+    "xl": { "$type": "dimension", "$value": "18px", "$description": "empty state title, card h2" }
+  },
+  "font-weight": {
+    "normal": { "$type": "fontWeight", "$value": 400 },
+    "medium": { "$type": "fontWeight", "$value": 500 },
+    "semibold": { "$type": "fontWeight", "$value": 600 },
+    "bold": { "$type": "fontWeight", "$value": 700 }
+  },
+  "line-height": {
+    "tight": { "$type": "number", "$value": 1.5 },
+    "relaxed": { "$type": "number", "$value": 1.6, "$description": "chat bubbles" }
+  }
+}

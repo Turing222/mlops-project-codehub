@@ -1,5 +1,7 @@
 # Frontend Styling Standard
 
+跨平台设计 token 与 L1 清单见仓库根目录 [`design/`](../../../design/README.md)。
+
 ## 目标
 
 - 保持 `antd` 为主要 UI 基础。
