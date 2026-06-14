@@ -1,5 +1,7 @@
 # TODO: 将 `storage_key` 和 `file_path` 列类型改为 `Text`
 
+> **Note**: 经 2026-06-12 文档审计确认，该迁移待办依然有效且尚未应用，需后续择机落地。
+
 ## 背景
 
 `knowledge_files` 表中以下两列当前使用 `String(1024)`，存在边界风险：

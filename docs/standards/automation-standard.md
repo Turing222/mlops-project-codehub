@@ -34,6 +34,8 @@
 - 说明执行顺序、通过标准和失败处理
 - 解释目录职责和命名约定
 
+子目录按文档性质分类：`standards/`、`workflows/`、`platform/`、`reference/`、`assessments/`、`legacy/`、`todos/`。索引见 [docs/README.md](../../README.md)。
+
 回答的问题：
 
 - 我们应该怎么做
@@ -97,8 +99,10 @@
 .
 ├── Makefile
 ├── docs/
-│   ├── dev-test-flow.md
-│   └── automation-standard.md
+│   ├── standards/
+│   │   └── automation-standard.md
+│   └── workflows/
+│       └── dev-test-flow.md
 ├── scripts/
 │   ├── lib/
 │   │   └── common.sh
@@ -317,9 +321,9 @@ qa-test-unit
 
 本项目当前应遵循以下落地方式：
 
-- 文档说明使用 [dev-test-flow.md](./dev-test-flow.md)
+- 文档说明使用 [dev-test-flow.md](../workflows/dev-test-flow.md)
 - 自动化标准使用本文档
-- 实际入口统一通过 [Makefile](../Makefile)
+- 实际入口统一通过 [Makefile](../../Makefile)
 - 复杂逻辑放在 `scripts/`
 - 后续 CI 复用同一套入口
 

@@ -2,7 +2,7 @@
 
 > 这是保留的旧版根 README，主要反映仓库在“后端主视角”阶段的说明内容。
 > 
-> 当前建议优先从仓库级入口 [../README.md](../README.md) 开始阅读；本文件暂时保留，不删除，供历史参考与补充查阅。
+> 当前建议优先从仓库级入口 [../../README.md](../../README.md) 开始阅读；本文件暂时保留，不删除，供历史参考与补充查阅。
 
 # Dewflow AI Backend
 
@@ -123,7 +123,8 @@ uv run alembic upgrade head
 | `POSTGRES_DB` | `dewflow` |
 | `POSTGRES_POOL_SIZE` | `10` |
 | `POSTGRES_MAX_OVERFLOW` | `20` |
-| `POSTGRES_SSL_MODE` | —（可选 `disable` / `require`） |
+| `POSTGRES_SSL_MODE` | —（可选 `disable` / `require` / `verify-ca` / `verify-full`） |
+| `POSTGRES_SSL_ROOT_CERT_FILE` | — |
 
 **Redis**（不设 `REDIS_URL` / `TASKIQ_REDIS_URL` 时按以下拼装，TaskIQ 默认使用 DB 1）：
 
@@ -318,6 +319,7 @@ docker compose -f deploy/docker-compose.yml up -d
 | GET | `/health_check/live` | 存活探针 |
 | GET | `/health_check/db_ready` | 数据库就绪探针 |
 | GET | `/metrics` | 占位/探针端点；真实应用指标通过 OTLP 推送，不从此端点抓取 |
+| POST | `/api/v1/telemetry/metrics` | 前端性能指标上报端点（Web Vitals 等） |
 | GET | `/debug-request` | 请求调试信息 |
 
 ## 7. 数据模型
@@ -334,6 +336,11 @@ docker compose -f deploy/docker-compose.yml up -d
 | `workspaces` | 工作区 |
 | `user_workspace_roles` | 用户→工作区角色关联 |
 | `audit_events` | 审计日志 |
+| `credit_accounts` | 额度账户 |
+| `credit_transactions` | 额度流水 |
+| `repo_analysis_results` | 仓库分析结果 |
+| `repo_analysis_runs` | 仓库分析任务 |
+| `usage_records` | 用量记录 |
 
 ## 8. 观测与运维
 

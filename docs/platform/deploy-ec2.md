@@ -8,9 +8,9 @@
 
 - 单台 EC2
 - Docker Engine + Docker Compose plugin
-- 使用 [deploy/docker-compose.yml](../deploy/docker-compose.yml) 作为正式部署入口
+- 使用 [deploy/docker-compose.yml](../../deploy/docker-compose.yml) 作为正式部署入口
 - 使用 RDS 或其它外部 PostgreSQL 作为生产数据库
-- 使用 [docker-compose.db.yml](../docker-compose.db.yml) 继续承担本地 / CI smoke 与测试环境职责
+- 使用 [docker-compose.db.yml](../../docker-compose.db.yml) 继续承担本地 / CI smoke 与测试环境职责
 
 ## 部署结构
 
@@ -32,7 +32,7 @@ EC2 默认部署栈包含：
 - `api-nginx` 是 EC2 本机 API edge，默认只绑定 `127.0.0.1:8081`，供 Cloudflare Tunnel 或本机部署验证访问。
 - `frontend` 容器不再默认启动；它只在 `DEPLOY_ENABLE_FRONTEND_FALLBACK=true` 时作为本地演练、回滚预案或自托管 fallback 使用。
 
-如果确实需要单机自管 PostgreSQL，显式叠加 [deploy/docker-compose.local-postgres.yml](../deploy/docker-compose.local-postgres.yml)。该形态不是推荐生产默认值，必须自行负责备份、恢复演练和磁盘告警。
+如果确实需要单机自管 PostgreSQL，显式叠加 [deploy/docker-compose.local-postgres.yml](../../deploy/docker-compose.local-postgres.yml)。该形态不是推荐生产默认值，必须自行负责备份、恢复演练和磁盘告警。
 
 ## 前端上线拓扑（Cloudflare Pages + 独立 API）
 
@@ -115,7 +115,7 @@ make verify-pages \
 
 部署使用的环境变量模板位于：
 
-- [deploy/.env.ec2.template](../deploy/.env.ec2.template)
+- [deploy/.env.ec2.template](../../deploy/.env.ec2.template)
 
 推荐做法：
 
@@ -186,7 +186,7 @@ FRONTEND_PUBLIC_PORT=8080
 
 ## Secret 文件
 
-EC2 部署使用 [secrets/ec2](../secrets/ec2) 作为专用 secret 目录，`deploy/.env.ec2` 只保存非敏感配置和 secret 文件路径。
+EC2 部署使用 [secrets/ec2](../../secrets/ec2) 作为专用 secret 目录，`deploy/.env.ec2` 只保存非敏感配置和 secret 文件路径。
 
 首次部署前运行：
 
@@ -301,10 +301,12 @@ docker push <registry>/dewflow-frontend:${IMAGE_TAG}
 ```dotenv
 POSTGRES_SERVER=<rds-endpoint>
 POSTGRES_PORT=5432
-POSTGRES_SSL_MODE=require
+POSTGRES_SSL_MODE=verify-full
+# 可选：如果镜像 / OS trust store 不包含当前 RDS CA，把 RDS CA bundle 挂载进容器后填写该路径。
+POSTGRES_SSL_ROOT_CERT_FILE=
 ```
 
-数据库密码仍写入 `secrets/ec2/postgres_password.txt`，不要写进 `.env.ec2`。RDS security group 需要允许 EC2 实例访问 5432；RDS backup retention / snapshot / PITR 策略在 AWS 侧配置和演练。
+数据库密码仍写入 `secrets/ec2/postgres_password.txt`，不要写进 `.env.ec2`。`verify-full` 会校验服务端证书与 RDS endpoint 主机名，因此 `POSTGRES_SERVER` 必须填写 RDS 控制台给出的 endpoint 主机名（例如 `xxx.amazonaws.com`），**不要**填写 IP 地址；`make deploy-ec2-check` 会在 `verify-ca` / `verify-full` 下拦截 IPv4 字面量。RDS security group 需要允许 EC2 实例访问 5432；RDS backup retention / snapshot / PITR 策略在 AWS 侧配置和演练。
 
 低成本自管 fallback 才使用 compose 内置 Postgres：
 
@@ -327,7 +329,7 @@ S3_PREFIX=knowledge_files
 S3_REGION=<aws-region>
 ```
 
-`make deploy-ec2-check` 会拒绝 `STORAGE_BACKEND=local`。如果需要验证本地文件存储，请使用 [docker-compose.db.yml](../docker-compose.db.yml) 的本地 / CI smoke 栈，不要在正式 deploy 栈补 `knowledge_storage_init`。
+`make deploy-ec2-check` 会拒绝 `STORAGE_BACKEND=local`。如果需要验证本地文件存储，请使用 [docker-compose.db.yml](../../docker-compose.db.yml) 的本地 / CI smoke 栈，不要在正式 deploy 栈补 `knowledge_storage_init`。
 
 ### 前端回退流程
 
@@ -335,7 +337,7 @@ Cloudflare Pages 前端优先在 Cloudflare Dashboard 回退到上一条成功 d
 
 ## Makefile 入口
 
-手动部署统一通过根目录 [Makefile](../Makefile) 暴露以下命令：
+手动部署统一通过根目录 [Makefile](../../Makefile) 暴露以下命令：
 
 - `make deploy-ec2-check`
 - `make deploy-ec2-secrets-prepare`
@@ -367,7 +369,20 @@ make deploy-ec2-secrets-prepare
 
 如果需要真实 provider key，把对应值写入 `secrets/ec2/*.txt`。
 
-### 2. 预检查
+### 2. 创建 / 更新 CloudWatch 日志与告警资源
+
+```bash
+make deploy-cloudwatch-setup
+```
+
+这个步骤会创建或更新：
+
+- CloudWatch Logs log group
+- SNS topic
+- 第一批 log metric filters
+- CloudWatch alarms
+
+### 3. 预检查
 
 ```bash
 make deploy-ec2-check
@@ -380,8 +395,9 @@ make deploy-ec2-check
 - 关键变量是否已填写
 - 必填 secret 文件是否存在、非空且不是占位值
 - compose 配置能否成功渲染
+- 当服务日志仍使用 `awslogs` 时，AWS CLI 是否可用且 CloudWatch log group 是否已存在
 
-### 3. 启动 / 更新部署栈
+### 4. 启动 / 更新部署栈
 
 ```bash
 make deploy-ec2-up
@@ -393,7 +409,7 @@ make deploy-ec2-up
 - 启动核心服务
 - 打印当前容器状态
 
-### 4. 等待服务 ready
+### 5. 等待服务 ready
 
 ```bash
 make deploy-ec2-wait
@@ -406,7 +422,7 @@ make deploy-ec2-wait
 
 只有在 `DEPLOY_CHECK_FRONTEND_HEALTH=true` 时才会额外检查 frontend health：`${DEPLOY_FRONTEND_BASE_URL}${DEPLOY_FRONTEND_HEALTH_PATH}`。当生产前端已经切到 Cloudflare Pages 时，建议把 `DEPLOY_FRONTEND_HEALTH_PATH` 保持为 `/healthz`，并让 Pages 静态产物提供简单 `healthz` 文件，用于上线探活。
 
-### 5. 跑部署后 smoke 验证
+### 6. 跑部署后 smoke 验证
 
 ```bash
 make deploy-ec2-verify
@@ -452,7 +468,7 @@ make deploy-ec2-down
 
 ### 当前状态
 
-- 当前仓库中的 `postgres` 服务只属于 [deploy/docker-compose.local-postgres.yml](../deploy/docker-compose.local-postgres.yml) 的本地 / 自管 fallback 形态，不应被当成 RDS 生产备份策略的一部分。
+- 当前仓库中的 `postgres` 服务只属于 [deploy/docker-compose.local-postgres.yml](../../deploy/docker-compose.local-postgres.yml) 的本地 / 自管 fallback 形态，不应被当成 RDS 生产备份策略的一部分。
 - 如果生产库已经迁到 RDS，那么之前删除的容器内数据库备份脚本不需要恢复到当前生产入口。
 
 ### 条件成立时可用
@@ -541,7 +557,7 @@ make deploy-ec2-down
 
 ## Bifrost Gateway
 
-[deploy/docker-compose.yml](../deploy/docker-compose.yml) 保留了 Bifrost gateway 服务，但默认作为 **可选 profile** 关闭。
+[deploy/docker-compose.yml](../../deploy/docker-compose.yml) 保留了 Bifrost gateway 服务，但默认作为 **可选 profile** 关闭。
 
 如果 `LLM_PROVIDER`、`RAG_EMBED_PROVIDER`、`RAG_PLANNER_PROVIDER` 或 `RAG_RERANK_PROVIDER` 使用 `bifrost*` / `gateway-*` provider，部署脚本会自动启用 `bifrost` profile。也可以显式设置：
 
@@ -559,7 +575,7 @@ export DEPLOY_ENABLE_BIFROST=true
 
 ## Observability
 
-[deploy/docker-compose.yml](../deploy/docker-compose.yml) 是 EC2 / AWS 目标态，默认使用 Docker `awslogs` driver 将容器 stdout 写入 CloudWatch Logs。业务层仍输出 JSON 日志，日志字段合同见 [deploy/monitoring/README.md](../deploy/monitoring/README.md)。
+[deploy/docker-compose.yml](../../deploy/docker-compose.yml) 是 EC2 / AWS 目标态，默认使用 Docker `awslogs` driver 将容器 stdout 写入 CloudWatch Logs。业务层仍输出 JSON 日志，日志字段合同见 [deploy/monitoring/README.md](../../deploy/monitoring/README.md)。
 
 生产告警投递目标：
 
@@ -614,17 +630,17 @@ aws logs tail "$DEPLOY_CW_LOG_GROUP" \
 
 CSP report-only 第一阶段只用于日志观察：`POST /api/v1/csp/reports` 会写 `event=csp_violation`，但不落库、不触发应用告警，也暂不建 CloudWatch alarm。等 report-only 噪声稳定并确认 allowlist 后，再决定是否为 CSP 加 metric filter。
 
-API P99、5xx 错误率、Redis 内存、Postgres 连接数这类指标告警不通过普通 log metric filter 伪装完成。它们需要 EMF、ADOT/CloudWatch exporter、AMP，或后续托管 RDS / ElastiCache 指标。迁移清单见 [deploy/monitoring/alarms-cloudwatch.md](../deploy/monitoring/alarms-cloudwatch.md)。
+API P99、5xx 错误率、Redis 内存、Postgres 连接数这类指标告警不通过普通 log metric filter 伪装完成。它们需要 EMF、ADOT/CloudWatch exporter、AMP，或后续托管 RDS / ElastiCache 指标。迁移清单见 [deploy/monitoring/alarms-cloudwatch.md](../../deploy/monitoring/alarms-cloudwatch.md)。
 
 ## 与本地 smoke 的边界
 
 请保持以下职责分离：
 
-- [deploy/docker-compose.yml](../deploy/docker-compose.yml) → **EC2 / 正式部署入口**
-- [deploy/docker-compose.local-postgres.yml](../deploy/docker-compose.local-postgres.yml) → **可选自管 PostgreSQL fallback**
-- [deploy/docker-compose.local-s3.yml](../deploy/docker-compose.local-s3.yml) → **本地生产形态演练，使用 MinIO 模拟 S3**
-- [deploy/docker-compose.local-logging.yml](../deploy/docker-compose.local-logging.yml) → **本地生产形态演练，把 awslogs 降级为 json-file**
-- [docker-compose.db.yml](../docker-compose.db.yml) → **本地 / CI smoke 和测试环境**（包含 `otel-collector` 等 smoke-only 组件）
+- [deploy/docker-compose.yml](../../deploy/docker-compose.yml) → **EC2 / 正式部署入口**
+- [deploy/docker-compose.local-postgres.yml](../../deploy/docker-compose.local-postgres.yml) → **可选自管 PostgreSQL fallback**
+- [deploy/docker-compose.local-s3.yml](../../deploy/docker-compose.local-s3.yml) → **本地生产形态演练，使用 MinIO 模拟 S3**
+- [deploy/docker-compose.local-logging.yml](../../deploy/docker-compose.local-logging.yml) → **本地生产形态演练，把 awslogs 降级为 json-file**
+- [docker-compose.db.yml](../../docker-compose.db.yml) → **本地 / CI smoke 和测试环境**（包含 `otel-collector` 等 smoke-only 组件）
 
 不要把两者重新揉成一套，否则会让部署面和测试面相互污染。
 

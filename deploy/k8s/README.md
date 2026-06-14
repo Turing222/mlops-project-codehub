@@ -1,7 +1,7 @@
 # Dewflow Kubernetes 接入示例
 
 职责：沉淀 Dewflow Backend 迁移到 Kubernetes 的最小部署入口。
-边界：当前生产验收路径仍以 [deploy/docker-compose.yml](../docker-compose.yml) + [docs/deploy-ec2.md](../../docs/deploy-ec2.md) 为准；本目录保留 Kubernetes 参考清单、扩缩容设计和后续接入草案，不改变 compose 运行方式。
+边界：当前生产验收路径仍以 [deploy/docker-compose.yml](../docker-compose.yml) + [docs/platform/deploy-ec2.md](../../docs/platform/deploy-ec2.md) 为准；本目录保留 Kubernetes 参考清单、扩缩容设计和后续接入草案，不改变 compose 运行方式。
 副作用：应用这些清单会在目标集群创建 namespace、ConfigMap、knowledge PVC、`db-migrator` Job，以及 API / Worker / Frontend 对应的 Deployment、Service、HPA 和 KEDA 扩缩容对象。
 
 ## 状态说明
@@ -26,7 +26,7 @@
 
 ## 扩缩容策略
 
-详细设计见 `../../docs/k8s-scaling-strategy.md`。
+详细设计见 `../../docs/platform/k8s-scaling-strategy.md`。
 
 API 压力来自在线请求，示例策略为：
 

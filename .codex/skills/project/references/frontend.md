@@ -47,8 +47,8 @@ Read the smallest matching document before frontend work:
 
 For release, CSP/CORS, Cloudflare Pages, or rollback work, read:
 
-- [docs/frontend-delivery-and-edge-responsibilities.md](../../../../docs/frontend-delivery-and-edge-responsibilities.md): Pages vs API edge responsibilities, CSP report-only wiring, release checklist.
-- [docs/deploy-ec2.md](../../../../docs/deploy-ec2.md): Pages dashboard config (source of truth), branch protection requirements, fallback image rollback.
+- [docs/platform/frontend-delivery-and-edge-responsibilities.md](../../../../docs/platform/frontend-delivery-and-edge-responsibilities.md): Pages vs API edge responsibilities, CSP report-only wiring, release checklist.
+- [docs/platform/deploy-ec2.md](../../../../docs/platform/deploy-ec2.md): Pages dashboard config (source of truth), branch protection requirements, fallback image rollback.
 
 Post-deploy verification: `make verify-pages DEPLOY_FRONTEND_BASE_URL=... DEPLOY_BASE_URL=...`.
 

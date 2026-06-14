@@ -4,7 +4,7 @@
 
 配套的工程化分层标准见：
 
-- [automation-standard.md](./automation-standard.md)
+- [automation-standard.md](../standards/automation-standard.md)
 
 ## 1. 目标
 

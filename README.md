@@ -2,7 +2,7 @@
 
 Dewflow 仓库当前包含后端服务、前端管理端、测试体系、RAG 评测与性能验证工具。这个 README 现在作为**仓库级入口页**使用，帮助你快速找到启动方式、验证命令和更深入的专题文档。
 
-> 旧版偏后端手册式 README 已保留在 [docs/README.backend-legacy.md](docs/README.backend-legacy.md)，暂时不删除，供历史参考与补充查阅。
+> 旧版偏后端手册式 README 已保留在 [docs/legacy/README.backend-legacy.md](docs/legacy/README.backend-legacy.md)，暂时不删除，供历史参考与补充查阅。
 
 ## 仓库结构概览
 
@@ -34,7 +34,7 @@ uv sync
 docker compose -f docker-compose.db.yml up -d
 ```
 
-如果你准备走标准 smoke/local 验证流，优先参考 [docs/dev-test-flow.md](docs/dev-test-flow.md) 和 `make env-smoke-*` 相关命令。
+如果你准备走标准 smoke/local 验证流，优先参考 [docs/workflows/dev-test-flow.md](docs/workflows/dev-test-flow.md) 和 `make env-smoke-*` 相关命令。
 
 ### 3. 迁移数据库
 
@@ -82,13 +82,13 @@ make qa-eval-rag            # RAG 检索/回答评测
 make qa-perf-chat           # 标准化 chat API 压测
 ```
 
-如果你不确定当前改动该跑哪条验证链路，先看 [tests/README.md](tests/README.md) 和 [docs/dev-test-flow.md](docs/dev-test-flow.md)。
+如果你不确定当前改动该跑哪条验证链路，先看 [tests/README.md](tests/README.md) 和 [docs/workflows/dev-test-flow.md](docs/workflows/dev-test-flow.md)。
 
 ## 文档导航
 
 ### 仓库与项目文档入口
 - [docs/README.md](docs/README.md) — 项目级规范、流程、参考文档索引
-- [docs/README.backend-legacy.md](docs/README.backend-legacy.md) — 保留的旧版后端主视角 README
+- [docs/legacy/README.backend-legacy.md](docs/legacy/README.backend-legacy.md) — 保留的旧版后端主视角 README
 
 ### 测试、评测与性能
 - [tests/README.md](tests/README.md) — 测试分层与推荐命令
@@ -101,7 +101,7 @@ make qa-perf-chat           # 标准化 chat API 压测
 - [frontend/docs/README.md](frontend/docs/README.md) — 前端架构、迁移计划与标准索引
 
 ### 部署与运行
-- [docs/deploy-ec2.md](docs/deploy-ec2.md) — 单台 EC2 手动部署入口与后续自动 CD 对接方式
+- [docs/platform/deploy-ec2.md](docs/platform/deploy-ec2.md) — 单台 EC2 手动部署入口与后续自动 CD 对接方式
 - [deploy/k8s/README.md](deploy/k8s/README.md) — Kubernetes 接入示例
 - [deploy/k8s/local-scaling/README.md](deploy/k8s/local-scaling/README.md) — 本地 worker 自动扩缩容演示
 - [secrets/smoke/README.md](secrets/smoke/README.md) — smoke secrets 使用说明
@@ -109,9 +109,9 @@ make qa-perf-chat           # 标准化 chat API 压测
 ## 文档使用建议
 
 - 想快速理解仓库：先读本页，再进入 [docs/README.md](docs/README.md)。
-- 想开始开发/提测：优先看 [tests/README.md](tests/README.md) 与 [docs/dev-test-flow.md](docs/dev-test-flow.md)。
+- 想开始开发/提测：优先看 [tests/README.md](tests/README.md) 与 [docs/workflows/dev-test-flow.md](docs/workflows/dev-test-flow.md)。
 - 想看前端约定：从 [frontend/docs/README.md](frontend/docs/README.md) 开始。
-- 想查历史后端细节：看 [docs/README.backend-legacy.md](docs/README.backend-legacy.md)。
+- 想查历史后端细节：看 [docs/legacy/README.backend-legacy.md](docs/legacy/README.backend-legacy.md)。
 
 ## 说明
 

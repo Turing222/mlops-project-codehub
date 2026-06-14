@@ -80,7 +80,7 @@ Pages 生产部署前至少确认：
 5. 后端已设置 `BACKEND_CORS_ORIGINS=https://app.<domain>`
 6. 若启用 Google OAuth，后端已设置 `GOOGLE_ALLOWED_REDIRECT_URIS=https://app.<domain>/auth/google/callback`
 
-部署完成后从任意机器运行发布检查（详见 [docs/deploy-ec2.md](../../../docs/deploy-ec2.md)）：
+部署完成后从任意机器运行发布检查（详见 [docs/platform/deploy-ec2.md](../../../docs/platform/deploy-ec2.md)）：
 
 ```bash
 make verify-pages \
@@ -91,7 +91,7 @@ make verify-pages \
 Node 与 pnpm 版本由 `frontend/.nvmrc` 与 `frontend/package.json` 的 `packageManager` 字段钉住，本地、CI 和 Pages 构建共用同一来源。bundle 体积基线在 `bundle-baseline.json`，构建后用 `make frontend-bundle-check` 校验；有意增长时在仓库根运行 `node frontend/apps/admin/scripts/check-bundle-size.mjs --update` 刷新基线。
 
 ### 3. 前端生产镜像构建（fallback / 演练）
-使用根目录的 `Makefile` 构建前端生产 Docker 镜像（多阶段 build：Node 构建 + `nginx:1.30.1-alpine` runtime，仅做静态托管与 `/api/` 反代；钉版与 `deploy/docker-compose.yml` 的 `api-nginx` 一致，详见 `docs/deploy-ec2.md`）：
+使用根目录的 `Makefile` 构建前端生产 Docker 镜像（多阶段 build：Node 构建 + `nginx:1.30.1-alpine` runtime，仅做静态托管与 `/api/` 反代；钉版与 `deploy/docker-compose.yml` 的 `api-nginx` 一致，详见 `docs/platform/deploy-ec2.md`）：
 ```bash
 # 仅构建前端生产镜像
 make frontend-image-build

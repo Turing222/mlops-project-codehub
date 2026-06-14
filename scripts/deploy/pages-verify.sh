@@ -151,7 +151,7 @@ fi
 
 log_section "Manual follow-up"
 log_info "SSE streaming needs a logged-in session and stays manual:"
-log_info "verify /api/v1/chat/query_stream emits incremental output via ${api_origin} (see docs/frontend-delivery-and-edge-responsibilities.md)"
+log_info "verify /api/v1/chat/query_stream emits incremental output via ${api_origin} (see docs/platform/frontend-delivery-and-edge-responsibilities.md)"
 
 if (( failures > 0 )); then
     log_error "verify-pages failed: ${failures} check(s) failed"
