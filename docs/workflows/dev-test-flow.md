@@ -293,8 +293,16 @@ make qa-test-integration INTEGRATION_TARGETS=tests/integration/test_user_api.py
 适用于准备提交代码前：
 
 ```bash
-make flow-dev-check
+make flow-pr-preflight
 ```
+
+轻量替代（不含 static-ci 全量后端项与 Pages build check）：
+
+```bash
+make flow-ci
+```
+
+含 Docker smoke 的较大改动验证仍用 `make flow-dev-check` 或 `make flow-local`。
 
 ### 较大改动验证
 

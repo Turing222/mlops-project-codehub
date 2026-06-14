@@ -32,6 +32,7 @@ from backend.config.loader import (  # noqa: E402
     get_config_dir,
     load_yaml_config,
 )
+from backend.core.secret_env import SECRET_ENV_NAMES  # noqa: E402
 
 # ═══════════════════════════════════════════════════════════════════════
 # Rule framework
@@ -59,14 +60,13 @@ class Context:
 
 
 def _check_secret_files() -> CheckResult:
-    """Verify referenced *_FILE secrets exist and are non-empty."""
+    """Verify referenced Docker secret *_FILE paths exist and are non-empty."""
     missing: list[str] = []
     empty: list[str] = []
 
-    for env_name in sorted(os.environ):
-        if not env_name.endswith("_FILE"):
-            continue
-        file_path = os.environ[env_name]
+    for name in sorted(SECRET_ENV_NAMES):
+        env_name = f"{name}_FILE"
+        file_path = os.environ.get(env_name)
         if not file_path:
             continue
         path = Path(file_path)

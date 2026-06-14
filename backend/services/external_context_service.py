@@ -98,7 +98,7 @@ class TavilyExternalContextProvider(AbstractExternalContextProvider):
         if not self._api_key or not query_text.strip() or top_k <= 0:
             return []
 
-        # 断路器打开时快速失败：跳过外部调用，直接降级为空结果。
+        # Fast-fail when the circuit breaker is OPEN: skip the external call and degrade to empty results.
         try:
             await self._circuit.acquire()
         except AppException as exc:

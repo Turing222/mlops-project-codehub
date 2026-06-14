@@ -115,7 +115,7 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 	pr-report ci-bootstrap-github-gate \
 	verify-smoke verify-pages \
 	flow-static flow-runtime flow-dev-check \
-	flow-fast flow-local flow-local-log flow-local-full flow-ci \
+	flow-fast flow-pr-preflight flow-local flow-local-log flow-local-full flow-ci \
 	lint format typecheck test check clean-cache
 
 help:
@@ -194,6 +194,7 @@ help:
 		'  flow-static          Run L1 static checks and deterministic tests' \
 		'  flow-runtime         Run runtime checks (build+smoke up+smoke tests+smoke down)' \
 		'  flow-dev-check       Run the full dev verification flow (static + runtime)' \
+		'  flow-pr-preflight    Pre-PR check mirroring static-ci + pr-gate (no Docker smoke)' \
 		'  flow-fast            Quick feedback: backend static + unit + component; frontend check' \
 		'  flow-local           Full local verify with per-step logs under logs/flow-local/' \
 		'  flow-local-log       Alias for flow-local (same script, log artifacts enabled)' \
@@ -462,6 +463,7 @@ flow-static:
 	$(MAKE) qa-layer-deps
 	$(MAKE) qa-alembic-check
 	$(MAKE) qa-config-check
+	$(MAKE) qa-standards-fast
 	$(MAKE) qa-test-unit
 	$(MAKE) qa-test-component
 
@@ -479,9 +481,19 @@ flow-fast:
 	$(MAKE) qa-format-check
 	$(MAKE) qa-no-while-true
 	$(MAKE) qa-typecheck
+	$(MAKE) qa-standards-fast
 	$(MAKE) qa-test-unit
 	$(MAKE) qa-test-component
 	$(MAKE) frontend-check
+
+# flow-pr-preflight: mirrors static-ci.yml + pr-gate-ci.yml without Docker smoke (~10 min).
+# Requires local Postgres (:5432) and Redis (:6379) for qa-test-ci.
+flow-pr-preflight:
+	$(MAKE) flow-static
+	$(MAKE) frontend-check
+	$(MAKE) frontend-build-pages-check
+	$(MAKE) qa-test-ci
+	$(MAKE) frontend-e2e-mock
 
 # flow-local: requires Docker smoke stack; logs each step under logs/flow-local/
 flow-local:

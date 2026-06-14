@@ -110,7 +110,8 @@ if [[ "$PROVIDER" == "mock" ]]; then
     fi
     update_env_smoke "LLM_PROVIDER" "mock"
     update_env_smoke "RAG_PLANNER_PROVIDER" "mock"
-    update_env_smoke "RAG_RERANK_PROVIDER" "mock"
+    # Rerank has no mock implementation; leave disabled for CI/local smoke.
+    update_env_smoke "RAG_RERANK_PROVIDER" ""
     configure_model_routing
 else
     KEY=""

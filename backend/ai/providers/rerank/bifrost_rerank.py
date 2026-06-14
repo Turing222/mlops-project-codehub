@@ -72,8 +72,8 @@ class BifrostRerankService(AbstractRerankService):
                 code="BIFROST_RERANK_EMPTY_DOCUMENT",
             )
 
-        # 校验之外的外部调用才受断路器保护：断路器打开时快速失败抛
-        # CIRCUIT_BREAKER_OPEN，由 rag_service 降级为候选原始排序。
+        # External calls after validation are circuit-breaker protected: fast-fail with
+        # CIRCUIT_BREAKER_OPEN when OPEN; rag_service degrades to raw candidate order.
         await self._circuit.acquire()
         try:
             with trace_span(

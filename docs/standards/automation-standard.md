@@ -164,6 +164,7 @@
 
 - `flow-dev-check`
 - `flow-ci`
+- `flow-pr-preflight`
 
 命名原则：
 

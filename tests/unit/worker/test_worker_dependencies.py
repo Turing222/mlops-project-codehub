@@ -273,6 +273,53 @@ def test_get_llm_service_for_provider_caches_create_errors(monkeypatch) -> None:
     assert created == ["missing"]
 
 
+def test_get_rerank_service_returns_none_when_provider_is_mock(monkeypatch) -> None:
+    from backend.worker.dependencies import WorkerContainer
+
+    monkeypatch.setattr(
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_PROVIDER", "mock"
+    )
+
+    container = WorkerContainer()
+    assert container.get_rerank_service() is None
+    assert container._rerank_init_failed is False
+
+
+@pytest.mark.asyncio
+async def test_get_rag_service_succeeds_when_rerank_provider_is_mock(
+    monkeypatch,
+) -> None:
+    from backend.worker.dependencies import WorkerContainer
+
+    monkeypatch.setattr(
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_PROVIDER", "mock"
+    )
+    monkeypatch.setattr("backend.worker.dependencies.ai_settings.RAG_TOP_K", 4)
+    monkeypatch.setattr(
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_CANDIDATE_COUNT", 20
+    )
+    monkeypatch.setattr("backend.worker.dependencies.ai_settings.RAG_RERANK_TOP_K", 4)
+    monkeypatch.setattr(
+        "backend.worker.dependencies.ai_settings.RAG_EMBED_BATCH_SIZE", 10
+    )
+    monkeypatch.setattr(
+        "backend.worker.dependencies.SQLAlchemyUnitOfWork",
+        lambda sf: object(),
+    )
+    monkeypatch.setattr(
+        "backend.worker.dependencies.VectorIndexService",
+        lambda **kw: object(),
+    )
+
+    container = WorkerContainer()
+    container._session_factory = object()
+    container._embedder = AsyncMock()
+
+    rag_service = container.get_rag_service()
+
+    assert rag_service.reranker is None
+
+
 @pytest.mark.asyncio
 async def test_get_rag_service_uses_native_reranker_without_initializing_llm(
     monkeypatch,

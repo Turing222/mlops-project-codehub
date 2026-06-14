@@ -61,6 +61,7 @@ flowchart TB
 | 本地步骤 | Makefile / 脚本 | CI 归属（workflow） | 终态：是否 required on `main` |
 |----------|-----------------|---------------------|--------------------------------|
 | 静态 + 单测 + 前端 build/bundle | `make flow-fast` / `make frontend-check` | `static-ci.yml` → Backend static / Frontend static | **是** |
+| **开 PR 前本地预演（static + PR gate）** | `make flow-pr-preflight` | `static-ci.yml` + `pr-gate-ci.yml` | — |
 | 后端 integration（CI profile） | `make flow-ci` 内 `qa-test-ci` | `pr-gate-ci.yml` → PR gate | **是**（PR） |
 | 前端 e2e-mock | `make frontend-e2e-mock` | `pr-gate-ci.yml` → PR gate | **是**（PR） |
 | 镜像 build + Docker smoke 起栈 | `make image-build` + `env-smoke-up` | `smoke-ci.yml` → Docker smoke | **是**（main；PR 按 path） |
@@ -77,6 +78,7 @@ flowchart TB
 | 命令 | 说明 |
 |------|------|
 | `make flow-local` | 本地聚合；日志落盘见 `scripts/flow/local_check.sh` |
+| `make flow-pr-preflight` | 开 PR 前预演 static-ci + pr-gate（无 Docker smoke） |
 | `make flow-local-full` | 含 performance / LLM 可选套件 |
 | `make deploy-ec2-up` 等 | 真 EC2 操作，留在发布流水线或人工 |
 

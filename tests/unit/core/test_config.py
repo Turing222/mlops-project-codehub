@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from backend.config.settings import Settings
 from backend.config.web_settings import DEFAULT_SECRET_KEY, get_web_settings
 from backend.core.secret_env import load_secret_env
-from scripts.qa.config_check import run_checks
+from scripts.qa.config_check import _check_secret_files, run_checks
 
 TEST_SECRET_KEY = "test-secret-key-with-at-least-32-chars"
 PROD_SECRET_KEY = "prod-secret-key-with-at-least-32-chars"
@@ -117,6 +117,19 @@ def test_tavily_api_key_loads_from_secret_file(
     settings = Settings(_env_file=None)
 
     assert settings.TAVILY_API_KEY == "tvly-secret-from-file"
+
+
+def test_check_secret_files_ignores_non_secret_env_file_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEPLOY_ENV_FILE", "deploy/.env.ec2")
+    monkeypatch.setenv("SMOKE_ENV_FILE", ".env.smoke")
+
+    result = _check_secret_files()
+
+    assert result.ok is True
+    assert "DEPLOY_ENV_FILE" not in result.detail
+    assert "SMOKE_ENV_FILE" not in result.detail
 
 
 def test_non_local_web_config_rejects_default_secret_key(

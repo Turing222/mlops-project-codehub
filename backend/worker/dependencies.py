@@ -106,7 +106,9 @@ class WorkerContainer:
         if self._rerank_init_failed:
             return None
         if self._rerank_service is None:
-            provider = ai_settings.RAG_RERANK_PROVIDER
+            provider = (ai_settings.RAG_RERANK_PROVIDER or "").strip()
+            if not provider or provider.lower() == "mock":
+                return None
             if provider:
                 try:
                     config = get_llm_model_config()
@@ -146,7 +148,11 @@ class WorkerContainer:
             )
             rerank_score_kind = "bifrost_rerank"
             config = get_llm_model_config()
-            if config.rerank_profiles and ai_settings.RAG_RERANK_PROVIDER:
+            if (
+                reranker is not None
+                and config.rerank_profiles
+                and ai_settings.RAG_RERANK_PROVIDER
+            ):
                 profile = config.resolve_rerank_profile(ai_settings.RAG_RERANK_PROVIDER)
                 rerank_score_kind = profile.effective_score_kind()
             self._rag_service = RAGService(

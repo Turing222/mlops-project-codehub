@@ -75,7 +75,7 @@ class FeatureFlagService:
             if self._growthbook_sdk_key == "sdk-dummy-key-for-development":
                 return self._features_cache
 
-            # 断路器打开时跳过 CDN 拉取（省去超时等待），直接沿用本地缓存。
+            # When OPEN, skip the CDN fetch (avoid timeout wait) and keep using the local cache.
             try:
                 await self._circuit.acquire()
             except AppException:

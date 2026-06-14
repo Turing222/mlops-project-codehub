@@ -12,7 +12,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-CJK_RE = re.compile(r"[㐀-䶿一-鿿豈-﫿]")
+CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 
 LEGACY_TEXT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (

@@ -7,10 +7,12 @@ Always prefix Python commands with `uv run` (backend; frontend commands go throu
 ```bash
 make flow-fast
 make flow-ci
+make flow-pr-preflight
 ```
 
-- `make flow-fast` is the default local monorepo check: backend static/unit/component checks plus `make frontend-check`.
+- `make flow-fast` is the default local monorepo check: backend static/unit/component checks plus `make frontend-check` (includes `qa-standards-fast`).
 - `make flow-ci` is the PR baseline: `flow-fast`, CI-safe backend integration tests, and frontend mock e2e.
+- `make flow-pr-preflight` mirrors `static-ci` + `pr-gate-ci` without Docker smoke; needs local Postgres and Redis.
 
 ## Backend Compatibility Aliases
 
