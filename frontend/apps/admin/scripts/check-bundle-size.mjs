@@ -43,13 +43,18 @@ const update = process.argv.includes('--update');
 const total = measureTotalGzipBytes();
 
 if (update) {
-    const existingTolerance = existsSync(baselinePath)
-        ? JSON.parse(readFileSync(baselinePath, 'utf8')).tolerancePercent
-        : undefined;
-    const tolerancePercent = Number.isFinite(existingTolerance)
-        ? existingTolerance
+    const existing = existsSync(baselinePath)
+        ? JSON.parse(readFileSync(baselinePath, 'utf8'))
+        : {};
+    const tolerancePercent = Number.isFinite(existing.tolerancePercent)
+        ? existing.tolerancePercent
         : DEFAULT_TOLERANCE_PERCENT;
     const baseline = { totalGzipBytes: total, tolerancePercent };
+    // absoluteMaxGzipBytes is a deliberate human-set ceiling; --update must never
+    // raise or drop it, otherwise repeated refreshes would erase the backstop.
+    if (Number.isFinite(existing.absoluteMaxGzipBytes)) {
+        baseline.absoluteMaxGzipBytes = existing.absoluteMaxGzipBytes;
+    }
     writeFileSync(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`, 'utf8');
     console.log(`Updated bundle baseline: ${formatKiB(total)} (${total} bytes).`);
     process.exit(0);
@@ -78,6 +83,19 @@ const floor = Math.round(baseline.totalGzipBytes * (1 - tolerancePercent / 100))
 console.log(
     `Bundle gzip total: ${formatKiB(total)} (baseline ${formatKiB(baseline.totalGzipBytes)}, limit ${formatKiB(limit)}).`,
 );
+
+// Absolute ceiling: a hard cap independent of the (refreshable) baseline. The
+// relative tolerance only catches single-step jumps; without an absolute backstop,
+// repeated `--update` refreshes could ratchet the budget up without bound.
+const absoluteMax = baseline.absoluteMaxGzipBytes;
+if (Number.isFinite(absoluteMax) && total > absoluteMax) {
+    console.error(
+        `Bundle gzip total ${formatKiB(total)} exceeds the absolute ceiling ${formatKiB(absoluteMax)}.`,
+    );
+    console.error('This cap is independent of the baseline; refreshing the baseline will NOT bypass it.');
+    console.error('Reduce bundle size, or deliberately raise absoluteMaxGzipBytes in bundle-baseline.json if the growth is truly justified.');
+    process.exit(1);
+}
 
 if (total > limit) {
     console.error(`Bundle gzip total exceeds the baseline by more than ${tolerancePercent}%.`);
