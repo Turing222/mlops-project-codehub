@@ -32,15 +32,9 @@ async def test_ci_postgres_service_is_reachable() -> None:
     # as connect_args — SSL is configured via connect_args instead.
     if "?" in url:
         url = url.split("?", 1)[0]
-    connect_args: dict[str, object] = {}
-    ssl_mode = (settings.POSTGRES_SSL_MODE or "").strip().lower()
-    if ssl_mode == "disable":
-        connect_args["ssl"] = False
-    elif ssl_mode == "require":
-        connect_args["ssl"] = True
     engine = create_async_engine(
         url,
-        connect_args=connect_args,
+        connect_args=settings.database_connect_args,
         pool_pre_ping=True,
     )
     try:

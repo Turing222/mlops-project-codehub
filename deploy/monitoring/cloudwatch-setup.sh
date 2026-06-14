@@ -10,12 +10,12 @@ require_cmd aws
 require_deploy_env_file
 load_deploy_env
 
-region="$(deploy_env_value "DEPLOY_AWS_REGION" "us-east-1")"
-log_group="$(deploy_env_value "DEPLOY_CW_LOG_GROUP" "/dewflow/prod")"
-metric_namespace="$(deploy_env_value "DEPLOY_CW_METRIC_NAMESPACE" "Dewflow/Logs")"
-topic_name="$(deploy_env_value "DEPLOY_ALERTS_SNS_TOPIC_NAME" "dewflow-prod-alerts")"
-topic_arn="$(deploy_env_value "DEPLOY_ALERTS_SNS_TOPIC_ARN" "")"
-alarm_period="$(deploy_env_value "DEPLOY_CW_ALARM_PERIOD_SECONDS" "300")"
+region="$(deploy_control_env_value "DEPLOY_AWS_REGION" "us-east-1")"
+log_group="$(deploy_control_env_value "DEPLOY_CW_LOG_GROUP" "/dewflow/prod")"
+metric_namespace="$(deploy_control_env_value "DEPLOY_CW_METRIC_NAMESPACE" "Dewflow/Logs")"
+topic_name="$(deploy_control_env_value "DEPLOY_ALERTS_SNS_TOPIC_NAME" "dewflow-prod-alerts")"
+topic_arn="$(deploy_control_env_value "DEPLOY_ALERTS_SNS_TOPIC_ARN" "")"
+alarm_period="$(deploy_control_env_value "DEPLOY_CW_ALARM_PERIOD_SECONDS" "300")"
 
 log_section "Configuring CloudWatch Logs alerts"
 

@@ -8,6 +8,7 @@ cd "$PROJECT_ROOT"
 
 require_cmd docker
 require_cmd curl
+require_cmd python3
 require_deploy_env_file
 
 deploy_env_path="$(resolve_project_path "$DEPLOY_ENV_FILE")"
@@ -96,6 +97,71 @@ selfhost_postgres_enabled() {
         esac
     done
     return 1
+}
+
+compose_config_services_use_awslogs() {
+    compose_deploy config --format json \
+        | python3 -c '
+import json
+import sys
+
+config = json.load(sys.stdin)
+for service in (config.get("services") or {}).values():
+    if (service.get("logging") or {}).get("driver") == "awslogs":
+        sys.exit(0)
+sys.exit(1)
+'
+}
+
+postgres_server_is_ip_address() {
+    local host="$1"
+
+    [[ "$host" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]
+}
+
+require_rds_hostname_for_verified_ssl() {
+    local postgres_server="$1"
+    local postgres_ssl_mode
+
+    postgres_ssl_mode="$(deploy_control_env_value "POSTGRES_SSL_MODE" "verify-full")"
+    postgres_ssl_mode="${postgres_ssl_mode,,}"
+
+    if [[ "$postgres_ssl_mode" != "verify-full" && "$postgres_ssl_mode" != "verify-ca" ]]; then
+        return 0
+    fi
+    if postgres_server_is_ip_address "$postgres_server"; then
+        log_error "POSTGRES_SERVER must be the RDS endpoint hostname for POSTGRES_SSL_MODE=${postgres_ssl_mode}"
+        log_info "verify-ca/verify-full validate the server certificate against the configured host name; do not use an IP address"
+        exit 1
+    fi
+}
+
+require_cloudwatch_log_group() {
+    local region
+    local log_group
+    local existing_log_group
+
+    region="$(deploy_control_env_value "DEPLOY_AWS_REGION" "us-east-1")"
+    log_group="$(deploy_control_env_value "DEPLOY_CW_LOG_GROUP" "/dewflow/prod")"
+
+    require_cmd aws
+    if ! existing_log_group="$(
+        aws logs describe-log-groups \
+            --region "$region" \
+            --log-group-name-prefix "$log_group" \
+            --query "logGroups[?logGroupName=='${log_group}'].logGroupName" \
+            --output text
+    )"; then
+        log_error "Unable to verify CloudWatch log group: $log_group"
+        log_info "Run 'make deploy-cloudwatch-setup' after confirming AWS credentials and region"
+        exit 1
+    fi
+
+    if ! grep -qx "$log_group" <<<"$existing_log_group"; then
+        log_error "CloudWatch log group does not exist: $log_group"
+        log_info "Run 'make deploy-cloudwatch-setup' before starting the EC2 deploy stack"
+        exit 1
+    fi
 }
 
 deploy_secret_file_allows_runtime_read() {
@@ -289,8 +355,12 @@ esac
 postgres_server="$(deploy_control_env_value "POSTGRES_SERVER" "")"
 if [[ "$postgres_server" == "postgres" ]] && ! selfhost_postgres_enabled; then
     log_error "POSTGRES_SERVER=postgres requires DEPLOY_EXTRA_COMPOSE_FILES=deploy/docker-compose.local-postgres.yml"
-    log_info "For production RDS, set POSTGRES_SERVER to the RDS endpoint and keep POSTGRES_SSL_MODE=require"
+    log_info "For production RDS, set POSTGRES_SERVER to the RDS endpoint and keep POSTGRES_SSL_MODE=verify-full"
     exit 1
+fi
+
+if [[ -n "$postgres_server" && "$postgres_server" != "postgres" ]]; then
+    require_rds_hostname_for_verified_ssl "$postgres_server"
 fi
 
 if [[ -z "$DOCKER_IMAGE_NAME_WEB" || -z "$DOCKER_IMAGE_NAME_AI" || -z "$DOCKER_IMAGE_NAME_FRONTEND" ]]; then
@@ -329,7 +399,9 @@ require_non_empty_deploy_secret_file "DEPLOY_POSTGRES_PASSWORD_FILE" "POSTGRES_P
 require_non_empty_deploy_secret_file "DEPLOY_REDIS_PASSWORD_FILE" "REDIS_PASSWORD"
 require_bifrost_runtime_secrets
 
-compose_deploy config >/dev/null
+if compose_config_services_use_awslogs; then
+    require_cloudwatch_log_group
+fi
 
 log_info "Deploy env file: $deploy_env_path"
 log_info "Deploy compose file: $deploy_compose_path"

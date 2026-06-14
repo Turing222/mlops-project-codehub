@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import ssl
 from pathlib import Path
 
 import pytest
@@ -396,6 +397,91 @@ def test_database_url_overrides_postgres_parts(
     assert "rdc.example.com" in settings.database_url
     assert "localhost" not in settings.database_url
     assert "db-pass" not in settings.database_url_safe
+
+
+def test_database_connect_args_verify_full_uses_ssl_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
+
+    settings = Settings(_env_file=None, POSTGRES_SSL_MODE="verify-full")
+
+    ssl_arg = settings.database_connect_args["ssl"]
+    assert isinstance(ssl_arg, ssl.SSLContext)
+    assert ssl_arg.check_hostname is True
+    assert ssl_arg.verify_mode == ssl.CERT_REQUIRED
+
+
+def test_database_connect_args_verify_ca_disables_hostname_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
+
+    settings = Settings(_env_file=None, POSTGRES_SSL_MODE="verify-ca")
+
+    ssl_arg = settings.database_connect_args["ssl"]
+    assert isinstance(ssl_arg, ssl.SSLContext)
+    assert ssl_arg.check_hostname is False
+    assert ssl_arg.verify_mode == ssl.CERT_REQUIRED
+
+
+def test_empty_postgres_ssl_root_cert_file_normalizes_to_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
+
+    settings = Settings(_env_file=None, POSTGRES_SSL_ROOT_CERT_FILE="")
+
+    assert settings.POSTGRES_SSL_ROOT_CERT_FILE is None
+
+
+def test_postgres_ssl_root_cert_file_must_exist_for_verify_full(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
+    missing_cert = tmp_path / "missing-rds-ca.pem"
+
+    with pytest.raises(ValueError, match="POSTGRES_SSL_ROOT_CERT_FILE"):
+        Settings(
+            _env_file=None,
+            POSTGRES_SSL_MODE="verify-full",
+            POSTGRES_SSL_ROOT_CERT_FILE=missing_cert,
+        )
+
+
+def test_database_connect_args_verify_full_uses_custom_ca_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    ca_file = tmp_path / "rds-ca.pem"
+    ca_file.write_text("dummy-ca-bundle\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_create_default_context(
+        purpose: ssl.Purpose,
+        *,
+        cafile: str | None = None,
+    ) -> ssl.SSLContext:
+        captured["cafile"] = cafile
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_REQUIRED
+        return context
+
+    monkeypatch.setenv("SECRET_KEY", TEST_SECRET_KEY)
+    monkeypatch.setattr(ssl, "create_default_context", fake_create_default_context)
+
+    settings = Settings(
+        _env_file=None,
+        POSTGRES_SSL_MODE="verify-full",
+        POSTGRES_SSL_ROOT_CERT_FILE=ca_file,
+    )
+
+    ssl_arg = settings.database_connect_args["ssl"]
+    assert isinstance(ssl_arg, ssl.SSLContext)
+    assert captured["cafile"] == str(ca_file)
+    assert ssl_arg.check_hostname is True
 
 
 def test_cors_empty_string_parses_to_empty_list(
