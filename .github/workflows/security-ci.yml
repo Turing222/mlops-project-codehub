@@ -110,7 +110,7 @@ jobs:
           sudo apt-get install -y trivy
 
       - name: Scan backend web image
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: dewflow-backend:security-web
           vuln-type: "os,library"
@@ -124,7 +124,7 @@ jobs:
         run: docker build --target worker -t dewflow-backend:security-worker .
 
       - name: Scan backend worker image
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: dewflow-backend:security-worker
           vuln-type: "os,library"
@@ -144,7 +144,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
         with:
           package_json_file: frontend/package.json
 
@@ -185,7 +185,7 @@ jobs:
           sudo apt-get install -y trivy
 
       - name: Scan frontend fallback image
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: dewflow-frontend:security
           vuln-type: "os,library"
