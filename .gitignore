@@ -56,6 +56,7 @@ postgres_data/
 redis_data/
 *.log
 .logs/
+.tmp/
 
 #密钥 & SSL 证书（私钥绝不能入库）
 deploy/nginx/ssl/

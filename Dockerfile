@@ -60,6 +60,11 @@ COPY backend/ ./backend/
 # ──────────────────────────────────────────
 FROM python:3.12-slim AS web
 
+RUN apt-get update \
+    && apt-get -y upgrade --no-install-recommends \
+        libssl3t64 openssl openssl-provider-legacy \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd -g 10001 appgroup && \
     useradd -r -u 10001 -g appgroup appuser
 
@@ -97,6 +102,11 @@ CMD ["sh", "-c", "exec uvicorn backend.main:app \
 # Stage 3b: Worker Runtime (taskiq)
 # ──────────────────────────────────────────
 FROM python:3.12-slim AS worker
+
+RUN apt-get update \
+    && apt-get -y upgrade --no-install-recommends \
+        libssl3t64 openssl openssl-provider-legacy \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -g 10001 appgroup && \
     useradd -r -u 10001 -g appgroup appuser

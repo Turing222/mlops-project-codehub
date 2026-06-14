@@ -304,6 +304,16 @@ make flow-ci
 
 含 Docker smoke 的较大改动验证仍用 `make flow-dev-check` 或 `make flow-local`。
 
+发版前或依赖/镜像改动后的完整本地安全验证：
+
+```bash
+make security-scan-fast    # 仅 lockfile 审计，~1 分钟
+make security-scan-full    # 再加三镜像 Trivy，需 Docker + trivy
+make flow-local-full       # flow-local + security-scan-full + performance/LLM
+```
+
+`security-scan-fast` 对齐 `security-ci.yml` 的依赖 job；Python dev 组发现问题只告警不阻断（与 CI `continue-on-error` 一致）。镜像扫描需先安装 [Trivy](https://aquasecurity.github.io/trivy/)（CI 用 apt 源）。
+
 ### 较大改动验证
 
 适用于改动范围较大、影响多个模块时：

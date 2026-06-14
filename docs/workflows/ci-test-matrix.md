@@ -72,6 +72,8 @@ flowchart TB
 | 准生产 up/wait/verify | `make deploy-local-prod-*` | **计划** `deploy-local-prod-rehearsal-ci`（P3） | **否**（定时 + 告警） |
 | compose 静态校验 | `make deploy-local-prod-check`（部分） | `deploy-validate-ci.yml` | PR path（deploy/**） |
 | Pages 发布后契约 | `make verify-pages` | `post-deploy-pages-verify.yml` | 发布后自动（非合并门禁） |
+| 依赖安全审计 | `make security-scan-fast` | `security-ci.yml` → Python / Frontend dependencies | **否** |
+| 镜像漏洞扫描 | `make security-scan-images` | `security-ci.yml` → Backend / Frontend image scan | **否** |
 
 ### 本地专用、CI 不复制
 
@@ -79,7 +81,9 @@ flowchart TB
 |------|------|
 | `make flow-local` | 本地聚合；日志落盘见 `scripts/flow/local_check.sh` |
 | `make flow-pr-preflight` | 开 PR 前预演 static-ci + pr-gate（无 Docker smoke） |
-| `make flow-local-full` | 含 performance / LLM 可选套件 |
+| `make flow-local-full` | `flow-local` + `security-scan-full` + performance / LLM 可选套件 |
+| `make security-scan-fast` | 依赖审计（Python prod strict + frontend audit，~1 min） |
+| `make security-scan-full` | `security-scan-fast` + 三镜像 Trivy 扫描（需 Docker + trivy） |
 | `make deploy-ec2-up` 等 | 真 EC2 操作，留在发布流水线或人工 |
 
 ---

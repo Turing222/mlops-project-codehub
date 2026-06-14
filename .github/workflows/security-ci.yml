@@ -49,7 +49,7 @@ jobs:
           uv export \
             --frozen \
             --all-extras \
-            --all-groups \
+            --no-default-groups \
             --no-emit-project \
             --no-emit-workspace \
             --no-hashes \
@@ -61,6 +61,28 @@ jobs:
         run: >
           python -m pip_audit
           --requirement .tmp/security/requirements.txt
+          --strict
+          --progress-spinner off
+          --desc
+          --aliases
+
+      - name: Export dev Python dependencies
+        run: |
+          uv export \
+            --frozen \
+            --only-group dev \
+            --no-emit-project \
+            --no-emit-workspace \
+            --no-hashes \
+            --format requirements.txt \
+            --output-file .tmp/security/requirements-dev.txt \
+            > /dev/null
+
+      - name: Audit dev Python dependencies
+        continue-on-error: true
+        run: >
+          python -m pip_audit
+          --requirement .tmp/security/requirements-dev.txt
           --strict
           --progress-spinner off
           --desc
@@ -78,6 +100,15 @@ jobs:
       - name: Build backend web image
         run: docker build --target web -t dewflow-backend:security-web .
 
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
       - name: Scan backend web image
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
@@ -87,6 +118,7 @@ jobs:
           ignore-unfixed: true
           format: table
           exit-code: "1"
+          skip-setup-trivy: true
 
       - name: Build backend worker image
         run: docker build --target worker -t dewflow-backend:security-worker .
@@ -100,6 +132,7 @@ jobs:
           ignore-unfixed: true
           format: table
           exit-code: "1"
+          skip-setup-trivy: true
 
   frontend-dependencies:
     name: Frontend dependency scan
@@ -142,6 +175,15 @@ jobs:
       - name: Build frontend fallback image
         run: docker build -f frontend/apps/admin/Dockerfile -t dewflow-frontend:security .
 
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
       - name: Scan frontend fallback image
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
@@ -151,3 +193,4 @@ jobs:
           ignore-unfixed: true
           format: table
           exit-code: "1"
+          skip-setup-trivy: true

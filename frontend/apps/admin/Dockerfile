@@ -18,7 +18,8 @@ RUN pnpm --dir frontend --filter admin build
 
 FROM nginx:1.30.1-alpine
 
-RUN rm /etc/nginx/conf.d/default.conf \
+RUN apk upgrade --no-cache libcrypto3 libssl3 libxml2 \
+    && rm /etc/nginx/conf.d/default.conf \
     && mkdir -p /tmp/nginx/client_temp /tmp/nginx/proxy_temp /tmp/nginx/fastcgi_temp /tmp/nginx/uwsgi_temp /tmp/nginx/scgi_temp \
     && chown -R 101:101 /tmp/nginx /usr/share/nginx/html /var/cache/nginx /var/log/nginx
 

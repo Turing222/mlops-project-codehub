@@ -165,6 +165,8 @@
 - `flow-dev-check`
 - `flow-ci`
 - `flow-pr-preflight`
+- `security-scan-fast`
+- `security-scan-full`
 
 命名原则：
 

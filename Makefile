@@ -114,6 +114,7 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 	set-llm seed-dev \
 	pr-report ci-bootstrap-github-gate \
 	verify-smoke verify-pages \
+	security-scan-deps security-scan-images security-scan-fast security-scan-full \
 	flow-static flow-runtime flow-dev-check \
 	flow-fast flow-pr-preflight flow-local flow-local-log flow-local-full flow-ci \
 	lint format typecheck test check clean-cache
@@ -189,6 +190,10 @@ help:
 		'  ci-bootstrap-github-gate  Bootstrap GitHub secrets/vars and optional branch protection (needs gh)' \
 		'  verify-smoke         Run smoke HTTP checks against the running stack' \
 		'  verify-pages         Run Cloudflare Pages release checks against public origins' \
+		'  security-scan-deps   Audit Python + frontend lockfiles (mirrors security-ci deps)' \
+		'  security-scan-images Build release images and run Trivy HIGH/CRITICAL scan' \
+		'  security-scan-fast   Alias for security-scan-deps (~1 min)' \
+		'  security-scan-full   security-scan-deps + security-scan-images' \
 		'  env-smoke-down       Stop the smoke environment' \
 		'  env-smoke-logs       Show recent smoke logs' \
 		'  flow-static          Run L1 static checks and deterministic tests' \
@@ -198,7 +203,7 @@ help:
 		'  flow-fast            Quick feedback: backend static + unit + component; frontend check' \
 		'  flow-local           Full local verify with per-step logs under logs/flow-local/' \
 		'  flow-local-log       Alias for flow-local (same script, log artifacts enabled)' \
-		'  flow-local-full      flow-local + performance tests; runs LLM tests when present' \
+		'  flow-local-full      flow-local + security-scan-full + performance/LLM suites' \
 		'  flow-ci              PR gate baseline: flow-fast + integration (CI env) + e2e-mock'
 
 qa-lint:
@@ -453,6 +458,17 @@ verify-smoke:
 verify-pages:
 	bash scripts/deploy/pages-verify.sh
 
+security-scan-deps:
+	bash scripts/security/scan_deps.sh
+
+security-scan-images:
+	bash scripts/security/scan_images.sh
+
+security-scan-fast: security-scan-deps
+
+security-scan-full:
+	bash scripts/security/scan.sh full
+
 flow-static:
 	$(MAKE) qa-lint
 	$(MAKE) qa-format-check
@@ -501,8 +517,9 @@ flow-local:
 
 flow-local-log: flow-local
 
-# flow-local-full: full local verify plus performance tests; LLM tests run when present
+# flow-local-full: full local verify plus security scans and optional performance/LLM suites
 flow-local-full: flow-local
+	$(MAKE) security-scan-full
 	bash scripts/qa/run_with_smoke_env.sh uv run pytest -m "requires_llm" $(PYTEST_ARGS); status=$$?; if [ $$status -eq 5 ]; then echo "No requires_llm tests are currently collected; skipping optional LLM suite."; elif [ $$status -ne 0 ]; then exit $$status; fi
 	bash scripts/qa/run_with_smoke_env.sh uv run pytest -m "performance" $(PYTEST_ARGS)
 
