@@ -50,7 +50,7 @@
 对应文件：
 
 - `frontend/apps/admin/nginx.conf`
-- `frontend/apps/admin/Dockerfile`
+- `frontend/apps/admin/Dockerfile`（runtime 基座：`nginx:1.30.1-alpine`，与 `api-nginx` 共用同一钉版 tag）
 
 当前仍保留的用途：
 

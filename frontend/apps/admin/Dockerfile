@@ -16,7 +16,7 @@ COPY frontend/apps/admin/ frontend/apps/admin/
 
 RUN pnpm --dir frontend --filter admin build
 
-FROM nginx:1.27.5-bookworm
+FROM nginx:1.30.1-alpine
 
 RUN rm /etc/nginx/conf.d/default.conf \
     && mkdir -p /tmp/nginx/client_temp /tmp/nginx/proxy_temp /tmp/nginx/fastcgi_temp /tmp/nginx/uwsgi_temp /tmp/nginx/scgi_temp \

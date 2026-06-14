@@ -630,6 +630,29 @@ API P99、5xx 错误率、Redis 内存、Postgres 连接数这类指标告警不
 
 ## 钉版基础设施镜像核查
 
+### 当前 nginx 钉版
+
+仓库内 nginx 仅用于反向代理（`proxy_pass` / 静态 SPA fallback），不使用 `rewrite`、njs 或 HTTP/3 模块。`api-nginx` 与 frontend fallback runtime **共用同一 tag**，升级时需同步修改以下位置：
+
+| 用途 | 镜像 tag | 定义位置 |
+| --- | --- | --- |
+| EC2 API edge (`api-nginx`) | `nginx:1.30.1-alpine` | `deploy/docker-compose.yml` |
+| frontend fallback runtime | `nginx:1.30.1-alpine` | `frontend/apps/admin/Dockerfile` |
+| CI `nginx -t` 校验 | `nginx:1.30.1-alpine` | `.github/workflows/deploy-validate-ci.yml` |
+
+收到 nginx OSS / F5 安全公告时：先对照 advisory 检查上述配置是否触发 exploit 条件，再将 tag 升到修复版，跑 `nginx -t`、frontend 镜像 build 和 `make deploy-ec2-check`，最后在 EC2 上 `docker compose pull api-nginx && docker compose up -d api-nginx`；只有启用 `frontend-fallback` profile 时才需要 rebuild 并更新 `DOCKER_IMAGE_NAME_FRONTEND`。
+
+### 当前 Redis / PostgreSQL / MinIO 钉版
+
+| 组件 | 镜像 tag | 定义位置 |
+| --- | --- | --- |
+| Redis（生产 / 本地 / CI） | `redis:7.4.9-alpine` | `deploy/docker-compose.yml`, `docker-compose.db.yml`, `deploy/k8s/local-scaling/redis.yaml`, CI workflows |
+| pgvector + PostgreSQL 17（本地 / CI） | `pgvector/pgvector:0.8.2-pg17-bookworm` | `docker-compose.db.yml`, `deploy/docker-compose.local-postgres.yml`, CI workflows |
+| MinIO（本地 smoke / 演练） | `quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z` | `docker-compose.db.yml`, `deploy/docker-compose.local-s3.yml` |
+| MinIO client | `quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z` | `docker-compose.db.yml`, `deploy/docker-compose.local-s3.yml` |
+
+生产数据库默认走 RDS；pgvector 镜像只用于本地 fallback 与 CI。升级 Redis / pgvector / MinIO 时，保持 compose、CI service 与上表同步，再跑 `make deploy-ec2-check` 或对应 CI workflow。
+
 Dependabot 的 `docker` ecosystem 主要覆盖 Dockerfile,不会完整跟踪 compose 中的钉版基础设施镜像。当前先采用季度人工核查,后续如果人工流程开始漏检,再接入 Renovate 的 docker-compose manager。
 
 每季度至少检查一次以下范围：
