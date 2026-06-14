@@ -107,6 +107,7 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-skill-check qa-standards-fast qa-claude-fast qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	frontend-lint frontend-typecheck frontend-test frontend-build frontend-bundle-check frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all release-check-clean image-build-release frontend-image-build-release image-build-all-release release-image-env release-tag \
+	docker-prune-stale-infra \
 		deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down deploy-cloudwatch-setup \
 	deploy-local-prod-secrets-prepare deploy-local-prod-check deploy-local-prod-up deploy-local-prod-wait deploy-local-prod-verify deploy-local-prod-logs deploy-local-prod-down \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-up-debug env-smoke-wait env-smoke-down env-smoke-logs \
@@ -162,11 +163,12 @@ help:
 		'  image-build-release  Build backend images tagged with IMAGE_TAG' \
 		'  frontend-image-build-release  Build frontend fallback image tagged with IMAGE_TAG' \
 		'  image-build-all-release       Build all release-tagged images' \
+		'  docker-prune-stale-infra Remove superseded infra and ephemeral local images' \
 		'  release-image-env    Print DOCKER_IMAGE_NAME_* values for deploy/.env.ec2' \
 		'  release-tag          Tag current commit v<VERSION> from configs/app/base.yaml' \
 		'  deploy-ec2-secrets-prepare  Create EC2 deploy secret files under secrets/ec2' \
 		'  deploy-ec2-check     Validate EC2 deploy env and compose config' \
-		'  deploy-ec2-up        Pull images and start the EC2 deploy stack' \
+		'  deploy-ec2-up        Pull pinned infra images and start the EC2 deploy stack' \
 		'  deploy-ec2-wait      Wait until the EC2 deploy endpoints are reachable' \
 			'  deploy-ec2-verify    Run remote-safe smoke checks against the EC2 deploy stack' \
 			'  deploy-ec2-logs      Show recent EC2 deploy logs' \
@@ -323,6 +325,9 @@ frontend-image-build-release: release-check-clean
 	DOCKER_IMAGE_NAME_FRONTEND="$(RELEASE_DOCKER_IMAGE_NAME_FRONTEND)" $(MAKE) frontend-image-build
 
 image-build-all-release: image-build-release frontend-image-build-release
+
+docker-prune-stale-infra:
+	bash scripts/image/prune_stale_infra.sh
 
 release-image-env: release-check-clean
 	@printf '%s\n' \

@@ -326,6 +326,37 @@ compose_smoke() {
     SMOKE_ENV_FILE="$smoke_env_path" docker compose --env-file "$smoke_env_path" -f "$SMOKE_COMPOSE_FILE" "${profile_args[@]}" "$@"
 }
 
+resolve_smoke_registry_services() {
+    local -a services=(postgres redis knowledge_storage_init)
+    local smoke_env_path
+    local llm_provider
+    local storage_backend
+
+    smoke_env_path="$(resolve_project_path "$SMOKE_ENV_FILE")"
+    if [[ ! -f "$smoke_env_path" ]]; then
+        printf '%s\n' "${services[@]}"
+        return
+    fi
+
+    llm_provider="$(smoke_env_value "LLM_PROVIDER" "")"
+    storage_backend="$(smoke_env_value "STORAGE_BACKEND" "local")"
+    if llm_needs_bifrost_profile "$llm_provider"; then
+        services+=(bifrost)
+    fi
+    if storage_needs_s3_profile "$storage_backend"; then
+        services+=(minio minio_init)
+    fi
+
+    printf '%s\n' "${services[@]}"
+}
+
+compose_smoke_pull_registry() {
+    local -a services=()
+    mapfile -t services < <(resolve_smoke_registry_services)
+    log_info "Pulling smoke registry images: ${services[*]}"
+    compose_smoke pull "${services[@]}"
+}
+
 require_deploy_env_file() {
     local deploy_env_path
     deploy_env_path="$(resolve_project_path "$DEPLOY_ENV_FILE")"
@@ -634,6 +665,47 @@ compose_deploy() {
     fi
 
     DEPLOY_SERVICE_ENV_FILE="$deploy_env_path" docker compose --env-file "$deploy_env_path" "${compose_file_args[@]}" "${profile_args[@]}" "$@"
+}
+
+resolve_deploy_registry_services() {
+    local -a services=(redis api-nginx)
+    local extra_compose_file
+    local base_name
+    local provider_var
+    local provider_value
+
+    for extra_compose_file in $DEPLOY_EXTRA_COMPOSE_FILES; do
+        base_name="$(basename "$extra_compose_file")"
+        case "$base_name" in
+            docker-compose.local-postgres.yml)
+                services+=(postgres)
+                ;;
+            docker-compose.local-s3.yml)
+                services+=(minio minio_init)
+                ;;
+        esac
+    done
+
+    if [[ "${DEPLOY_ENABLE_BIFROST:-false}" == "true" ]]; then
+        services+=(bifrost)
+    else
+        for provider_var in LLM_PROVIDER LLM_MODEL_ROUTE_FAST_PROVIDER LLM_MODEL_ROUTE_BALANCED_PROVIDER LLM_MODEL_ROUTE_REASONING_PROVIDER RAG_EMBED_PROVIDER RAG_PLANNER_PROVIDER RAG_RERANK_PROVIDER; do
+            provider_value="$(deploy_control_env_value "$provider_var" "")"
+            if provider_needs_bifrost_profile "$provider_value"; then
+                services+=(bifrost)
+                break
+            fi
+        done
+    fi
+
+    printf '%s\n' "${services[@]}"
+}
+
+compose_deploy_pull_registry() {
+    local -a services=()
+    mapfile -t services < <(resolve_deploy_registry_services)
+    log_info "Pulling deploy registry images: ${services[*]}"
+    compose_deploy pull "${services[@]}"
 }
 
 print_smoke_logs() {
