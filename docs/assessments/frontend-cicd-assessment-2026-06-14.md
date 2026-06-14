@@ -2,7 +2,7 @@
 
 > 评估范围：`frontend/apps/admin` 在 `.github/workflows/` 中的 CI 覆盖，以及 Cloudflare Pages 交付（CD）模型。
 > 证据基线：分支 `feat/frontend-v1`，workflow 文件、`Makefile` frontend targets、`docs/platform/frontend-delivery-and-edge-responsibilities.md`、`docs/platform/deploy-ec2.md`。
-> 本文为只读评估的落盘结论，不修改任何 CI/CD 配置。
+> 本文记录评估结论与 §8/§9 的落地设计；对应 workflow / Makefile / 前端测试配置变更见同文档后续章节与 Change Summary。
 
 ## 1. 拓扑概览
 
@@ -212,7 +212,7 @@ jobs:
 
 ### 8.2 R2 — 对真实后端的前端 e2e-smoke 门禁
 
-**smoke 的真实运行模型（已核实）**：`make frontend-e2e-smoke` → Playwright（`E2E_SMOKE=1`，project=smoke）→ 启本地 Vite dev server(5173) → 用 `E2E_SMOKE_USER/PASS` 调 `/api/v1/auth/login`（`fixtures/smoke-auth.ts`）→ 跑 `real-login / real-chat / real-credits`。因此 CI 需要：**一个真实后端 + 一个可登录的 smoke 用户**。
+**smoke 的真实运行模型（已核实）**：`make frontend-e2e-smoke` → Playwright（`E2E_SMOKE=1`，project=smoke）→ 启本地 Vite dev server(5173) → 用 `E2E_SMOKE_USER/PASS` 调 `/api/v1/auth/login`（`fixtures/smoke-auth.ts`）→ 跑 `real-login / real-chat / real-credits`。因此 CI 需要：**真实后端 API + TaskIQ worker**（`real-chat` 的流式 chunk 由 worker 经 Redis 发布）+ **可登录的 smoke 用户**。Fork PR 读不到 repository secrets，workflow 会 skip。
 
 **前置依赖（生效前必须补齐）**：
 1. **smoke 凭据 secret**：`scripts/seed/dev_seed.py` 造的 `seed_member` 共用常量 `SEED_PASSWORD = "SeedPass123!"`。在仓库 Settings → Secrets 配 `E2E_SMOKE_USER=seed_member`、`E2E_SMOKE_PASS=SeedPass123!`，并与 seed 脚本保持同步（脚本改密码时同步改 secret）。
@@ -304,11 +304,15 @@ jobs:
       - name: Seed smoke user
         run: make seed-dev
 
-      - name: Launch backend API on :8000
+      - name: Launch backend API and TaskIQ worker
         run: |
           uv run uvicorn backend.main:app --host 127.0.0.1 --port 8000 \
             > /tmp/api.log 2>&1 &
-          echo "API_PID=$!" >> "$GITHUB_ENV"
+          uv run taskiq worker backend.infra.task_broker:broker \
+            backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks \
+            backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks \
+            --workers 1 \
+            > /tmp/worker.log 2>&1 &
 
       - name: Wait for API health
         run: |
@@ -319,6 +323,18 @@ jobs:
             sleep 2
           done
           echo "::error::API 未在超时内就绪"; cat /tmp/api.log; exit 1
+
+      - name: Wait for TaskIQ worker
+        env:
+          TASKIQ_HEALTH_MIN_PROCESSES: "1"
+        run: |
+          for i in $(seq 1 30); do
+            if uv run python -m backend.worker.tasks.healthcheck; then
+              echo "TaskIQ worker up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::TaskIQ worker 未在超时内就绪"; cat /tmp/worker.log; exit 1
 
       # ---- 前端：装依赖 → 装 Chromium → 跑 smoke ----
       - name: Set up pnpm
@@ -358,6 +374,10 @@ jobs:
       - name: Dump API log on failure
         if: failure()
         run: cat /tmp/api.log || true
+
+      - name: Dump worker log on failure
+        if: failure()
+        run: cat /tmp/worker.log || true
 ```
 
 **与现有 workflow 的关系**：

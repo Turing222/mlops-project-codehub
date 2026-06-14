@@ -1,5 +1,12 @@
 import { defineConfig } from '@playwright/test';
 
+const baseURL = process.env.E2E_BASE_URL || 'http://localhost:5173';
+// Boot the local Vite dev server only when targeting localhost. When E2E_BASE_URL
+// points at an already-deployed origin (e.g. post-deploy smoke against Cloudflare
+// Pages), there is nothing to launch locally.
+const useLocalServer =
+  baseURL.includes('localhost') || baseURL.includes('127.0.0.1');
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
@@ -10,7 +17,7 @@ export default defineConfig({
   timeout: 30000,
   expect: { timeout: 10000 },
   use: {
-    baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173',
+    baseURL,
     locale: 'zh-CN',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
@@ -26,10 +33,12 @@ export default defineConfig({
       workers: 1,
     },
   ],
-  webServer: {
-    command: 'pnpm --filter admin dev',
-    port: 5173,
-    reuseExistingServer: !process.env.CI,
-    timeout: 30000,
-  },
+  webServer: useLocalServer
+    ? {
+        command: 'pnpm --filter admin dev',
+        port: 5173,
+        reuseExistingServer: !process.env.CI,
+        timeout: 30000,
+      }
+    : undefined,
 });

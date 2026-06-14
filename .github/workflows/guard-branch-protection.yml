@@ -1,0 +1,63 @@
+name: Guard Branch Protection
+
+# Cloudflare Pages 在 push 到 production branch 时立即部署，且不看 GitHub CI 结果。
+# 因此部署 gate 只能落在合并时的 branch protection required checks 上。该配置在仓库外、
+# 无法 review —— 本 workflow 定期回读 main 的 required checks，缺失即 fail，把“闸还在不在”
+# 变成可观测信号。详见 docs/assessments/frontend-cicd-assessment-2026-06-14.md §8.1 与 docs/platform/deploy-ec2.md:82。
+
+on:
+  schedule:
+    - cron: "0 8 * * 1" # 周一 08:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-required-checks:
+    name: Verify main required checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Assert required status checks on main
+        env:
+          # 默认 GITHUB_TOKEN 无权读取 branch protection；需一个仅授 Administration:Read
+          # 的 fine-grained PAT，存为 secret BRANCH_PROTECTION_READ_TOKEN。
+          GH_TOKEN: ${{ secrets.BRANCH_PROTECTION_READ_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # 期望的 required checks —— 与 docs/platform/deploy-ec2.md 的部署 gate 清单保持同源。
+          expected='Backend static
+          Frontend static
+          PR gate'
+
+          # 读取 classic branch protection 的 required status checks（合并 checks 与 legacy contexts）。
+          actual="$(gh api "repos/$REPO/branches/main/protection/required_status_checks" \
+            --jq '([.checks[]?.context] + (.contexts // [])) | unique | .[]' 2>/dev/null || true)"
+
+          if [ -z "$actual" ]; then
+            echo "::error::main 上没有 required status checks（branch protection 缺失，或 token 无 Administration:Read）。"
+            echo "::error::任何直推 main 的代码会在 CI 出结果前就发布到生产 Pages。"
+            exit 1
+          fi
+
+          echo "当前已配置的 required checks："
+          echo "$actual" | sed 's/^/  - /'
+
+          missing=0
+          while IFS= read -r ctx; do
+            ctx="$(echo "$ctx" | sed 's/^[[:space:]]*//')"
+            [ -z "$ctx" ] && continue
+            if ! grep -Fxq "$ctx" <<<"$actual"; then
+              echo "::error::缺少必需的 required check：$ctx"
+              missing=1
+            fi
+          done <<<"$expected"
+
+          exit "$missing"
+
+# rulesets 变体：若用 rulesets 而非 classic protection，把上面的 gh api 调用替换为
+#   gh api "repos/$REPO/rulesets" --jq '.[] | select(.target=="branch") | .name'
+# 再按需读取单个 ruleset 的 required_status_checks 规则。

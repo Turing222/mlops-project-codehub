@@ -1,0 +1,55 @@
+name: Post-Deploy Pages Verify
+
+# Cloudflare Pages 发布后自动校验 release 边界契约（CORS、CSP report-only header、
+# telemetry / CSP report origin 守卫）。把原先纯手动的 `make verify-pages` 自动化，
+# 关上 R3 缺口。脚本是 split-origin 感知的 bash+curl，无需 Node/Python。
+# 详见 docs/assessments/frontend-cicd-assessment-2026-06-14.md §8.3。
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      frontend_base_url:
+        description: "Frontend (Pages) base URL, e.g. https://app.example.com"
+        required: true
+      api_base_url:
+        description: "API base URL, e.g. https://api.example.com"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post-deploy-verify-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify-pages:
+    # Cloudflare Pages 通过 GitHub Deployments 上报状态。仅在生产环境部署成功后运行，
+    # 或手动触发。注意：Cloudflare 的 environment 命名（Production / production）需在首个
+    # 真实 deployment_status payload 上确认，必要时调整下面的过滤。
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       (github.event.deployment_status.environment == 'production' ||
+        github.event.deployment_status.environment == 'Production'))
+    name: Verify Pages release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      # 手动触发用 inputs；deployment_status 触发用仓库 Variables（Settings → Variables）。
+      DEPLOY_FRONTEND_BASE_URL: ${{ github.event.inputs.frontend_base_url || vars.DEPLOY_FRONTEND_BASE_URL }}
+      DEPLOY_BASE_URL: ${{ github.event.inputs.api_base_url || vars.DEPLOY_BASE_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Verify Pages edge contract
+        run: |
+          if [ -z "$DEPLOY_FRONTEND_BASE_URL" ] || [ -z "$DEPLOY_BASE_URL" ]; then
+            echo "::error::需要设置仓库 Variables DEPLOY_FRONTEND_BASE_URL 与 DEPLOY_BASE_URL（或用 workflow_dispatch inputs）。"
+            exit 1
+          fi
+          make verify-pages
