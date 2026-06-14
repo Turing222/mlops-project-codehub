@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { ensureDailyCheckinOnCreditsPage } from '../../fixtures/smoke-credits';
 import { seedSmokeAuthState } from '../../fixtures/smoke-auth';
 
 test.skip(() => !process.env.E2E_SMOKE, 'Requires running backend (set E2E_SMOKE=1)');
@@ -26,18 +27,8 @@ test.describe('Real backend: Credits Center', () => {
     await expect(page.getByText('本月签到记录', { exact: true })).toBeVisible();
     await expect(page.getByText('收支明细', { exact: true })).toBeVisible();
 
-    // 4. Click Check In if available
-    const checkinBtn = page.getByRole('button', { name: '签到领积分' });
-    const checkedBadge = page.locator('text=今日已签到');
-
-    if (await checkinBtn.isVisible()) {
-      await checkinBtn.click();
-      // Verify successful checkin message and state change
-      await expect(checkedBadge).toBeVisible({ timeout: 10000 });
-    } else {
-      // Already checked in today (from previous test run or seed data)
-      await expect(checkedBadge).toBeVisible();
-    }
+    // 4. Ensure daily check-in (idempotent across repeated smoke runs)
+    await ensureDailyCheckinOnCreditsPage(page);
 
     // 5. Verify transaction log contains the checkin record
     await expect(page.locator('text=每日签到').first()).toBeVisible();

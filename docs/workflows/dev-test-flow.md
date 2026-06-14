@@ -5,6 +5,7 @@
 配套的工程化分层标准见：
 
 - [automation-standard.md](../standards/automation-standard.md)
+- [ci-test-matrix.md](ci-test-matrix.md) — 本地命令与 CI workflow 的分层对照、合并门禁终态（长期设计）
 
 ## 1. 目标
 

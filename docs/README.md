@@ -70,6 +70,7 @@ docs/
 | 文档 | 说明 |
 |------|------|
 | [dev-test-flow.md](workflows/dev-test-flow.md) | 从改代码到 smoke 验证的推荐顺序 |
+| [ci-test-matrix.md](workflows/ci-test-matrix.md) | 本地验证 ↔ CI 分层矩阵、合并门禁与分期路线图 |
 | [static-test-node.md](workflows/static-test-node.md) | 静态检查与验证节点说明 |
 
 关联入口：[../tests/README.md](../tests/README.md)、[../tests/CONVENTIONS.md](../tests/CONVENTIONS.md)

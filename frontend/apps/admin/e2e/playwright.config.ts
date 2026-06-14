@@ -31,6 +31,7 @@ export default defineConfig({
       name: 'smoke',
       testDir: './tests/smoke',
       workers: 1,
+      timeout: 60_000,
     },
   ],
   webServer: useLocalServer

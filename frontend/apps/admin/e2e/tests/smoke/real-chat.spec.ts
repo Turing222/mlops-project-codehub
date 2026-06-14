@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { ensureDailyCheckinOnCreditsPage } from '../../fixtures/smoke-credits';
 import { seedSmokeAuthState } from '../../fixtures/smoke-auth';
 
 test.skip(() => !process.env.E2E_SMOKE, 'Requires running backend (set E2E_SMOKE=1)');
@@ -11,15 +12,7 @@ test.describe('Real backend: minimal chat chain', () => {
     // Ensure the user has credits by visiting the credits page and performing checkin
     await page.goto('/credits');
     await expect(page.getByText('本月签到记录', { exact: true })).toBeVisible();
-
-    const checkinBtn = page.getByRole('button', { name: '签到领积分' });
-    const checkedBadge = page.locator('text=今日已签到');
-    if (await checkinBtn.isVisible()) {
-      await checkinBtn.click();
-      await expect(checkedBadge).toBeVisible({ timeout: 10000 });
-    } else {
-      await expect(checkedBadge).toBeVisible();
-    }
+    await ensureDailyCheckinOnCreditsPage(page);
 
     // Go back to the chat page to send the question
     await page.goto('/');
