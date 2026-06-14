@@ -4,24 +4,34 @@
 边界：Web/FastAPI 依赖仍由 backend.api.deps 提供；本模块只服务 worker。
 """
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.ai.providers.llm.factory import LLMProviderFactory
+from backend.ai.providers.rerank.factory import RerankProviderFactory
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
 from backend.config.settings import settings
 from backend.contracts.interfaces import (
+    AbstractExternalContextProvider,
     AbstractLLMService,
     AbstractRAGEmbedder,
     AbstractRAGService,
+    AbstractRerankService,
 )
 from backend.infra.database import create_db_assets
+from backend.services.external_context_service import (
+    create_external_context_provider,
+)
 from backend.services.object_storage import ObjectStorage, create_object_storage
 from backend.services.rag_planning_service import RAGPlanningService
 from backend.services.rag_service import RAGService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.vector_index_service import VectorIndexService
+
+logger = logging.getLogger(__name__)
 
 
 class WorkerContainer:
@@ -31,9 +41,14 @@ class WorkerContainer:
         self._engine: AsyncEngine | None = None
         self._session_factory: async_sessionmaker | None = None
         self._llm_service: AbstractLLMService | None = None
+        self._llm_services_by_provider: dict[str, AbstractLLMService] = {}
+        self._llm_service_errors_by_provider: dict[str, Exception] = {}
         self._embedder: AbstractRAGEmbedder | None = None
+        self._rerank_service: AbstractRerankService | None = None
+        self._rerank_init_failed = False
         self._rag_service: AbstractRAGService | None = None
         self._rag_planning_service: RAGPlanningService | None = None
+        self._external_context_provider: AbstractExternalContextProvider | None = None
         self._object_storage: ObjectStorage | None = None
 
     def get_session_factory(self) -> async_sessionmaker:
@@ -47,6 +62,25 @@ class WorkerContainer:
         if self._llm_service is None:
             self._llm_service = LLMProviderFactory.create()
         return self._llm_service
+
+    def get_llm_service_for_provider(
+        self,
+        provider: str | None,
+    ) -> AbstractLLMService:
+        """Return a cached worker LLM service for an explicit provider/profile."""
+        if provider is None:
+            return self.get_llm_service()
+        if provider in self._llm_service_errors_by_provider:
+            raise self._llm_service_errors_by_provider[provider]
+        if provider not in self._llm_services_by_provider:
+            try:
+                self._llm_services_by_provider[provider] = LLMProviderFactory.create(
+                    provider
+                )
+            except Exception as exc:
+                self._llm_service_errors_by_provider[provider] = exc
+                raise
+        return self._llm_services_by_provider[provider]
 
     def get_embedder(self) -> AbstractRAGEmbedder:
         """Return the cached worker RAG embedder."""
@@ -63,13 +97,46 @@ class WorkerContainer:
             )
         return self._embedder
 
-    def get_rag_service(
-        self,
-        llm_service: AbstractLLMService | None = None,
-    ) -> AbstractRAGService:
+    def get_rerank_service(self) -> AbstractRerankService | None:
+        """Return the cached worker-side rerank service when configured.
+
+        Degrade to no rerank when provider initialization fails so generation
+        tasks keep running, matching the web path and RAG call-layer fallback.
+        """
+        if self._rerank_init_failed:
+            return None
+        if self._rerank_service is None:
+            provider = (ai_settings.RAG_RERANK_PROVIDER or "").strip()
+            if not provider or provider.lower() == "mock":
+                return None
+            if provider:
+                try:
+                    config = get_llm_model_config()
+                    if config.rerank_profiles:
+                        profile = config.resolve_rerank_profile(provider)
+                        self._rerank_service = RerankProviderFactory.create(
+                            profile=profile
+                        )
+                    else:
+                        self._rerank_service = RerankProviderFactory.create(provider)
+                except Exception as exc:
+                    logger.warning(
+                        "Worker rerank initialization degraded; rerank disabled for this worker process",
+                        extra={
+                            "event": "worker_rerank_init_degraded",
+                            "rerank_provider": provider,
+                            "degradation_mode": "disabled",
+                            "error": str(exc),
+                        },
+                    )
+                    self._rerank_init_failed = True
+                    return None
+        return self._rerank_service
+
+    def get_rag_service(self) -> AbstractRAGService:
         """Return the cached worker-side RAG service for generation context retrieval."""
         if self._rag_service is None:
-            resolved_llm = llm_service or self.get_llm_service()
+            reranker = self.get_rerank_service()
             session_factory = self.get_session_factory()
             uow = SQLAlchemyUnitOfWork(session_factory)
             embedder = self.get_embedder()
@@ -79,13 +146,23 @@ class WorkerContainer:
                 embed_batch_size=ai_settings.RAG_EMBED_BATCH_SIZE,
                 read_uow_factory=lambda: SQLAlchemyUnitOfWork(session_factory),
             )
+            rerank_score_kind = "bifrost_rerank"
+            config = get_llm_model_config()
+            if (
+                reranker is not None
+                and config.rerank_profiles
+                and ai_settings.RAG_RERANK_PROVIDER
+            ):
+                profile = config.resolve_rerank_profile(ai_settings.RAG_RERANK_PROVIDER)
+                rerank_score_kind = profile.effective_score_kind()
             self._rag_service = RAGService(
                 embedder=embedder,
                 vector_index_service=vector_index_service,
                 top_k=ai_settings.RAG_TOP_K,
-                llm_service=resolved_llm,
+                reranker=reranker,
                 rerank_candidate_count=ai_settings.RAG_RERANK_CANDIDATE_COUNT,
                 rerank_top_k=ai_settings.RAG_RERANK_TOP_K,
+                rerank_score_kind=rerank_score_kind,
             )
         return self._rag_service
 
@@ -97,6 +174,14 @@ class WorkerContainer:
             )
         return self._rag_planning_service
 
+    def get_external_context_provider(self) -> AbstractExternalContextProvider | None:
+        """Return the cached worker-side external context provider."""
+        if self._external_context_provider is None:
+            self._external_context_provider = create_external_context_provider(
+                always_create=True
+            )
+        return self._external_context_provider
+
     def get_object_storage(self) -> ObjectStorage:
         """Return the cached worker object storage adapter."""
         if self._object_storage is None:
@@ -107,16 +192,28 @@ class WorkerContainer:
         """Release cached resources owned by this worker process."""
         if self._llm_service is not None:
             await self._llm_service.close()
+        for service in self._llm_services_by_provider.values():
+            if service is not self._llm_service:
+                await service.close()
         if self._embedder is not None:
             await self._embedder.close()
+        if self._external_context_provider is not None:
+            await self._external_context_provider.close()
+        if self._rerank_service is not None:
+            await self._rerank_service.close()
         if self._engine is not None:
             await self._engine.dispose()
         self._engine = None
         self._session_factory = None
         self._rag_service = None
         self._llm_service = None
+        self._llm_services_by_provider = {}
+        self._llm_service_errors_by_provider = {}
         self._embedder = None
+        self._rerank_service = None
+        self._rerank_init_failed = False
         self._rag_planning_service = None
+        self._external_context_provider = None
         self._object_storage = None
 
 
@@ -155,21 +252,31 @@ def get_worker_llm_service() -> AbstractLLMService:
     return get_worker_container().get_llm_service()
 
 
+def get_worker_llm_service_for_provider(
+    provider: str | None,
+) -> AbstractLLMService:
+    """Return the cached worker LLM service for an explicit provider/profile."""
+    return get_worker_container().get_llm_service_for_provider(provider)
+
+
 def get_worker_embedder() -> AbstractRAGEmbedder:
     """Return the cached worker RAG embedder."""
     return get_worker_container().get_embedder()
 
 
-def get_worker_rag_service(
-    llm_service: AbstractLLMService | None = None,
-) -> AbstractRAGService:
+def get_worker_rag_service() -> AbstractRAGService:
     """Return the cached worker-side RAG service for generation context retrieval."""
-    return get_worker_container().get_rag_service(llm_service=llm_service)
+    return get_worker_container().get_rag_service()
 
 
 def get_worker_rag_planning_service() -> RAGPlanningService:
     """Return the cached worker-side RAG planning service."""
     return get_worker_container().get_rag_planning_service()
+
+
+def get_worker_external_context_provider() -> AbstractExternalContextProvider | None:
+    """Return the cached worker-side external context provider."""
+    return get_worker_container().get_external_context_provider()
 
 
 def get_worker_object_storage() -> ObjectStorage:

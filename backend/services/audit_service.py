@@ -29,6 +29,9 @@ class AuditAction(StrEnum):
 
     AUTH_LOGIN_SUCCESS = "auth.login_success"
     AUTH_LOGIN_FAILED = "auth.login_failed"
+    AUTH_SMS_CODE_SENT = "auth.sms_code_sent"
+    AUTH_SMS_LOGIN_SUCCESS = "auth.sms_login_success"
+    AUTH_GOOGLE_LOGIN_SUCCESS = "auth.google_login_success"
     PERMISSION_DENIED = "permission.denied"
     USER_CREATE = "user.create"
     USER_UPDATE = "user.update"
@@ -40,6 +43,7 @@ class AuditAction(StrEnum):
     WORKSPACE_MEMBER_UPDATE = "workspace.member_update"
     WORKSPACE_MEMBER_REMOVE = "workspace.member_remove"
     FILE_UPLOAD_SUBMIT = "file.upload_submit"
+    FILE_DELETE = "file.delete"
     CHAT_QUERY_SENT = "chat.query_sent"
     CHAT_QUERY_STREAM = "chat.query_stream"
 

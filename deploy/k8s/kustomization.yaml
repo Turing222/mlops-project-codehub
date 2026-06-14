@@ -7,6 +7,9 @@ resources:
   - db-migrator-job.yaml
   - api-deployment.yaml
   - api-service.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
   - api-hpa.yaml
   - worker-deployment.yaml
   - worker-keda-scaledobject.yaml
+  - credit-scheduler-deployment.yaml

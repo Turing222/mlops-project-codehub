@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from backend.config.embedding import EmbeddingProfile, build_embedding_profiles
 from backend.config.loader import ConfigurationError, load_yaml_config
 from backend.config.prompts import get_prompt_config
+from backend.config.rerank import RerankProfile, build_rerank_profiles
 from backend.config.schemas import LLMModelsConfig
 from backend.config.schemas.models import LLMModelProfile as _SchemaLLMProfile
 from backend.config.schemas.models import LLMModelRoute as _SchemaLLMRoute
@@ -94,6 +95,9 @@ class LLMModelConfig:
     embedding_default_profile: str
     embedding_profiles: dict[str, EmbeddingProfile]
     embedding_alias_map: dict[str, str]
+    rerank_default_profile: str
+    rerank_profiles: dict[str, RerankProfile]
+    rerank_alias_map: dict[str, str]
 
     def resolve_profile(self, provider_or_profile: str | None = None) -> LLMProfile:
         settings = _get_settings()
@@ -141,6 +145,24 @@ class LLMModelConfig:
             )
         return self.embedding_profiles[profile_name]
 
+    def resolve_rerank_profile(
+        self,
+        provider_or_profile: str | None = None,
+    ) -> RerankProfile:
+        settings = _get_settings()
+        raw_identifier = (
+            provider_or_profile
+            or getattr(settings, "RAG_RERANK_PROVIDER", None)
+            or self.rerank_default_profile
+        )
+        identifier = raw_identifier.strip().lower()
+        profile_name = self.rerank_alias_map.get(identifier)
+        if profile_name is None:
+            raise ConfigurationError(
+                f"Unsupported rerank provider/profile: {raw_identifier}"
+            )
+        return self.rerank_profiles[profile_name]
+
     @classmethod
     def from_schema(cls, config: LLMModelsConfig) -> LLMModelConfig:
         profiles = {
@@ -167,6 +189,12 @@ class LLMModelConfig:
             for identifier in (profile_name, *profile.aliases):
                 embedding_alias_map[identifier.lower()] = profile_name
 
+        rerank_profiles = build_rerank_profiles(config)
+        rerank_alias_map: dict[str, str] = {}
+        for profile_name, profile in rerank_profiles.items():
+            for identifier in (profile_name, *profile.aliases):
+                rerank_alias_map[identifier.lower()] = profile_name
+
         return cls(
             default_profile=config.default_profile,
             profiles=profiles,
@@ -178,6 +206,11 @@ class LLMModelConfig:
             ),
             embedding_profiles=embedding_profiles,
             embedding_alias_map=embedding_alias_map,
+            rerank_default_profile=(
+                config.reranks.default_profile if config.reranks else ""
+            ),
+            rerank_profiles=rerank_profiles,
+            rerank_alias_map=rerank_alias_map,
         )
 
 

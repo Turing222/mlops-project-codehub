@@ -28,10 +28,14 @@ class FakeRedis:
         return self.result
 
 
-async def _limited_client(fake_redis: FakeRedis) -> AsyncIterator[AsyncClient]:
+async def _limited_client(
+    fake_redis: FakeRedis,
+    *,
+    trusted_proxy_cidrs: str | None = None,
+) -> AsyncIterator[AsyncClient]:
     app = FastAPI()
     setup_exception_handlers(app)
-    limiter = RateLimiter(times=2, seconds=60)
+    limiter = RateLimiter(times=2, seconds=60, trusted_proxy_cidrs=trusted_proxy_cidrs)
 
     @app.get("/limited", dependencies=[Depends(limiter)])
     async def limited(request: Request) -> dict[str, object]:
@@ -109,3 +113,54 @@ async def test_uses_compact_unique_members_does_not_deduplicate(
     members = [call[6] for call in fake_redis.calls]
     assert members == ["123456:61626364", "123456:65666768"]
     assert all(len(member) == 15 for member in members)
+
+
+async def test_trusted_proxy_uses_x_real_ip_for_rate_limit_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_redis = FakeRedis([1, 1])
+
+    async def init_redis() -> FakeRedis:
+        return fake_redis
+
+    monkeypatch.setattr("backend.middleware.rate_limit.redis_client.init", init_redis)
+
+    async for client in _limited_client(fake_redis, trusted_proxy_cidrs="127.0.0.1/32"):
+        response = await client.get("/limited", headers={"x-real-ip": "203.0.113.10"})
+
+    assert response.status_code == 200
+    assert fake_redis.calls[0][2] == "rate_limit_sliding:203.0.113.10:/limited"
+
+
+async def test_untrusted_peer_ignores_x_real_ip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_redis = FakeRedis([1, 1])
+
+    async def init_redis() -> FakeRedis:
+        return fake_redis
+
+    monkeypatch.setattr("backend.middleware.rate_limit.redis_client.init", init_redis)
+
+    async for client in _limited_client(fake_redis, trusted_proxy_cidrs="10.0.0.0/8"):
+        response = await client.get("/limited", headers={"x-real-ip": "203.0.113.10"})
+
+    assert response.status_code == 200
+    assert fake_redis.calls[0][2] == "rate_limit_sliding:127.0.0.1:/limited"
+
+
+async def test_trusted_proxy_ignores_invalid_x_real_ip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_redis = FakeRedis([1, 1])
+
+    async def init_redis() -> FakeRedis:
+        return fake_redis
+
+    monkeypatch.setattr("backend.middleware.rate_limit.redis_client.init", init_redis)
+
+    async for client in _limited_client(fake_redis, trusted_proxy_cidrs="127.0.0.1/32"):
+        response = await client.get("/limited", headers={"x-real-ip": "not-an-ip"})
+
+    assert response.status_code == 200
+    assert fake_redis.calls[0][2] == "rate_limit_sliding:127.0.0.1:/limited"

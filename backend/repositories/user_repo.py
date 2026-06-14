@@ -18,13 +18,16 @@ from backend.models.schemas.user_schema import UserUpdate
 from backend.repositories.base import CRUDBase
 
 
-class UserCreateData(TypedDict):
+class UserCreateData(TypedDict, total=False):
     """创建用户时所需的持久化字段，不含明文密码。"""
 
     username: str
-    email: str
-    hashed_password: str
+    email: str | None
+    hashed_password: str | None
     max_tokens: int
+    phone: str | None
+    auth_provider: str | None
+    google_sub: str | None
 
 
 class UserRepository:
@@ -43,9 +46,12 @@ class UserRepository:
     async def create(self, *, obj_in: UserCreateData) -> User:
         create_data: dict[str, Any] = {
             "username": obj_in["username"],
-            "email": obj_in["email"],
-            "hashed_password": obj_in["hashed_password"],
-            "max_tokens": obj_in["max_tokens"],
+            "email": obj_in.get("email"),
+            "hashed_password": obj_in.get("hashed_password"),
+            "max_tokens": obj_in.get("max_tokens", 100000),
+            "phone": obj_in.get("phone"),
+            "auth_provider": obj_in.get("auth_provider"),
+            "google_sub": obj_in.get("google_sub"),
         }
         return await self.crud.create(obj_in=create_data)
 
@@ -64,6 +70,16 @@ class UserRepository:
 
     async def get_by_username(self, username: str) -> User | None:
         statement = select(User).where(User.username == username)
+        result = await self.session.execute(statement)
+        return result.scalars().first()
+
+    async def get_by_phone(self, phone: str) -> User | None:
+        statement = select(User).where(User.phone == phone)
+        result = await self.session.execute(statement)
+        return result.scalars().first()
+
+    async def get_by_google_sub(self, google_sub: str) -> User | None:
+        statement = select(User).where(User.google_sub == google_sub)
         result = await self.session.execute(statement)
         return result.scalars().first()
 

@@ -7,20 +7,24 @@
 
 import asyncio
 import hashlib
+import logging
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import Literal, NotRequired, TypedDict
 
-from backend.ai.core.token_counter import count_tokens
+from backend.config.ai_settings import ai_settings
 from backend.contracts.interfaces import AbstractRAGEmbedder, AbstractUnitOfWork
 from backend.models.orm.chunk import ChunkSourceType, DocumentChunk
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.base import BaseService
 from backend.services.chunking_service import ChunkPayload
 from backend.utils.search_text import build_search_texts, normalize_query
+from backend.utils.token_estimation import count_tokens
 
 CHUNKING_VERSION = 2
+
+logger = logging.getLogger(__name__)
 
 
 class _HybridHit(TypedDict):
@@ -29,6 +33,8 @@ class _HybridHit(TypedDict):
     chunk: DocumentChunk
     score: float
     matched_by: set[str]
+    vector_score: float | None
+    fulltext_score: float | None
 
 
 class RetrievalHit(TypedDict):
@@ -353,6 +359,19 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 vector_weight=vector_weight,
                 fulltext_weight=fulltext_weight,
             )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "RAG hybrid fused hits",
+                    extra={
+                        "rag_kb_id": str(kb_id),
+                        "rag_limit": limit,
+                        "rag_candidate_limit": candidate_limit,
+                        "rag_vector_hit_count": len(vector_hits),
+                        "rag_fulltext_hit_count": len(fulltext_hits),
+                        "rag_hit_count": len(hits),
+                        "rag_hits": [_retrieval_hit_debug_record(hit) for hit in hits],
+                    },
+                )
             set_span_attributes(
                 span,
                 {
@@ -374,29 +393,61 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
         vector_weight: float,
         fulltext_weight: float,
     ) -> list[RetrievalHit]:
-        if not vector_hits and not fulltext_hits:
+        min_score = ai_settings.RAG_HYBRID_MIN_SOURCE_SCORE
+        filtered_vector_hits = [
+            (chunk, distance)
+            for chunk, distance in vector_hits
+            if _vector_similarity(distance) >= min_score
+        ]
+        filtered_fulltext_hits = [
+            (chunk, rank)
+            for chunk, rank in fulltext_hits
+            if _fulltext_similarity(rank) >= min_score
+        ]
+
+        if not filtered_vector_hits and not filtered_fulltext_hits:
             return []
+        if not filtered_vector_hits or not filtered_fulltext_hits:
+            return VectorIndexService._build_single_channel_hybrid_hits(
+                vector_hits=filtered_vector_hits,
+                fulltext_hits=filtered_fulltext_hits,
+                limit=limit,
+            )
 
         rrf_k = 60.0
         fused: dict[str, _HybridHit] = {}
 
-        for rank, (chunk, _) in enumerate(vector_hits, start=1):
+        for rank, (chunk, distance) in enumerate(filtered_vector_hits, start=1):
             key = str(chunk.id)
             item = fused.setdefault(
                 key,
-                {"chunk": chunk, "score": 0.0, "matched_by": set()},
+                {
+                    "chunk": chunk,
+                    "score": 0.0,
+                    "matched_by": set(),
+                    "vector_score": None,
+                    "fulltext_score": None,
+                },
             )
             item["score"] = float(item["score"]) + vector_weight / (rrf_k + rank)
             item["matched_by"].add("vector")
+            item["vector_score"] = _vector_similarity(distance)
 
-        for rank, (chunk, _) in enumerate(fulltext_hits, start=1):
+        for rank, (chunk, fulltext_rank) in enumerate(filtered_fulltext_hits, start=1):
             key = str(chunk.id)
             item = fused.setdefault(
                 key,
-                {"chunk": chunk, "score": 0.0, "matched_by": set()},
+                {
+                    "chunk": chunk,
+                    "score": 0.0,
+                    "matched_by": set(),
+                    "vector_score": None,
+                    "fulltext_score": None,
+                },
             )
             item["score"] = float(item["score"]) + fulltext_weight / (rrf_k + rank)
             item["matched_by"].add("fulltext")
+            item["fulltext_score"] = _fulltext_similarity(fulltext_rank)
 
         ranked = sorted(
             fused.values(),
@@ -421,7 +472,7 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 for item in ranked
             ]
 
-        # RRF 分数用于排序；evidence_score 按理论最大值归一化，避免 top1 天然满分。
+        # RRF 分数用于排序；evidence_score 不超过原始两路证据，避免弱候选被相对名次抬高。
         return [
             VectorIndexService._build_retrieval_hit(
                 chunk=item["chunk"],
@@ -429,14 +480,70 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 retrieval_mode="hybrid",
                 score_kind="hybrid_relative_rrf",
                 raw_score=float(item["score"]),
-                evidence_score=max(
-                    0.0,
-                    min(1.0, float(item["score"]) / best_possible_score),
+                evidence_score=_max_optional_score(
+                    item["vector_score"],
+                    item["fulltext_score"],
                 ),
                 matched_by=sorted(item["matched_by"]),
             )
             for item in ranked
         ]
+
+    @staticmethod
+    def _build_single_channel_hybrid_hits(
+        *,
+        vector_hits: list[tuple[DocumentChunk, float]],
+        fulltext_hits: list[tuple[DocumentChunk, float]],
+        limit: int,
+    ) -> list[RetrievalHit]:
+        hits_by_chunk_id: dict[str, RetrievalHit] = {}
+
+        def add_hit(hit: RetrievalHit) -> None:
+            key = str(hit["chunk"].id)
+            existing = hits_by_chunk_id.get(key)
+            if existing is None or hit["evidence_score"] > existing["evidence_score"]:
+                merged_matched_by = (
+                    set(existing.get("matched_by", [])) if existing else set()
+                )
+                merged_matched_by.update(hit.get("matched_by", []))
+                hit["matched_by"] = sorted(merged_matched_by)
+                hits_by_chunk_id[key] = hit
+                return
+            existing_matched_by = set(existing.get("matched_by", []))
+            existing_matched_by.update(hit.get("matched_by", []))
+            existing["matched_by"] = sorted(existing_matched_by)
+
+        for chunk, distance in vector_hits:
+            add_hit(
+                VectorIndexService._build_retrieval_hit(
+                    chunk=chunk,
+                    distance=distance,
+                    retrieval_mode="hybrid",
+                    score_kind="hybrid_vector_similarity",
+                    raw_score=_vector_similarity(distance),
+                    evidence_score=_vector_similarity(distance),
+                    matched_by=["vector"],
+                )
+            )
+
+        for chunk, rank in fulltext_hits:
+            add_hit(
+                VectorIndexService._build_retrieval_hit(
+                    chunk=chunk,
+                    distance=VectorIndexService._rank_to_distance(rank),
+                    retrieval_mode="hybrid",
+                    score_kind="hybrid_fulltext_rank_similarity",
+                    raw_score=rank,
+                    evidence_score=_fulltext_similarity(rank),
+                    matched_by=["fulltext"],
+                )
+            )
+
+        return sorted(
+            hits_by_chunk_id.values(),
+            key=lambda hit: hit["evidence_score"],
+            reverse=True,
+        )[:limit]
 
     @staticmethod
     def _rank_to_distance(rank: float) -> float:
@@ -462,3 +569,36 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
             "evidence_score": evidence_score,
             "matched_by": matched_by,
         }
+
+
+def _vector_similarity(distance: float) -> float:
+    return max(0.0, 1.0 - float(distance))
+
+
+def _fulltext_similarity(rank: float) -> float:
+    return max(0.0, 1.0 - VectorIndexService._rank_to_distance(rank))
+
+
+def _max_optional_score(*scores: float | None) -> float:
+    numeric_scores = [score for score in scores if score is not None]
+    return max(numeric_scores) if numeric_scores else 0.0
+
+
+def _retrieval_hit_debug_record(hit: RetrievalHit) -> dict[str, object]:
+    chunk = hit["chunk"]
+    file_obj = getattr(chunk, "file", None)
+    return {
+        "chunk_id": str(chunk.id),
+        "source_type": str(chunk.source_type),
+        "file_id": str(chunk.file_id) if chunk.file_id else None,
+        "message_id": str(chunk.message_id) if chunk.message_id else None,
+        "chunk_index": chunk.chunk_index,
+        "distance": hit["distance"],
+        "retrieval_mode": hit["retrieval_mode"],
+        "score_kind": hit["score_kind"],
+        "raw_score": hit["raw_score"],
+        "evidence_score": hit["evidence_score"],
+        "matched_by": hit.get("matched_by", []),
+        "filename": getattr(file_obj, "filename", None),
+        "content_preview": chunk.content[:240],
+    }

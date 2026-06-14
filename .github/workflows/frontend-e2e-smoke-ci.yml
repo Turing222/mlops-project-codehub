@@ -1,0 +1,168 @@
+name: Frontend E2E Smoke CI
+
+# 对真实后端跑前端 e2e-smoke（real-login / real-chat / real-credits）。
+# 模型：后台起 API(:8000) + TaskIQ worker → Playwright 自启 Vite dev server(5173)
+# → vite proxy 把 /api strip 后转发到后端真实路由 /v1/...（root_path=/api + router prefix=/v1）。
+# real-chat 的流式 chunk 由 worker 经 Redis 发布，仅 uvicorn 不够。
+# 凭据走 seed 出来的 seed_member（scripts/seed/dev_seed.py，SEED_PASSWORD=SeedPass123!）。
+# Fork PR 读不到 repository secrets，job 会 skip。
+# 详见 docs/assessments/frontend-cicd-assessment-2026-06-14.md §8.2。
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fe-smoke-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  frontend-e2e-smoke:
+    # Fork PRs cannot read repository secrets; skip rather than fail on empty credentials.
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    name: Frontend e2e smoke (real backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg17-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dewflow_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d dewflow_test"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7.4.9-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+
+    env:
+      APP_ENV: test
+      SECRET_KEY: ci-test-secret-key-with-at-least-32-chars
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dewflow_test
+      REDIS_URL: redis://localhost:6379/0
+      TASKIQ_REDIS_URL: redis://localhost:6379/1
+      POSTGRES_SSL_MODE: disable
+      # 用 mock provider，避免 smoke 依赖真实 LLM / embedding 配额（与 smoke-ci 的
+      # `make set-llm PROVIDER=mock EMBED_PROVIDER=mock` 等价）。
+      LLM_PROVIDER: mock
+      RAG_EMBED_PROVIDER: mock
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      # ---- 后端：装依赖 → 迁移 → seed → 后台起 API(:8000) + TaskIQ worker ----
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
+      - name: Cache Python virtualenv
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .venv
+          key: uv-${{ runner.os }}-py312-${{ hashFiles('uv.lock') }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py312-
+
+      - name: Sync Python dependencies
+        run: uv sync --frozen --dev --all-extras
+
+      - name: Run DB migrations
+        run: uv run alembic upgrade head
+
+      - name: Seed smoke user
+        run: make seed-dev
+
+      - name: Launch backend API and TaskIQ worker
+        run: |
+          uv run uvicorn backend.main:app --host 127.0.0.1 --port 8000 \
+            > /tmp/api.log 2>&1 &
+          uv run taskiq worker backend.infra.task_broker:broker \
+            backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks \
+            backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks \
+            --workers 1 \
+            > /tmp/worker.log 2>&1 &
+
+      - name: Wait for API health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/api/v1/health_check/live; then
+              echo "API up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::API 未在超时内就绪"; cat /tmp/api.log; exit 1
+
+      - name: Wait for TaskIQ worker
+        env:
+          TASKIQ_HEALTH_MIN_PROCESSES: "1"
+        run: |
+          for i in $(seq 1 30); do
+            if uv run python -m backend.worker.tasks.healthcheck; then
+              echo "TaskIQ worker up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::TaskIQ worker 未在超时内就绪"; cat /tmp/worker.log; exit 1
+
+      # ---- 前端：装依赖 → 装 Chromium → 跑 smoke ----
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --dir frontend --filter admin exec playwright install --with-deps chromium
+
+      - name: Run frontend e2e smoke
+        env:
+          E2E_SMOKE_USER: ${{ secrets.E2E_SMOKE_USER }}
+          E2E_SMOKE_PASS: ${{ secrets.E2E_SMOKE_PASS }}
+        run: make frontend-e2e-smoke
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-smoke-report
+          path: |
+            frontend/apps/admin/playwright-report/**
+            frontend/apps/admin/test-results/**
+          if-no-files-found: ignore
+
+      - name: Dump API log on failure
+        if: failure()
+        run: cat /tmp/api.log || true
+
+      - name: Dump worker log on failure
+        if: failure()
+        run: cat /tmp/worker.log || true

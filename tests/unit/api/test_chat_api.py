@@ -13,6 +13,8 @@ from typing import Any
 import pytest
 
 from backend.api.v1.endpoint import chat_api
+from backend.models.enums import MessageStatus
+from backend.models.schemas.chat.api import MessageResponse
 from backend.services.audit_service import AuditService
 
 pytestmark = pytest.mark.asyncio
@@ -72,6 +74,8 @@ async def test_query_stream_serializes_typed_events_and_audits_meta_resource() -
         session_id=None,
         kb_id=None,
         client_request_id="client-1",
+        enable_external_context=False,
+        context_mode=None,
         extra_body=None,
     )
 
@@ -92,3 +96,24 @@ async def test_query_stream_serializes_typed_events_and_audits_meta_resource() -
     assert len(uow_factory.events) == 1
     assert uow_factory.events[0].resource_type == "chat_session"
     assert uow_factory.events[0].resource_id is not None
+
+
+async def test_message_response_includes_message_metadata() -> None:
+    message_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    response = MessageResponse.model_validate(
+        {
+            "id": message_id,
+            "session_id": session_id,
+            "role": "assistant",
+            "content": "answer",
+            "status": MessageStatus.SUCCESS,
+            "latency_ms": 10,
+            "search_context": None,
+            "message_metadata": {"metrics": {"first_token_latency_ms": 123}},
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+        }
+    )
+
+    assert response.message_metadata["metrics"]["first_token_latency_ms"] == 123

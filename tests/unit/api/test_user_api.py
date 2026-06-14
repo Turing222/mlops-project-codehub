@@ -19,6 +19,7 @@ from backend.core.exceptions import AppException
 from backend.models.schemas.user_schema import (
     UserCreate,
     UserImportResponse,
+    UserProfileUpdate,
     UserSearch,
     UserUpdate,
 )
@@ -84,12 +85,29 @@ def import_service() -> SimpleNamespace:
 @pytest.mark.asyncio
 async def test_read_users_me_returns_user_response() -> None:
     current_user = make_user(username="me_user", email="me@example.com")
+    feature_flag_service = SimpleNamespace(
+        get_user_features=AsyncMock(
+            return_value={
+                "enable-pixel-avatar": True,
+                "enable-credits": False,
+                "enable-agent-trace": False,
+            }
+        ),
+    )
 
-    result = await user_api.read_users_me(current_user=current_user)
+    result = await user_api.read_users_me(
+        current_user=current_user,
+        feature_flag_service=feature_flag_service,
+    )
 
     assert result.id == current_user.id
     assert result.username == "me_user"
     assert result.email == "me@example.com"
+    assert result.features == {
+        "enable-pixel-avatar": True,
+        "enable-credits": False,
+        "enable-agent-trace": False,
+    }
 
 
 @pytest.mark.asyncio
@@ -254,3 +272,69 @@ async def test_csv_bulk_insert_users_success(import_service: SimpleNamespace) ->
 
     assert result == expected
     import_service.import_from_upload.assert_awaited_once_with(upload_file)
+
+
+@pytest.mark.asyncio
+async def test_update_my_profile_success(user_service: SimpleNamespace) -> None:
+    current_user = make_user(username="me_user", email="me@example.com")
+    user_in = UserProfileUpdate(username="new_me", email="new_me@example.com")
+    updated = make_user(
+        id=current_user.id, username="new_me", email="new_me@example.com"
+    )
+    user_service.user_update.return_value = updated
+
+    result = await user_api.update_my_profile(
+        user_in=user_in,
+        current_user=current_user,
+        user_service=user_service,
+        audit_service=SimpleNamespace(),
+    )
+
+    assert result.id == current_user.id
+    assert result.username == "new_me"
+    assert result.email == "new_me@example.com"
+    args, kwargs = user_service.user_update.call_args
+    assert kwargs["user_id"] == current_user.id
+    assert kwargs["user_in"].username == "new_me"
+    assert kwargs["user_in"].email == "new_me@example.com"
+
+
+@pytest.mark.asyncio
+async def test_update_my_profile_preserves_unset_fields(
+    user_service: SimpleNamespace,
+) -> None:
+    current_user = make_user(username="me_user", email="me@example.com")
+    updated = make_user(id=current_user.id, username="new_me", email="me@example.com")
+    user_service.user_update.return_value = updated
+
+    await user_api.update_my_profile(
+        user_in=UserProfileUpdate(username="new_me"),
+        current_user=current_user,
+        user_service=user_service,
+        audit_service=SimpleNamespace(),
+    )
+
+    args, kwargs = user_service.user_update.call_args
+    update_data = kwargs["user_in"]
+    assert update_data.model_fields_set == {"username"}
+    assert update_data.username == "new_me"
+    assert update_data.email is None
+    assert update_data.phone is None
+
+
+@pytest.mark.asyncio
+async def test_update_my_profile_returns_404_when_not_found(
+    user_service: SimpleNamespace,
+) -> None:
+    user_service.user_update.return_value = None
+
+    with pytest.raises(AppException) as exc_info:
+        await user_api.update_my_profile(
+            user_in=UserProfileUpdate(username="new_me"),
+            current_user=make_user(),
+            user_service=user_service,
+            audit_service=SimpleNamespace(),
+        )
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.message == "用户不存在"

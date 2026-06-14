@@ -184,7 +184,7 @@ class ChatRepository:
         stmt = (
             select(ChatMessage)
             .where(ChatMessage.session_id == session_id)
-            .order_by(ChatMessage.created_at.asc())
+            .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
             .offset(skip)
             .limit(limit)
         )

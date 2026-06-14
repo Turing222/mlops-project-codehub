@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dewflow-credit-scheduler
+  namespace: dewflow
+  labels:
+    app.kubernetes.io/name: dewflow-credit-scheduler
+    app.kubernetes.io/component: credit-scheduler
+spec:
+  replicas: 1
+  strategy:
+    # Scheduler must not run two replicas concurrently: each would enqueue the
+    # same scheduled task onto the broker, causing duplicate execution.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dewflow-credit-scheduler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dewflow-credit-scheduler
+        app.kubernetes.io/component: credit-scheduler
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: credit-scheduler
+          # Reuses the worker image; only the command differs.
+          image: dewflow-backend:2.0.0-ai
+          imagePullPolicy: IfNotPresent
+          command:
+            - taskiq
+            - scheduler
+            - backend.worker.scheduler_entrypoint:build_scheduler
+            - backend.worker.tasks.credit_tasks
+            - backend.worker.tasks.knowledge_tasks
+          env:
+            - name: TASKIQ_SCHEDULER_MODULES
+              value: "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks"
+          envFrom:
+            - configMapRef:
+                name: dewflow-config
+            - secretRef:
+                name: dewflow-secret
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "from backend.worker.scheduler_entrypoint import validate_scheduler_schedules; validate_scheduler_schedules()"
+            initialDelaySeconds: 20
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

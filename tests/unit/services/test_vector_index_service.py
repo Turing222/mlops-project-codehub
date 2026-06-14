@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.ai.core.token_counter import count_tokens
 from backend.services.vector_index_service import CHUNKING_VERSION, VectorIndexService
+from backend.utils.token_estimation import count_tokens
 
 pytestmark = pytest.mark.asyncio
 
@@ -280,10 +280,10 @@ async def test_hybrid_search_returns_vector_hits_when_fulltext_empty() -> None:
     assert all(0.0 <= distance <= 1.0 for distance in distances)
     assert distances[0] < distances[1]
     assert result[0]["retrieval_mode"] == "hybrid"
-    assert result[0]["score_kind"] == "hybrid_relative_rrf"
+    assert result[0]["score_kind"] == "hybrid_vector_similarity"
     assert result[0]["matched_by"] == ["vector"]
-    assert 0.0 < result[0]["raw_score"] < 1.0
-    assert result[0]["evidence_score"] < 1.0
+    assert result[0]["raw_score"] == 0.9
+    assert result[0]["evidence_score"] == 0.9
     embedder.encode_query.assert_awaited_once_with("数据库 max_connections")
     repo.search_chunks_for_kb.assert_awaited_once_with(
         query_vector=[0.1, 0.2, 0.3],
@@ -318,9 +318,117 @@ def test_fuse_hybrid_hits_only_vector_hits() -> None:
     )
 
     assert len(result) == 2
-    # RRF: chunk_a (rank 1, distance 0.1) gets higher score → lower distance when normalized.
     assert result[0]["chunk"].id == chunk_a.id
     assert result[1]["chunk"].id == chunk_b.id
     assert result[0]["matched_by"] == ["vector"]
+    assert result[0]["score_kind"] == "hybrid_vector_similarity"
+    assert result[0]["evidence_score"] == 0.9
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
+def test_fuse_hybrid_hits_uses_rrf_when_both_channels_have_hits() -> None:
+    chunk_a = SimpleNamespace(id=uuid.uuid4())
+    chunk_b = SimpleNamespace(id=uuid.uuid4())
+    chunk_c = SimpleNamespace(id=uuid.uuid4())
+
+    result = VectorIndexService._fuse_hybrid_hits(
+        vector_hits=[(chunk_a, 0.1), (chunk_b, 0.2)],
+        fulltext_hits=[(chunk_c, 4.0)],
+        limit=10,
+        vector_weight=0.7,
+        fulltext_weight=0.3,
+    )
+
+    assert [hit["score_kind"] for hit in result] == [
+        "hybrid_relative_rrf",
+        "hybrid_relative_rrf",
+        "hybrid_relative_rrf",
+    ]
+    assert [hit["chunk"].id for hit in result] == [
+        chunk_a.id,
+        chunk_b.id,
+        chunk_c.id,
+    ]
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
+def test_fuse_hybrid_hits_uses_rrf_when_both_channels_have_two_hits() -> None:
+    chunk_a = SimpleNamespace(id=uuid.uuid4())
+    chunk_b = SimpleNamespace(id=uuid.uuid4())
+    chunk_c = SimpleNamespace(id=uuid.uuid4())
+
+    result = VectorIndexService._fuse_hybrid_hits(
+        vector_hits=[(chunk_a, 0.1), (chunk_b, 0.2)],
+        fulltext_hits=[(chunk_a, 4.0), (chunk_c, 3.0)],
+        limit=10,
+        vector_weight=0.7,
+        fulltext_weight=0.3,
+    )
+
+    assert result[0]["chunk"].id == chunk_a.id
     assert result[0]["score_kind"] == "hybrid_relative_rrf"
-    assert result[0]["evidence_score"] < 1.0
+    assert result[0]["matched_by"] == ["fulltext", "vector"]
+    assert result[0]["evidence_score"] == 0.9
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
+def test_fuse_hybrid_hits_deduplicates_sparse_dual_channel_hit() -> None:
+    chunk = SimpleNamespace(id=uuid.uuid4())
+
+    result = VectorIndexService._fuse_hybrid_hits(
+        vector_hits=[(chunk, 0.2)],
+        fulltext_hits=[(chunk, 4.0)],
+        limit=10,
+        vector_weight=0.7,
+        fulltext_weight=0.3,
+    )
+
+    assert len(result) == 1
+    assert result[0]["chunk"].id == chunk.id
+    assert result[0]["score_kind"] == "hybrid_relative_rrf"
+    assert result[0]["matched_by"] == ["fulltext", "vector"]
+    assert result[0]["evidence_score"] == 0.8
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
+def test_build_single_channel_hybrid_hits_deduplicates_defensively() -> None:
+    chunk = SimpleNamespace(id=uuid.uuid4())
+
+    result = VectorIndexService._build_single_channel_hybrid_hits(
+        vector_hits=[(chunk, 0.3)],
+        fulltext_hits=[(chunk, 4.0)],
+        limit=10,
+    )
+
+    assert len(result) == 1
+    assert result[0]["chunk"].id == chunk.id
+    assert result[0]["matched_by"] == ["fulltext", "vector"]
+    assert result[0]["evidence_score"] == 0.8
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
+def test_fuse_hybrid_hits_filters_low_original_scores(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "backend.services.vector_index_service.ai_settings.RAG_HYBRID_MIN_SOURCE_SCORE",
+        0.3,
+    )
+    strong_vector = SimpleNamespace(id=uuid.uuid4())
+    weak_vector = SimpleNamespace(id=uuid.uuid4())
+    strong_fulltext = SimpleNamespace(id=uuid.uuid4())
+    weak_fulltext = SimpleNamespace(id=uuid.uuid4())
+
+    result = VectorIndexService._fuse_hybrid_hits(
+        vector_hits=[(strong_vector, 0.2), (weak_vector, 0.8)],
+        fulltext_hits=[(strong_fulltext, 4.0), (weak_fulltext, 0.1)],
+        limit=10,
+        vector_weight=0.7,
+        fulltext_weight=0.3,
+    )
+
+    assert [hit["chunk"].id for hit in result] == [
+        strong_vector.id,
+        strong_fulltext.id,
+    ]
+    assert all(hit["evidence_score"] >= 0.3 for hit in result)

@@ -45,7 +45,17 @@ Dockerfile
 .dockerignore
 
 # 前端相关 (后端镜像不需要前端源码)
-frontend/
+frontend/*
+!frontend/pnpm-lock.yaml
+!frontend/pnpm-workspace.yaml
+!frontend/apps/
+frontend/apps/*
+!frontend/apps/admin/
+!frontend/apps/admin/**
+frontend/apps/admin/node_modules/
+frontend/apps/admin/dist/
+frontend/apps/admin/test-results/
+frontend/apps/admin/playwright-report/
 node_modules/
 
 # 其它系统冗余

@@ -42,6 +42,7 @@ class RAGEvidencePolicy:
         kb_id: object | None,
         rag_plan: RAGExecutionPlan,
         chunks: list[dict[str, Any]],
+        enable_rag_refusal: bool = True,
     ) -> RAGEvidenceDecision:
         hit_count = len(chunks)
         best_score = self._max_numeric(chunks, "evidence_score")
@@ -49,14 +50,32 @@ class RAGEvidencePolicy:
             best_score = self._max_numeric(chunks, "score")
         best_rerank_score = self._max_numeric(chunks, "rerank_score")
 
-        if not ai_settings.RAG_REFUSAL_ENABLED:
+        if not enable_rag_refusal:
             return self._allow(
                 "RAG 拒答策略未启用", hit_count, best_score, best_rerank_score
             )
-        if kb_id is None or not rag_plan.should_use_rag:
+        if (
+            kb_id is None or not rag_plan.should_use_rag
+        ) and not rag_plan.should_use_external_context:
             return self._allow(
                 "当前问题不需要知识库证据", hit_count, best_score, best_rerank_score
             )
+        if rag_plan.should_use_external_context:
+            external_decision = self._evaluate_external_context(
+                chunks=chunks,
+                hit_count=hit_count,
+                best_score=best_score,
+                best_rerank_score=best_rerank_score,
+            )
+            if external_decision is not None:
+                return external_decision
+            if kb_id is None:
+                return self._allow(
+                    "无知识库且外部上下文证据不充分，允许 LLM 自由回答",
+                    hit_count,
+                    best_score,
+                    best_rerank_score,
+                )
         if hit_count < ai_settings.RAG_MIN_HIT_COUNT:
             return self._refuse(
                 "RAG 命中数量不足", hit_count, best_score, best_rerank_score
@@ -92,6 +111,35 @@ class RAGEvidencePolicy:
         return self._refuse(
             "RAG 检索模式未知", hit_count, best_score, best_rerank_score
         )
+
+    def _evaluate_external_context(
+        self,
+        *,
+        chunks: list[dict[str, Any]],
+        hit_count: int,
+        best_score: float | None,
+        best_rerank_score: float | None,
+    ) -> RAGEvidenceDecision | None:
+        external_chunks = [
+            chunk for chunk in chunks if chunk.get("source_type") == "web"
+        ]
+        if not external_chunks:
+            return None
+        external_best_score = self._max_numeric(external_chunks, "evidence_score")
+        if external_best_score is None:
+            external_best_score = self._max_numeric(external_chunks, "score")
+        if (
+            len(external_chunks) >= ai_settings.RAG_MIN_HIT_COUNT
+            and external_best_score is not None
+            and external_best_score >= ai_settings.RAG_MIN_RELEVANCE_SCORE
+        ):
+            return self._allow(
+                "外部上下文证据充足",
+                hit_count,
+                best_score,
+                best_rerank_score,
+            )
+        return None
 
     @staticmethod
     def _max_numeric(chunks: list[dict[str, Any]], key: str) -> float | None:

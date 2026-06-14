@@ -1,0 +1,74 @@
+.kb-files-modal :global(.ant-modal-content) {
+    background: rgba(255, 255, 255, 0.85) !important;
+    backdrop-filter: blur(20px) saturate(190%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.4) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08) !important;
+    overflow: hidden;
+}
+
+:global([data-theme='dark']) .kb-files-modal :global(.ant-modal-content) {
+    background: rgba(24, 24, 28, 0.85) !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4) !important;
+}
+
+.modal-title-container {
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--color-text-main);
+}
+
+.title-icon {
+    color: var(--color-primary);
+}
+
+.file-icon {
+    color: var(--color-text-desc);
+}
+
+.filename-text {
+    font-weight: 500;
+    color: var(--color-text-main);
+}
+
+.delete-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px !important;
+    border-radius: 6px !important;
+    transition: all 0.2s ease !important;
+}
+
+.delete-btn:hover {
+    background: rgba(255, 77, 79, 0.08) !important;
+}
+
+.spinning-icon {
+    animation: rotate-spin 1.5s linear infinite;
+}
+
+.files-table {
+    margin-top: 16px;
+}
+
+.files-table :global(.ant-table) {
+    background: transparent !important;
+}
+
+.files-table :global(.ant-table-thead > tr > th) {
+    background: var(--color-bg-subtle) !important;
+    color: var(--color-text-main) !important;
+    font-weight: 600 !important;
+    border-bottom: 1px solid var(--color-border) !important;
+}
+
+.files-table :global(.ant-table-tbody > tr > td) {
+    border-bottom: 1px solid var(--color-border) !important;
+}
+
+@keyframes rotate-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}

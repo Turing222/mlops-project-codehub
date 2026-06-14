@@ -26,6 +26,7 @@ USERS_ME_PATH = "/api/v1/users/me"
 WORKSPACES_PATH = "/api/v1/workspaces"
 QUERY_SENT_PATH = "/api/v1/chat/query_sent"
 QUERY_STREAM_PATH = "/api/v1/chat/query_stream"
+CREDITS_CHECKIN_PATH = "/api/v1/credits/checkin"
 DEFAULT_UPLOAD_PATH = "/api/v1/knowledge/default/upload"
 KB_UPLOAD_PATH_TEMPLATE = "/api/v1/knowledge/bases/{kb_id}/upload"
 TASK_STATUS_PATH_TEMPLATE = "/api/v1/knowledge/tasks/{task_id}"
@@ -129,6 +130,16 @@ async def create_auth_headers(
     return await auth_headers_for_new_user(client)
 
 
+async def daily_checkin(
+    client: httpx.AsyncClient,
+    *,
+    headers: dict[str, str],
+) -> dict[str, Any]:
+    response = await client.post(CREDITS_CHECKIN_PATH, headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 async def auth_headers_for_new_user(
     client: httpx.AsyncClient,
     *,
@@ -141,7 +152,9 @@ async def auth_headers_for_new_user(
 
     await register_user(client, username=username, email=email, password=password)
     token = await login_user(client, username=username, password=password)
-    return {"Authorization": f"Bearer {token}"}, suffix
+    headers = {"Authorization": f"Bearer {token}"}
+    await daily_checkin(client, headers=headers)
+    return headers, suffix
 
 
 async def get_current_user(

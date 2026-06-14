@@ -1,6 +1,6 @@
 """RAG service unit tests.
 
-职责：验证 RAGService 的全文检索、混合检索和 rerank 排序行为；边界：使用 AsyncMock 替换 vector_index_service 和 LLM，不连接真实数据库或模型；副作用：无。
+职责：验证 RAGService 的全文检索、混合检索和 rerank 排序行为；边界：使用 AsyncMock 替换 vector_index_service 和 native reranker，不连接真实数据库或模型；副作用：无。
 """
 
 import uuid
@@ -9,17 +9,18 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.services.rag_service import RAGService
+from backend.core.exceptions import app_service_error
+from backend.services.rag_service import RAGService, select_rerank_fallback_candidates
 
 pytestmark = pytest.mark.asyncio
 
 
-def _build_service(llm_service: object = None) -> RAGService:
+def _build_service(reranker: object = None) -> RAGService:
     return RAGService(
         embedder=MagicMock(),
         vector_index_service=MagicMock(),
         top_k=4,
-        llm_service=llm_service,
+        reranker=reranker,
         rerank_candidate_count=3,
         rerank_top_k=2,
     )
@@ -124,17 +125,8 @@ async def test_retrieve_hybrid_returns_empty_on_error() -> None:
     assert result == []
 
 
-async def test_retrieve_with_rerank_orders_results_by_llm_scores() -> None:
-    llm_service = SimpleNamespace(
-        generate_response=AsyncMock(
-            return_value=SimpleNamespace(
-                success=True,
-                content='{"rankings": [{"index": 2, "score": 9}, {"index": 1, "score": 3}]}',
-                error_message=None,
-            )
-        )
-    )
-    service = _build_service(llm_service=llm_service)
+async def test_retrieve_with_rerank_without_reranker_keeps_candidate_order() -> None:
+    service = _build_service()
     candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
     service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
         return_value=[(chunk, 0.1) for chunk in candidates]
@@ -145,24 +137,97 @@ async def test_retrieve_with_rerank_orders_results_by_llm_scores() -> None:
         kb_id=uuid.uuid4(),
     )
 
-    assert [chunk["content"] for chunk in result] == ["beta", "alpha"]
-    assert result[0]["rerank_score"] == 9
-    assert result[0]["score_kind"] == "llm_rerank"
+    assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
+    assert "rerank_score" not in result[0]
+    assert result[0]["score_kind"] == "hybrid_relative_rrf"
     assert "evidence_score" in result[0]
-    llm_service.generate_response.assert_awaited_once()
 
 
-async def test_retrieve_with_rerank_falls_back_to_candidate_order_on_bad_json() -> None:
-    llm_service = SimpleNamespace(
-        generate_response=AsyncMock(
-            return_value=SimpleNamespace(
-                success=True,
-                content="not json",
-                error_message=None,
+async def test_retrieve_with_rerank_prefers_native_reranker() -> None:
+    reranker = SimpleNamespace(rerank=AsyncMock(return_value=[(2, 0.97), (0, 0.42)]))
+    service = _build_service(reranker=reranker)
+    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+    service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
+        return_value=[(chunk, 0.1) for chunk in candidates]
+    )
+
+    result = await service.retrieve_with_rerank(
+        query_text="query",
+        kb_id=uuid.uuid4(),
+    )
+
+    assert [chunk["content"] for chunk in result] == ["gamma", "alpha"]
+    assert result[0]["rerank_score"] == 0.97
+    assert result[0]["score_kind"] == "bifrost_rerank"
+    reranker.rerank.assert_awaited_once_with(
+        query_text="query",
+        documents=["alpha", "beta", "gamma"],
+        top_k=2,
+    )
+
+
+async def test_retrieve_with_rerank_without_native_reranker_returns_candidate_order() -> (
+    None
+):
+    service = _build_service()
+    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+    service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
+        return_value=[(chunk, 0.1) for chunk in candidates]
+    )
+
+    result = await service.retrieve_with_rerank(
+        query_text="query",
+        kb_id=uuid.uuid4(),
+    )
+
+    assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
+
+
+async def test_retrieve_with_rerank_without_reranker_truncates_candidates() -> None:
+    service = _build_service()
+    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+    service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
+        return_value=[(chunk, 0.1) for chunk in candidates]
+    )
+
+    result = await service.retrieve_with_rerank(
+        query_text="query",
+        kb_id=uuid.uuid4(),
+    )
+
+    assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
+
+
+async def test_retrieve_with_rerank_degrades_to_candidate_order_when_reranker_throws() -> (
+    None
+):
+    reranker = SimpleNamespace(
+        rerank=AsyncMock(side_effect=RuntimeError("reranker down"))
+    )
+    service = _build_service(reranker=reranker)
+    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+    service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
+        return_value=[(chunk, 0.1) for chunk in candidates]
+    )
+
+    result = await service.retrieve_with_rerank(
+        query_text="query",
+        kb_id=uuid.uuid4(),
+    )
+
+    assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
+
+
+async def test_retrieve_with_rerank_degrades_when_circuit_breaker_open() -> None:
+    reranker = SimpleNamespace(
+        rerank=AsyncMock(
+            side_effect=app_service_error(
+                "服务 rerank:bifrost 暂时不可用，已熔断保护",
+                code="CIRCUIT_BREAKER_OPEN",
             )
         )
     )
-    service = _build_service(llm_service=llm_service)
+    service = _build_service(reranker=reranker)
     candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
     service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
         return_value=[(chunk, 0.1) for chunk in candidates]
@@ -173,12 +238,39 @@ async def test_retrieve_with_rerank_falls_back_to_candidate_order_on_bad_json() 
         kb_id=uuid.uuid4(),
     )
 
+    # 熔断快速失败被降级为候选原始排序，不向上抛
     assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
 
 
-async def test_retrieve_with_rerank_without_llm_returns_candidate_order() -> None:
-    service = _build_service(llm_service=None)
-    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+async def test_rerank_native_failure_preserves_web_candidate() -> None:
+    reranker = SimpleNamespace(
+        rerank=AsyncMock(side_effect=RuntimeError("reranker down"))
+    )
+    service = _build_service(reranker=reranker)
+    candidates = [
+        {"content": f"kb-{index}", "source_type": "file"} for index in range(20)
+    ] + [{"content": f"web-{index}", "source_type": "web"} for index in range(4)]
+
+    result = await service.rerank(
+        query_text="query",
+        candidates=candidates,
+        top_k=4,
+    )
+
+    assert len(result) == 4
+    assert [chunk["content"] for chunk in result[:3]] == ["kb-0", "kb-1", "kb-2"]
+    assert result[3]["content"] == "web-0"
+
+
+async def test_retrieve_with_rerank_preserves_web_candidate_without_reranker() -> None:
+    service = _build_service(reranker=None)
+    candidates = [
+        _chunk("alpha", 0),
+        _chunk("beta", 1),
+        _chunk("gamma", 2),
+        _chunk("web", 3),
+    ]
+    candidates[-1].source_type = "web"
     service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
         return_value=[(chunk, 0.1) for chunk in candidates]
     )
@@ -188,4 +280,63 @@ async def test_retrieve_with_rerank_without_llm_returns_candidate_order() -> Non
         kb_id=uuid.uuid4(),
     )
 
-    assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
+    assert [chunk["content"] for chunk in result] == ["alpha", "web"]
+
+
+def test_apply_rankings_with_bifrost_rerank_score_kind() -> None:
+    candidates = [{"content": "a"}, {"content": "b"}, {"content": "c"}]
+
+    result = RAGService.apply_rankings(
+        candidates=candidates,
+        rankings=[(3, 0.9), (2, 0.5)],
+        limit=2,
+        score_kind="bifrost_rerank",
+        index_base=1,
+    )
+
+    assert result[0]["content"] == "c"
+    assert result[0]["rerank_score"] == 0.9
+    assert result[0]["score_kind"] == "bifrost_rerank"
+    assert result[1]["content"] == "b"
+    assert result[1]["score_kind"] == "bifrost_rerank"
+
+
+def test_apply_rankings_with_zero_based_index() -> None:
+    candidates = [{"content": "a"}, {"content": "b"}, {"content": "c"}]
+
+    result = RAGService.apply_rankings(
+        candidates=candidates,
+        rankings=[(2, 0.9), (0, 0.5)],
+        limit=2,
+        score_kind="bifrost_rerank",
+        index_base=0,
+    )
+
+    assert result[0]["content"] == "c"
+    assert result[0]["rerank_score"] == 0.9
+    assert result[1]["content"] == "a"
+    assert result[1]["rerank_score"] == 0.5
+
+
+async def test_select_rerank_fallback_keeps_existing_web_order() -> None:
+    candidates = [
+        {"content": "kb-0", "source_type": "file"},
+        {"content": "web-0", "source_type": "web"},
+        {"content": "kb-1", "source_type": "file"},
+    ]
+
+    result = select_rerank_fallback_candidates(candidates, 2)
+
+    assert [chunk["content"] for chunk in result] == ["kb-0", "web-0"]
+
+
+async def test_select_rerank_fallback_keeps_plain_candidate_order_without_web() -> None:
+    candidates = [
+        {"content": "kb-0", "source_type": "file"},
+        {"content": "kb-1", "source_type": "file"},
+        {"content": "kb-2", "source_type": "file"},
+    ]
+
+    result = select_rerank_fallback_candidates(candidates, 2)
+
+    assert [chunk["content"] for chunk in result] == ["kb-0", "kb-1"]

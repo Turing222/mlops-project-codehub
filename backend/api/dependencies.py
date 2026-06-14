@@ -17,8 +17,11 @@ from backend.api.deps.auth import (
 )
 from backend.api.deps.permissions import get_permission_service
 from backend.api.deps.services import (
+    get_credit_service,
+    get_feature_flag_service,
     get_knowledge_service,
     get_object_storage,
+    get_repo_analysis_service,
     get_session_query_service,
     get_task_service,
     get_user_import_service,
@@ -30,6 +33,7 @@ from backend.api.deps.workflows import (
     get_chat_nonstream_workflow,
     get_chat_workflow,
     get_knowledge_upload_workflow,
+    get_repo_analysis_submit_workflow,
 )
 
 _AI_EXPORTS = {
@@ -45,14 +49,18 @@ __all__ = [
     "get_audit_service",
     "get_chat_nonstream_workflow",
     "get_chat_workflow",
+    "get_credit_service",
     "get_current_active_user",
     "get_current_superuser",
     "get_current_user",
+    "get_feature_flag_service",
     "get_knowledge_service",
     "get_knowledge_upload_workflow",
     "get_login_data",
     "get_object_storage",
     "get_permission_service",
+    "get_repo_analysis_service",
+    "get_repo_analysis_submit_workflow",
     "get_session_query_service",
     "get_task_service",
     "get_uow",

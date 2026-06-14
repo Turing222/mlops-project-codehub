@@ -27,7 +27,7 @@ class UserBase(BaseModel):
     """用户 schema 的公共字段。"""
 
     username: UsernameStr = Field(...)
-    email: EmailStr = Field(...)
+    email: EmailStr | None = None
 
 
 class UserSearch(BaseModel):
@@ -54,11 +54,47 @@ class UserLogin(BaseModel):
     password: PasswordStr = Field(...)
 
 
+class SMSSendRequest(BaseModel):
+    """发送短信验证码请求。"""
+
+    phone: str = Field(
+        ..., pattern=r"^\+?\d{7,15}$", description="手机号（含可选国际区号）"
+    )
+
+
+class PhoneLoginRequest(BaseModel):
+    """手机号 + 验证码登录请求。"""
+
+    phone: str = Field(..., pattern=r"^\+?\d{7,15}$", description="手机号")
+    code: str = Field(..., min_length=4, max_length=6, description="短信验证码")
+
+
+class GoogleCallbackRequest(BaseModel):
+    """Google OAuth 授权码回调请求。"""
+
+    code: str = Field(..., min_length=1, description="Google 返回的授权码")
+    redirect_uri: str = Field(..., description="授权请求中使用的回调地址")
+
+
+class SMSSendResponse(BaseModel):
+    """发送短信验证码响应。"""
+
+    message: str
+
+
+class GoogleAuthUrlResponse(BaseModel):
+    """Google OAuth2 授权 URL 响应。"""
+
+    url: str
+
+
 class UserCreate(UserBase):
     """用户创建请求。"""
 
-    password: PasswordStr = Field(...)
-    confirm_password: PasswordStr = Field(...)
+    email: EmailStr | None = None
+    password: PasswordStr | None = None
+    confirm_password: PasswordStr | None = None
+    phone: str | None = None
     max_tokens: int = Field(
         default=100000, ge=0, description="用户可使用的最大 Token 额度"
     )
@@ -73,7 +109,11 @@ class UserCreate(UserBase):
 
     @model_validator(mode="after")
     def check_passwords_match(self) -> Self:
-        if self.password != self.confirm_password:
+        if (
+            self.password is not None
+            and self.confirm_password is not None
+            and self.password != self.confirm_password
+        ):
             raise ValueError("两次输入的密码不一致")
         return self
 
@@ -85,6 +125,7 @@ class UserUpdate(BaseModel):
 
     username: UsernameStr | None = None
     email: EmailStr | None = None
+    phone: str | None = None
     is_active: bool | None = None
     max_tokens: int | None = None
 
@@ -98,11 +139,17 @@ class UserUpdate(BaseModel):
 class UserResponse(UserBase):
     """用户响应对象。"""
 
+    email: EmailStr | None = None
+    phone: str | None = None
+    auth_provider: str | None = None
     id: uuid.UUID
     is_active: bool
     is_superuser: bool
     max_tokens: int
     used_tokens: int
+    features: dict[str, bool] = Field(
+        default_factory=dict, description="用户可享有的功能标志字典"
+    )
     created_at: datetime
     updated_at: datetime
 
@@ -116,6 +163,20 @@ class UserImportResponse(BaseModel):
     total_rows: int
     imported_rows: int
     message: str
+
+
+class UserProfileUpdate(BaseModel):
+    """用户个人信息更新请求（安全隔离，仅限基本信息）。"""
+
+    username: UsernameStr | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        from_attributes=True,
+        extra="forbid",
+    )
 
 
 class Token(BaseModel):

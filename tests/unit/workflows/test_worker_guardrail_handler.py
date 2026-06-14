@@ -132,6 +132,32 @@ async def test_stream_refusal_publishes_rag_refusal_and_persists() -> None:
     persistence.write_idempotency_message.assert_awaited_once()
 
 
+async def test_stream_refusal_uses_planner_message_and_metadata() -> None:
+    publisher = AsyncMock()
+    handler, persistence = _make_handler(stream_publisher=publisher)
+    search_ctx = {"planner_refusal": True, "reason": "planner refused"}
+
+    await handler.handle_stream_refusal(
+        channel="stream:planner",
+        assistant_message_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        search_context=search_ctx,
+        start_time=2.0,
+        idempotency_lock_key=None,
+    )
+
+    from backend.config.ai_settings import ai_settings
+
+    publisher.publish_chunk.assert_awaited_once_with(
+        "stream:planner", ai_settings.RAG_PLANNER_REFUSAL_MESSAGE
+    )
+    kwargs = persistence.persist_success.call_args.kwargs
+    assert kwargs["content"] == ai_settings.RAG_PLANNER_REFUSAL_MESSAGE
+    assert (
+        kwargs["message_metadata"]["badcase"]["reason"] == "planner_preflight_refusal"
+    )
+
+
 async def test_nonstream_input_block_returns_result_and_persists() -> None:
     handler, persistence = _make_handler()
 
@@ -169,6 +195,27 @@ async def test_nonstream_refusal_returns_result_with_search_context() -> None:
     assert result.search_context == search_ctx
     persistence.persist_success.assert_awaited_once()
     persistence.write_idempotency_message.assert_not_awaited()
+
+
+async def test_nonstream_refusal_uses_planner_message_and_metadata() -> None:
+    handler, persistence = _make_handler()
+    search_ctx = {"planner_refusal": True, "reason": "planner refused"}
+
+    result = await handler.handle_nonstream_refusal(
+        assistant_message_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        search_context=search_ctx,
+        start_time=1.0,
+        idempotency_lock_key=None,
+    )
+
+    from backend.config.ai_settings import ai_settings
+
+    assert result.content == ai_settings.RAG_PLANNER_REFUSAL_MESSAGE
+    kwargs = persistence.persist_success.call_args.kwargs
+    assert (
+        kwargs["message_metadata"]["badcase"]["reason"] == "planner_preflight_refusal"
+    )
 
 
 async def test_idempotency_lock_skipped_when_message_id_none() -> None:

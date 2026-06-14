@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import math
 import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -14,17 +15,21 @@ from typing import TYPE_CHECKING
 import redis.asyncio as redis
 
 from backend.application.chat.history_projection import history_to_conversation_messages
+from backend.config.credit_settings import credit_settings
+from backend.config.llm import get_llm_model_config
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.concurrency import db_concurrency_slot
-from backend.core.exceptions import AppException, app_bad_request, app_validation_error
+from backend.core.exceptions import AppException, app_bad_request
 from backend.infra.redis import safe_release_lock
 from backend.models.schemas.chat.commands import ChatQueryCommand
-from backend.models.schemas.chat.payloads import GenerationPayload
+from backend.models.schemas.chat.payloads import FeatureFlags, GenerationPayload
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chat_service import SessionManager
-from backend.services.knowledge_service import DEFAULT_KNOWLEDGE_BASE_NAME
+from backend.services.credit_service import CreditService
+from backend.services.feature_flag_service import FeatureFlagService
 from backend.services.permission_service import PermissionService
+from backend.utils.token_estimation import estimate_messages_tokens, estimate_tokens
 
 if TYPE_CHECKING:
     from backend.models.orm.chat import ChatMessage, ChatSession
@@ -64,11 +69,13 @@ class ChatSessionOrchestrator:
         uow: AbstractUnitOfWork,
         redis_client: redis.Redis,
         permission_service: PermissionService,
+        feature_flag_service: FeatureFlagService,
         session_manager: SessionManager | None = None,
     ) -> None:
         self.uow = uow
         self.redis = redis_client
         self.permission_service = permission_service
+        self._feature_flag_service = feature_flag_service
         self._session_manager = session_manager or SessionManager(
             uow, permission_service
         )
@@ -135,32 +142,32 @@ class ChatSessionOrchestrator:
     ) -> ChatPreparedRequest:
         async with db_concurrency_slot(trace_attrs):  # noqa: SIM117
             async with self.uow:
+                # Credit pre-check BEFORE session/message creation to avoid
+                # lock-order inversion with the worker path (User→CreditAccount→chat).
+                with trace_span(f"{span_prefix}.credit_precheck", trace_attrs) as span:
+                    billing_model_name = _resolve_billing_model_name()
+                    estimated_cost = _estimate_credit_cost(
+                        query_text=command.query_text,
+                        conversation_history=[],
+                        model_name=billing_model_name,
+                    )
+                    set_span_attributes(
+                        span,
+                        {
+                            "credit.estimated_cost": estimated_cost,
+                            "credit.model_name": billing_model_name,
+                        },
+                    )
+                    await CreditService(self.uow).ensure_sufficient_balance(
+                        command.user_id, estimated_cost=estimated_cost
+                    )
+
                 with trace_span(
-                    f"{span_prefix}.create_session_and_messages",
+                    f"{span_prefix}.prepare_chat_context",
                     trace_attrs,
                 ) as span:
-                    user = await self.uow.user_repo.get_with_lock(command.user_id)
-                    if user and user.used_tokens >= user.max_tokens:
-                        raise app_validation_error(
-                            "Token 余额不足",
-                            code="TOKEN_QUOTA_EXCEEDED",
-                            details={
-                                "used": user.used_tokens,
-                                "max": user.max_tokens,
-                            },
-                        )
-
                     session_manager = self._session_manager
                     resolved_kb_id = command.kb_id
-                    if command.session_id is None and resolved_kb_id is None:
-                        default_kb = (
-                            await self.uow.knowledge_repo.get_kb_by_name_for_user(
-                                name=DEFAULT_KNOWLEDGE_BASE_NAME,
-                                user_id=command.user_id,
-                            )
-                        )
-                        if default_kb is not None:
-                            resolved_kb_id = default_kb.id
 
                     session = await session_manager.ensure_session(
                         user_id=command.user_id,
@@ -192,17 +199,7 @@ class ChatSessionOrchestrator:
                         client_request_id=command.client_request_id,
                         user_id=command.user_id,
                     )
-                set_span_attributes(
-                    span,
-                    {
-                        "chat.session_id": session.id,
-                        "chat.assistant_message_id": assistant_message.id,
-                    },
-                )
-                trace_attrs["chat.session_id"] = session.id
-                trace_attrs["chat.assistant_message_id"] = assistant_message.id
 
-                with trace_span(f"{span_prefix}.fetch_history", trace_attrs) as span:
                     history_messages = await session_manager.get_session_messages(
                         session_id=session.id,
                         limit=settings.CHAT_MEMORY_FETCH_LIMIT,
@@ -210,17 +207,29 @@ class ChatSessionOrchestrator:
                     context_state = await self.uow.chat_repo.get_context_state(
                         session.id
                     )
+
                     set_span_attributes(
-                        span, {"chat.history.message_count": len(history_messages)}
+                        span,
+                        {
+                            "chat.session_id": session.id,
+                            "chat.assistant_message_id": assistant_message.id,
+                            "chat.history.message_count": len(history_messages),
+                            "chat.context_state.present": context_state is not None,
+                        },
                     )
+                trace_attrs["chat.session_id"] = session.id
+                trace_attrs["chat.assistant_message_id"] = assistant_message.id
+
+        conversation_history = history_to_conversation_messages(history_messages)
 
         with trace_span(f"{span_prefix}.prepare_worker_payload", trace_attrs) as span:
-            conversation_history = history_to_conversation_messages(history_messages)
             set_span_attributes(
                 span,
                 {
                     "chat.history.message_count": len(conversation_history),
                     "rag.deferred_to_worker": effective_kb_id is not None,
+                    "external_context.enabled": command.enable_external_context,
+                    "context.mode": command.context_mode,
                 },
             )
 
@@ -230,7 +239,28 @@ class ChatSessionOrchestrator:
             conversation_history=conversation_history,
             kb_id=effective_kb_id,
             context_state=context_state,
+            enable_external_context=command.enable_external_context,
+            context_mode=command.context_mode,
+            billing_model_name=billing_model_name,
             extra_body=command.extra_body,
+        )
+
+        # Evaluate system-level AI feature flags and attach to payload.
+        system_flags = await self._feature_flag_service.get_system_features()
+        generation_payload.feature_flags = FeatureFlags(
+            enable_external_context=system_flags.get("enable-external-context", False),
+            enable_rag_rerank=system_flags.get("enable-rag-rerank", False),
+            enable_rag_planner=system_flags.get("enable-rag-planner", False),
+            enable_rag_planner_routing=system_flags.get(
+                "enable-rag-planner-routing", False
+            ),
+            enable_rag_refusal=system_flags.get("enable-rag-refusal", True),
+            enable_llm_model_routing=system_flags.get(
+                "enable-llm-model-routing", False
+            ),
+            enable_rag_planner_thinking=system_flags.get(
+                "enable-rag-planner-thinking", False
+            ),
         )
         return ChatPreparedRequest(
             session=session,
@@ -249,3 +279,35 @@ class ChatSessionOrchestrator:
             idempotency.lock_key,
             idempotency.lock_token,
         )
+
+
+def _resolve_billing_model_name() -> str:
+    """Resolve the model name used for credit billing (first candidate)."""
+    try:
+        config = get_llm_model_config()
+        profiles = config.resolve_route(settings.LLM_PROVIDER)
+        return profiles[0].model
+    except Exception:
+        return "default"
+
+
+def _estimate_credit_cost(
+    *,
+    query_text: str,
+    conversation_history: list[dict],
+    model_name: str,
+) -> int:
+    """Estimate credit cost based on input tokens + estimated output tokens."""
+    input_tokens = estimate_tokens(query_text, model_name)
+    if conversation_history:
+        input_tokens += estimate_messages_tokens(conversation_history, model_name)
+
+    output_tokens = credit_settings.CREDIT_ESTIMATED_OUTPUT_TOKENS
+    rates = credit_settings.CREDIT_MODEL_RATES.get(
+        model_name
+    ) or credit_settings.CREDIT_MODEL_RATES.get("default", {})
+    input_rate = rates.get("input", 1.0)
+    output_rate = rates.get("output", 1.0)
+
+    raw_cost = (input_tokens * input_rate + output_tokens * output_rate) / 1000.0
+    return max(math.ceil(raw_cost), credit_settings.CREDIT_MINIMUM_ESTIMATED_COST)

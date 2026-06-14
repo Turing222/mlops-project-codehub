@@ -92,6 +92,13 @@ class TestValidateCitations:
         result = validate_citations("text [R1.1]", valid)
         assert result.valid_ref_ids == frozenset(valid)
 
+    def test_web_marker_validated(self) -> None:
+        content = "fresh fact [W1] stale fact [W9]"
+        result = validate_citations(content, {"W1"})
+        assert result.cleaned_content == "fresh fact [W1] stale fact "
+        assert result.total_citations == 2
+        assert result.removed_count == 1
+
 
 # ── extract_valid_ref_ids ─────────────────────────────────────────
 
@@ -113,15 +120,22 @@ class TestExtractValidRefIds:
                         {"ref_id": "R2.1"},
                     ],
                 },
+                {
+                    "ref_id": "W1",
+                    "chunks": [
+                        {"ref_id": "W1"},
+                    ],
+                },
             ],
             "chunks": [
                 {"ref_id": "R1.1"},
                 {"ref_id": "R1.2"},
                 {"ref_id": "R2.1"},
+                {"ref_id": "W1"},
             ],
         }
         result = extract_valid_ref_ids(search_context)
-        assert result == {"R1", "R1.1", "R1.2", "R2", "R2.1"}
+        assert result == {"R1", "R1.1", "R1.2", "R2", "R2.1", "W1"}
 
     def test_empty_refs_returns_empty(self) -> None:
         search_context = {"refs": [], "chunks": []}
@@ -225,3 +239,7 @@ class TestStreamingCitationFilter:
     def test_group_level_marker_in_stream(self) -> None:
         result = self._collect(["summary [R1] detail [R1.1]"], {"R1", "R1.1"})
         assert result == ["summary [R1] detail [R1.1]"]
+
+    def test_web_marker_in_stream(self) -> None:
+        result = self._collect(["fresh [W1] stale [W9]"], {"W1"})
+        assert result == ["fresh [W1] stale "]

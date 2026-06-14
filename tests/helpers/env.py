@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 from typing import Literal, cast
 
@@ -20,6 +21,12 @@ REQUIRED_ENV_BY_MARKER: dict[str, str] = {
     "requires_taskiq": "TEST_TASKIQ_REDIS_URL",
     "requires_s3": "TEST_S3_ENDPOINT_URL",
     "requires_llm": "TEST_LLM_API_KEY",
+}
+
+# Markers whose tests need certain Python packages importable at collection time.
+REQUIRED_PKG_BY_MARKER: dict[str, list[str]] = {
+    "requires_taskiq": ["taskiq", "taskiq_redis"],
+    "requires_ai": ["openai"],
 }
 
 
@@ -46,3 +53,18 @@ def require_env(name: str) -> str:
     if value is None:
         pytest.skip(f"{name} is required for this test")
     return value
+
+
+def pkg_available(name: str) -> bool:
+    try:
+        importlib.import_module(name)
+    except ImportError:
+        return False
+    return True
+
+
+def pkgs_available_for_marker(marker_name: str) -> bool:
+    for pkg in REQUIRED_PKG_BY_MARKER.get(marker_name, ()):
+        if not pkg_available(pkg):
+            return False
+    return True

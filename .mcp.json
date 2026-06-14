@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "serena": {
+      "type": "stdio",
+      "command": "bash",
+      "args": ["scripts/dev/serena-mcp.sh", "claude-code"]
+    }
+  }
+}

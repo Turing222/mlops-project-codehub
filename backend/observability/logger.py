@@ -20,6 +20,16 @@ try:
 except ImportError:
     _OTEL_AVAILABLE = False
 
+_LOG_LEVELS: dict[str, int] = {
+    "CRITICAL": logging.CRITICAL,
+    "ERROR": logging.ERROR,
+    "WARNING": logging.WARNING,
+    "WARN": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+    "NOTSET": logging.NOTSET,
+}
+
 
 class OrjsonFormatter(jsonlogger.JsonFormatter):
     """使用 orjson 序列化并补齐标准字段的 JSON formatter。"""
@@ -87,11 +97,19 @@ class OrjsonFormatter(jsonlogger.JsonFormatter):
                 log_record["span_id"] = f"{ctx.span_id:016x}"
 
 
+def _resolve_log_level(value: str | None) -> int:
+    normalized = (value or "info").strip().upper()
+    return _LOG_LEVELS.get(normalized, logging.INFO)
+
+
 def setup_logging() -> None:
     """配置根 logger 的控制台 JSON 输出。"""
 
+    from backend.config.settings import settings
+
+    log_level = _resolve_log_level(settings.BACKEND_LOG_LEVEL)
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(log_level)
     json_formatter = OrjsonFormatter()
 
     # 多次初始化时先清空 handler，避免同一日志被重复发送。
@@ -99,7 +117,7 @@ def setup_logging() -> None:
         logger.handlers.clear()
 
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.DEBUG)
+    console_handler.setLevel(log_level)
     console_handler.setFormatter(json_formatter)
     logger.addHandler(console_handler)
 

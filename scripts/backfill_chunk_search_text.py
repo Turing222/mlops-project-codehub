@@ -24,10 +24,11 @@ def parse_args() -> argparse.Namespace:
         description="Backfill document_chunks.search_text in batches."
     )
     parser.add_argument("--batch-size", type=int, default=500)
+    parser.add_argument("--max-batches", type=int, default=1_000_000)
     return parser.parse_args()
 
 
-async def backfill(batch_size: int) -> int:
+async def backfill(batch_size: int, max_batches: int) -> int:
     from backend.infra.database import create_db_assets
     from backend.models.orm.chunk import DocumentChunk
     from backend.utils.search_text import build_search_texts
@@ -37,7 +38,7 @@ async def backfill(batch_size: int) -> int:
     last_id: uuid.UUID | None = None
 
     try:
-        while True:
+        for _batch_index in range(max_batches):
             async with session_factory() as session:
                 stmt = (
                     select(DocumentChunk.id, DocumentChunk.content)
@@ -77,6 +78,10 @@ async def backfill(batch_size: int) -> int:
                 processed += len(rows)
                 last_id = rows[-1].id
                 print(f"processed={processed}")
+        else:
+            raise RuntimeError(
+                "backfill exceeded max_batches before reaching an empty page"
+            )
     finally:
         await engine.dispose()
 
@@ -86,7 +91,8 @@ async def backfill(batch_size: int) -> int:
 async def main() -> None:
     args = parse_args()
     batch_size = max(1, args.batch_size)
-    processed = await backfill(batch_size=batch_size)
+    max_batches = max(1, args.max_batches)
+    processed = await backfill(batch_size=batch_size, max_batches=max_batches)
     print(f"done processed={processed}")
 
 

@@ -1,0 +1,59 @@
+slug: security-operability-baseline
+title: Security and Operability Baseline
+status: active
+
+goal: Establish the P0/P1 production security and operability baseline for Dewflow without taking on P2 performance or architecture work.
+
+completion_chain:
+  - Production security guardrails are enforced for secrets, mock auth settings, and public API documentation.
+  - Authentication entrypoints have rate limiting and SMS verification abuse protection designed for real client IPs.
+  - Supply-chain scanning runs in CI for Python dependencies, container images, and dependency update hygiene.
+  - CSP rollout and alert delivery are configured with a safe validation path.
+  - Focused tests, CI checks, and deployment notes prove each workstream is ready to ship.
+
+workstreams:
+  - id: 1
+    title: PR 1 Production security guardrails.
+    status: done
+    kind: blocking
+    deps: []
+  - id: 2
+    title: PR 2 Authentication rate limiting and true client IP readiness.
+    status: done
+    kind: serial
+    deps: [1]
+  - id: 3
+    title: PR 3 Supply-chain security CI.
+    status: done
+    kind: parallel
+    deps: []
+  - id: 4
+    title: PR 4 CSP report-only and AWS alert delivery.
+    status: pending
+    kind: serial
+    deps: [1]
+
+current_checkpoint:
+  name: pr4-scope-aligned
+  state: planned
+  summary: PR 1, PR 2, and PR 3 are implemented; PR 4 is aligned on CSP report-only logging plus CloudWatch Alarm to SNS email delivery instead of self-hosted Alertmanager.
+
+open_decisions:
+  - id: aws-alert-infra-owner
+    note: Confirm whether CloudWatch Logs, metric filters, alarms, and SNS topics are managed manually in AWS first or codified later in infrastructure-as-code.
+  - id: csp-enforcement-rollout
+    note: CSP enforcement is deferred until report-only logs show a stable allowlist.
+
+next_choices:
+  - id: A
+    label: Plan PR 4
+    note: Prepare the CSP report-only endpoint, structured logging contract, and CloudWatch/SNS delivery documentation.
+  - id: B
+    label: Defer CSP
+    note: Move CSP rollout out of this work item and keep only AWS alert delivery in PR 4.
+
+attached_artifacts:
+  task_plan: task-plan.md
+  reviews:
+    - review-ws2-2026-06-08.md
+  debug: []

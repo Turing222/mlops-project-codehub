@@ -20,11 +20,11 @@ class BaseService(Generic[UowT]):  # noqa: UP046
     @asynccontextmanager
     async def read(self) -> AsyncIterator[UowT]:
         """只读 UoW 上下文：退出时不提交事务。"""
-        async with self.uow.read_context():
+        async with self.uow.read_context():  # type: ignore[attr-defined]
             yield self.uow
 
     @asynccontextmanager
     async def write(self) -> AsyncIterator[UowT]:
         """写 UoW 上下文：正常退出自动提交，异常自动回滚。"""
-        async with self.uow:
+        async with self.uow:  # type: ignore[attr-defined]
             yield self.uow

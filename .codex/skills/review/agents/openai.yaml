@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review"
+  short_description: "Review full workspace changes"
+  default_prompt: "Review staged, unstaged, and untracked changes against Dewflow project conventions."

@@ -33,6 +33,16 @@ class LLMRoutingService(AbstractLLMService):
             raise ValueError("LLM routing service requires at least one candidate")
         self.candidates = tuple(candidates)
 
+    @property
+    def model_name(self) -> str:
+        """Return the first candidate's model name for credit billing rate lookup."""
+        return self.candidates[0].service.model_name
+
+    @property
+    def provider_name(self) -> str:
+        """Return the first candidate's provider name for observability."""
+        return self.candidates[0].service.provider_name
+
     async def stream_response(
         self,
         query: LLMQueryDTO,

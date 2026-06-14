@@ -1,0 +1,108 @@
+name: PR Gate CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # This job runs PR-only baseline coverage that Static CI skips:
+  # backend integration (requires PG + Redis) and frontend e2e-mock.
+  # Docker smoke/full-stack coverage lives in Smoke CI.
+  pr-gate:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    name: PR gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg17-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dewflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d dewflow_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7.4.9-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      APP_ENV: test
+      SECRET_KEY: ci-test-secret-key-with-at-least-32-chars
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dewflow_test
+      REDIS_URL: redis://localhost:6379/0
+      TASKIQ_REDIS_URL: redis://localhost:6379/1
+      DEWFLOW_TEST_PROFILE: ci
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dewflow_test
+      TEST_REDIS_URL: redis://localhost:6379/0
+      TEST_TASKIQ_REDIS_URL: redis://localhost:6379/1
+      POSTGRES_SSL_MODE: disable
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      # Backend integration
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
+      - name: Cache Python virtualenv
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .venv
+          key: uv-${{ runner.os }}-py312-${{ hashFiles('uv.lock') }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py312-
+
+      - name: Sync Python dependencies
+        run: uv sync --frozen --dev --all-extras
+
+      - name: Run backend CI test suite
+        run: make qa-test-ci
+
+      # Frontend mock e2e
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --dir frontend --filter admin exec playwright install --with-deps chromium
+
+      - name: Run frontend e2e-mock
+        run: make frontend-e2e-mock

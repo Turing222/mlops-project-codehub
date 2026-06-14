@@ -88,7 +88,7 @@ def load_samples(dataset_path: Path) -> list[EvalSample]:
                 ],
                 reference_answer=reference_answer,
                 category=category,
-                retrieval_mode=retrieval_mode,
+                retrieval_mode=retrieval_mode,  # type: ignore[arg-type]
                 expected_plan=expected_plan,
                 must_refuse=bool(payload.get("must_refuse", False)),
                 notes=notes,
@@ -183,7 +183,7 @@ def build_rag_service(
     embedder: Any,
     vector_index_service: Any,
     top_k: int,
-    llm_service: Any | None,
+    reranker: Any | None = None,
     rerank_candidate_count: int,
     rerank_top_k: int,
 ) -> Any:
@@ -193,7 +193,7 @@ def build_rag_service(
         embedder=embedder,
         vector_index_service=vector_index_service,
         top_k=top_k,
-        llm_service=llm_service,
+        reranker=reranker,
         rerank_candidate_count=rerank_candidate_count,
         rerank_top_k=rerank_top_k,
     )

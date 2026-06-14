@@ -3,6 +3,7 @@ import logging
 import time
 
 from fastapi import APIRouter, Request
+from opentelemetry.instrumentation.utils import suppress_instrumentation
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -35,7 +36,8 @@ async def readiness_check(request: Request) -> dict[str, str | float]:
             async with engine.connect() as db_connection:
                 await db_connection.execute(text("SELECT 1"))
 
-        await asyncio.wait_for(_ping_db(), timeout=2.0)
+        with suppress_instrumentation():
+            await asyncio.wait_for(_ping_db(), timeout=2.0)
 
         latency_ms = (time.perf_counter() - start_time) * 1000
 

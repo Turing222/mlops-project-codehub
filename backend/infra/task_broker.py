@@ -21,8 +21,10 @@ broker = ListQueueBroker(
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
 async def _startup_worker_dependencies(_state) -> None:
     """Initialize worker process dependencies."""
+    from backend.observability.logger import setup_logging
     from backend.worker.dependencies import get_worker_container
 
+    setup_logging()
     get_worker_container()
 
 

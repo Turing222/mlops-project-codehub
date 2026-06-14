@@ -9,17 +9,21 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import tempfile
 import uuid
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from posixpath import join as posix_join
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
 from backend.contracts.uploads import UploadFileLike
+
+logger = logging.getLogger(__name__)
 
 
 class UploadSizeLimitExceeded(Exception):
@@ -55,6 +59,8 @@ class ObjectStorage(Protocol):
         self,
         *,
         kb_id: uuid.UUID,
+        owner_id: uuid.UUID,
+        workspace_id: uuid.UUID | None,
         filename: str,
         upload_file: UploadFileLike,
         max_size_bytes: int,
@@ -68,25 +74,75 @@ class ObjectStorage(Protocol):
     ) -> AbstractAsyncContextManager[Path]: ...
 
 
+@dataclass(frozen=True, slots=True)
+class ObjectKeyBuilder:
+    """Build versioned object keys for persisted source artifacts."""
+
+    version: str = "v1"
+
+    def knowledge_file_key(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        owner_id: uuid.UUID,
+        workspace_id: uuid.UUID | None,
+        filename: str,
+        object_id: uuid.UUID | None = None,
+    ) -> str:
+        scope_type, scope_id = (
+            ("workspaces", str(workspace_id))
+            if workspace_id is not None
+            else ("users", str(owner_id))
+        )
+        stable_object_id = object_id or uuid.uuid4()
+        return posix_join(
+            self.version,
+            "knowledge",
+            scope_type,
+            scope_id,
+            "kb",
+            str(kb_id),
+            "files",
+            f"{stable_object_id}_{self._safe_filename(filename)}",
+        )
+
+    @staticmethod
+    def _safe_filename(filename: str) -> str:
+        return safe_storage_filename(filename)
+
+
 class LocalObjectStorage:
     """本地文件系统对象存储实现。"""
 
     backend = "local"
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        key_builder: ObjectKeyBuilder | None = None,
+    ) -> None:
         self.root = root
+        self.key_builder = key_builder or ObjectKeyBuilder()
 
     async def save_upload_stream(
         self,
         *,
         kb_id: uuid.UUID,
+        owner_id: uuid.UUID,
+        workspace_id: uuid.UUID | None,
         filename: str,
         upload_file: UploadFileLike,
         max_size_bytes: int,
     ) -> StoredObject:
-        key = self._build_key(kb_id=kb_id, filename=filename)
+        key = self.key_builder.knowledge_file_key(
+            kb_id=kb_id,
+            owner_id=owner_id,
+            workspace_id=workspace_id,
+            filename=filename,
+        )
         target_path = self.root / key
-        temp_path = self.root / str(kb_id) / ".tmp" / f"{uuid.uuid4().hex}.part"
+        temp_path = self.root / ".tmp" / f"{uuid.uuid4().hex}.part"
         target_path.parent.mkdir(parents=True, exist_ok=True)
         temp_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -134,10 +190,6 @@ class LocalObjectStorage:
         file_path = cast(Any, file_obj).file_path
         return Path(file_path)
 
-    @staticmethod
-    def _build_key(*, kb_id: uuid.UUID, filename: str) -> str:
-        return f"{kb_id}/{uuid.uuid4().hex}_{filename}"
-
 
 class S3ObjectStorage:
     """S3-compatible 对象存储实现。"""
@@ -154,9 +206,11 @@ class S3ObjectStorage:
         access_key_id: str | None = None,
         secret_access_key: str | None = None,
         client: Any | None = None,
+        key_builder: ObjectKeyBuilder | None = None,
     ) -> None:
         self.bucket = bucket
         self.prefix = prefix.strip("/")
+        self.key_builder = key_builder or ObjectKeyBuilder()
         self.client = client or self._create_client(
             region=region,
             endpoint_url=endpoint_url,
@@ -168,11 +222,18 @@ class S3ObjectStorage:
         self,
         *,
         kb_id: uuid.UUID,
+        owner_id: uuid.UUID,
+        workspace_id: uuid.UUID | None,
         filename: str,
         upload_file: UploadFileLike,
         max_size_bytes: int,
     ) -> StoredObject:
-        key = self._build_key(kb_id=kb_id, filename=filename)
+        key = self._build_key(
+            kb_id=kb_id,
+            owner_id=owner_id,
+            workspace_id=workspace_id,
+            filename=filename,
+        )
         temp_path, stats = await _copy_upload_to_temp(
             upload_file=upload_file,
             max_size_bytes=max_size_bytes,
@@ -188,11 +249,7 @@ class S3ObjectStorage:
                 {"Metadata": {"sha256": stats.sha256}},
             )
         except Exception:
-            await asyncio.to_thread(
-                self.client.delete_object,
-                Bucket=self.bucket,
-                Key=key,
-            )
+            await self._delete_after_failed_upload(key)
             raise
         finally:
             temp_path.unlink(missing_ok=True)
@@ -235,11 +292,38 @@ class S3ObjectStorage:
         finally:
             temp_path.unlink(missing_ok=True)
 
-    def _build_key(self, *, kb_id: uuid.UUID, filename: str) -> str:
-        relative = f"{kb_id}/{uuid.uuid4().hex}_{filename}"
+    def _build_key(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        owner_id: uuid.UUID,
+        workspace_id: uuid.UUID | None,
+        filename: str,
+    ) -> str:
+        relative = self.key_builder.knowledge_file_key(
+            kb_id=kb_id,
+            owner_id=owner_id,
+            workspace_id=workspace_id,
+            filename=filename,
+        )
         if not self.prefix:
             return relative
-        return f"{self.prefix}/{relative}"
+        return posix_join(self.prefix, relative)
+
+    async def _delete_after_failed_upload(self, key: str) -> None:
+        try:
+            await asyncio.to_thread(
+                self.client.delete_object,
+                Bucket=self.bucket,
+                Key=key,
+            )
+        except Exception:
+            logger.warning(
+                "S3 cleanup failed after upload error for bucket=%s key=%s",
+                self.bucket,
+                key,
+                exc_info=True,
+            )
 
     @staticmethod
     def _create_client(
@@ -279,6 +363,11 @@ def create_object_storage(settings) -> ObjectStorage:
     )
 
 
+def safe_storage_filename(filename: str, *, default: str = "unnamed.md") -> str:
+    safe_name = Path(filename).name.strip().replace("\x00", "")
+    return safe_name or default
+
+
 async def _stream_upload_to_path(
     *,
     upload_file: UploadFileLike,
@@ -301,7 +390,8 @@ async def _stream_upload_to_path(
         pending_size = 0
 
     with path.open("wb") as target:
-        while True:
+        max_chunks = max_size_bytes // chunk_size + 2
+        for _chunk_index in range(max_chunks):
             chunk = await upload_file.read(chunk_size)
             if not chunk:
                 break
@@ -313,6 +403,8 @@ async def _stream_upload_to_path(
             pending_size += len(chunk)
             if pending_size >= flush_size:
                 await _flush_pending_chunks(target)
+        else:
+            raise UploadSizeLimitExceeded("upload exceeds max_size_bytes")
         await _flush_pending_chunks(target)
     return UploadStreamStats(size=total_size, sha256=hasher.hexdigest())
 

@@ -11,7 +11,12 @@ from backend.ai.core.prompt_templates import (
     RAG_SYSTEM_TEMPLATE,
     render_system_prompt,
 )
-from backend.ai.core.token_counter import count_messages_tokens, count_tokens
+from backend.ai.core.token_counter import (
+    count_messages_tokens,
+    count_tokens,
+    estimate_messages_tokens,
+    estimate_tokens,
+)
 
 
 @pytest.fixture
@@ -80,7 +85,7 @@ class TestTemplateRendering:
             context_chunks=[],
         )
         assert "只能根据参考资料回答" in result
-        assert "无法基于知识库资料回答" in result
+        assert "无法基于已提供资料回答" in result
         assert "基于你的通用知识回答" not in result
 
 
@@ -168,22 +173,43 @@ class TestGroupIntoRounds:
 
 
 class TestTokenUtils:
-    """Token 计算工具"""
+    """Token 估算工具"""
 
     def test_count_tokens_empty(self) -> None:
         assert count_tokens("") == 0
 
-    def test_count_tokens_nonempty(self) -> None:
-        result = count_tokens("Hello, world!")
+    def test_estimate_tokens_nonempty(self) -> None:
+        result = estimate_tokens("Hello, world!")
         assert result > 0
+
+    def test_estimate_tokens_handles_mixed_cjk_and_latin_text(self) -> None:
+        chinese = estimate_tokens("你好世界")
+        english = estimate_tokens("hello world")
+        mixed = estimate_tokens("你好 hello")
+
+        assert chinese > 0
+        assert english > 0
+        assert mixed > 0
+
+    def test_estimate_tokens_is_conservative_for_short_words(self) -> None:
+        text = "a " * 100
+
+        assert estimate_tokens(text) >= 100
+
+    def test_estimate_tokens_is_conservative_for_code_like_text(self) -> None:
+        code = "if (x == y) { foo_bar += baz.qux(); }\n" * 10
+
+        assert estimate_tokens(code) > len(code) // 4
 
     def test_count_messages_tokens_empty(self) -> None:
         assert count_messages_tokens([]) == 0
 
-    def test_count_messages_tokens_basic(self) -> None:
+    def test_estimate_messages_tokens_includes_message_overhead(self) -> None:
         messages = [
             {"role": "system", "content": "你是助手"},
             {"role": "user", "content": "你好"},
         ]
-        result = count_messages_tokens(messages)
-        assert result > 0
+        content_only = estimate_tokens("你是助手") + estimate_tokens("你好")
+        result = estimate_messages_tokens(messages)
+
+        assert result > content_only

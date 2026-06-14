@@ -7,10 +7,12 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.contracts.uploads import UploadFileLike
@@ -28,8 +30,11 @@ from backend.services.object_storage import (
     ObjectStorage,
     StoredObject,
     UploadSizeLimitExceeded,
+    safe_storage_filename,
 )
 from backend.services.permission_service import Permission, PermissionService
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_KNOWLEDGE_BASE_NAME = "默认知识库"
 DEFAULT_KNOWLEDGE_BASE_DESCRIPTION = "系统自动创建的默认知识库"
@@ -97,6 +102,8 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
         try:
             stored_object = await self.storage.save_upload_stream(
                 kb_id=kb_id,
+                owner_id=user_id,
+                workspace_id=getattr(kb, "workspace_id", None),
                 filename=safe_filename,
                 upload_file=upload_file,
                 max_size_bytes=self.max_upload_size_bytes,
@@ -209,13 +216,83 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
     async def delete_chunks_for_file(self, *, file_id: uuid.UUID) -> None:
         await self.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
 
+    async def list_files_by_kb_id(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> Sequence[File]:
+        await self._ensure_kb_access(
+            kb_id=kb_id,
+            user_id=user_id,
+            permission=Permission.FILE_READ,
+        )
+        return await self.uow.knowledge_repo.list_files_by_kb(kb_id)
+
+    async def remove_file(
+        self,
+        *,
+        file_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> None:
+        file_obj = await self.get_file(file_id)
+        if not file_obj:
+            raise app_not_found("文件不存在", code="KNOWLEDGE_FILE_NOT_FOUND")
+
+        await self._ensure_kb_access(
+            kb_id=file_obj.kb_id,
+            user_id=user_id,
+            permission=Permission.FILE_WRITE,
+        )
+
+        stored_obj = self._stored_object_from_file(file_obj)
+        if stored_obj is not None:
+            try:
+                await self.storage.delete(stored_obj)
+            except Exception:
+                logger.warning(
+                    "Storage delete failed for backend=%s key=%s uri=%s",
+                    stored_obj.backend,
+                    stored_obj.key,
+                    stored_obj.uri,
+                    exc_info=True,
+                )
+
+        await self.uow.knowledge_repo.delete_chunks_for_file(file_id)
+        await self.uow.knowledge_repo.delete_file_record(file_id)
+
     @staticmethod
     def _sanitize_filename(filename: str) -> str:
-        base = Path(filename).name.strip()
-        if not base:
-            return "unnamed.md"
-        base = base.replace("\x00", "")
-        return base
+        return safe_storage_filename(filename)
+
+    @staticmethod
+    def _stored_object_from_file(file_obj: File) -> StoredObject | None:
+        file_path = file_obj.file_path or ""
+        storage_key = file_obj.storage_key or ""
+        storage_bucket = file_obj.storage_bucket
+        storage_backend = file_obj.storage_backend or (
+            "s3" if file_path.startswith("s3://") else "local"
+        )
+
+        if storage_backend == "s3" and not storage_key:
+            parsed = urlparse(file_path)
+            if parsed.scheme == "s3":
+                storage_bucket = storage_bucket or parsed.netloc
+                storage_key = parsed.path.lstrip("/")
+
+        if storage_backend == "s3" and not storage_key:
+            return None
+        if storage_backend == "local" and not storage_key and not file_path:
+            return None
+
+        return StoredObject(
+            backend=storage_backend,
+            bucket=storage_bucket,
+            key=storage_key,
+            uri=file_path,
+            size=file_obj.file_size,
+            sha256=file_obj.content_sha256 or "",
+        )
 
     def _validate_upload_file(self, upload_file: UploadFileLike) -> str:
         if not upload_file.filename:

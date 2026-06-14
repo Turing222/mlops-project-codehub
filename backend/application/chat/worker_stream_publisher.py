@@ -10,6 +10,7 @@ from backend.application.chat.stream_events import (
     encode_chunk_event,
     encode_done_event,
     encode_error_event,
+    encode_started_event,
 )
 from backend.infra.redis import RedisClient
 
@@ -28,6 +29,10 @@ class WorkerStreamPublisher:
     async def publish_chunk(self, channel: str, content: str) -> None:
         redis_connection = await self._redis()
         await redis_connection.publish(channel, encode_chunk_event(content))
+
+    async def publish_started(self, channel: str) -> None:
+        redis_connection = await self._redis()
+        await redis_connection.publish(channel, encode_started_event())
 
     async def publish_error(self, channel: str, message: str) -> None:
         redis_connection = await self._redis()

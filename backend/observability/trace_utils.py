@@ -53,7 +53,16 @@ def build_llm_span_attributes(
     operation: str,
     stream: bool | None = None,
 ) -> dict[str, Any]:
-    """构建 OTel GenAI 语义约定属性，供 trace_span() 合并使用。"""
+    """构建 OTel GenAI 语义约定属性，供 trace_span() 合并使用。
+
+    注意：本函数只返回系统性能相关的低基数属性。LLM 业务指标（tokens、
+    cost、prompt/completion、routing decisions）由 Langfuse 记录，避免重复。
+
+    职责划分：
+    - OTel 记录：provider、model、operation、stream（用于系统性能聚合）
+    - Langfuse 记录：tokens、cost、prompt、completion、metadata（用于 LLM 观测）
+    - 共享：trace_id、session_id、user_id、message_id（用于关联）
+    """
     attrs: dict[str, Any] = {
         "gen_ai.system": provider,
         "gen_ai.operation.name": operation,

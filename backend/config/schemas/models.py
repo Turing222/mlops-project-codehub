@@ -13,6 +13,7 @@ from backend.config.schemas._validators import (
     validate_unique_non_empty_list,
 )
 from backend.config.schemas.embeddings import EmbeddingModelsConfig
+from backend.config.schemas.reranks import RerankModelsConfig
 from backend.models.schemas.chat.params import LLMExtraBody
 
 
@@ -61,6 +62,7 @@ class LLMModelsConfig(BaseModel):
     profiles: dict[str, LLMModelProfile]
     routes: dict[str, LLMModelRoute] = Field(default_factory=dict)
     embeddings: EmbeddingModelsConfig | None = None
+    reranks: RerankModelsConfig | None = None
 
     model_config = ConfigDict(extra="forbid")
 

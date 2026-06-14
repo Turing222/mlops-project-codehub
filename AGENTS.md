@@ -1,31 +1,33 @@
-# AGENTS.md — Dewflow Backend
+# AGENTS.md — Dewflow
 
-This file is the lightweight routing index for Codex. Detailed project rules live in `.codex/skills/project/` and task-specific skills.
+This file is the lightweight routing index for Codex. Dewflow is a monorepo: FastAPI backend under `backend/`, React admin frontend under `frontend/`. Detailed project rules live in `.codex/skills/project/` and task-specific skills.
 
 ## Always
 
 - Load `.codex/skills/project/SKILL.md` before backend work, then load the smallest matching task skill below.
+- Before frontend work, read `.codex/skills/project/references/frontend.md`, then the matching standard under `frontend/docs/`.
 - Do not modify files unless the user explicitly asks for implementation, code changes, or file edits.
-- Preserve the web/worker split: web code dispatches through `AbstractTaskDispatcher`, never imports `backend.worker`, and never calls `.kiq()` directly.
-- Preserve the 3-tier call chain: endpoint -> service -> repository -> ORM.
-- Use `uv run` for Python commands; cap noisy output with `| head -200`.
-- Do not browse localhost; use `curl` for local health checks.
+- Backend: preserve the web/worker split — web code dispatches through `AbstractTaskDispatcher`, never imports `backend.worker`, and never calls `.kiq()` directly.
+- Backend: preserve the 3-tier call chain (endpoint -> service -> repository -> ORM); use `uv run` for Python commands.
+- Frontend: validate through `make frontend-*` targets; manage packages with pnpm only.
+- Cap noisy output with `| head -200`. Do not browse localhost; use `curl` for local health checks.
 - If files were modified, append the Change Summary block defined in `.codex/skills/project/references/handoff.md`.
 
 ## Local Skills
 
 - Project rules: `.codex/skills/project/SKILL.md`
 - Read-only analysis or explanation: `.codex/skills/read/SKILL.md`
+- Durable task alignment and work-item artifacts: `.codex/skills/task-plan/SKILL.md`
 - Creating new code/docs/config/skill assets: `.codex/skills/write/SKILL.md`
 - Modifying existing files: `.codex/skills/edit/SKILL.md`
-- Adding or updating pytest coverage: `.codex/skills/add-tests/SKILL.md`
-- Planning or dependency-aware task breakdown: `.codex/skills/plan/SKILL.md`
+- Adding or updating test coverage (pytest / Vitest / Playwright): `.codex/skills/add-tests/SKILL.md`
 - Code review: `.codex/skills/review/SKILL.md`
 - Debugging or bug investigation: `.codex/skills/debug/SKILL.md`
 
 ## Skill Loading
 
-- For broad implementation work, load `project` plus `plan`, then switch to `write`, `edit`, or `add-tests` as needed.
+- For broad implementation work, prefer Claude Code built-in `/plan`; use `task-plan` when you need to create/update `work-items/` artifacts or sync approved planning conclusions.
 - For review or debug requests, load the named skill and any project reference it asks for.
 - After `write` or `edit`, consider `add-tests` if behavior changed or coverage gaps exist.
+- Simple tasks may skip `task-plan` and proceed directly to the smallest execution skill.
 - Keep `AGENTS.md` short; move durable details into skill references instead of expanding this file.

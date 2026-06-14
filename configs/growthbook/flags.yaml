@@ -1,0 +1,37 @@
+# Per-environment flag overrides.
+# Keys must match GrowthBook environment IDs (see Settings → Environments).
+# Values here override code defaults only for the listed environment.
+# Flags not listed use the code default (see _AI_SYSTEM_FLAG_DEFAULTS and ALL_FLAGS).
+#
+# Usage: python scripts/seed/seed_growthbook.py --env-overrides configs/growthbook/flags.yaml
+
+environments:
+  local:
+    # Local dev — enable AI features for testing.
+    enable-closed-beta-login: true
+    enable-external-context: true
+    enable-rag-rerank: true
+    enable-rag-planner: true
+    enable-rag-planner-routing: true
+    enable-llm-model-routing: true
+
+  smoke:
+    # Smoke tests dynamically create users; keep login deterministic while still
+    # exercising the GrowthBook evaluation path through the real SDK key.
+    # Keep AI feature flags on conservative defaults so HTTP smoke validates
+    # core runtime wiring instead of optional model-routing/RAG experiments.
+    enable-closed-beta-login: false
+    enable-external-context: false
+    enable-rag-rerank: false
+    enable-rag-planner: false
+    enable-rag-planner-routing: false
+    enable-llm-model-routing: false
+
+  prod:
+    # Production — start conservative, enable via GrowthBook panel as needed.
+    enable-closed-beta-login: true
+    enable-external-context: true
+    enable-rag-rerank: true
+    enable-rag-planner: true
+    enable-rag-planner-routing: true
+    enable-llm-model-routing: true

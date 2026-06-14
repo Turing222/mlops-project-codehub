@@ -25,6 +25,26 @@ pytestmark = [
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 TASKIQ_BIN = BACKEND_ROOT / ".venv/bin/taskiq"
 
+# Keys that the taskiq worker subprocess needs to connect to Redis
+# and configure the app the same way as the test process.
+_WORKER_INHERIT_ENV_KEYS = [
+    "SECRET_KEY",
+    "REDIS_HOST",
+    "REDIS_PORT",
+    "REDIS_PASSWORD",
+    "REDIS_URL",
+    "TASKIQ_REDIS_URL",
+    "DATABASE_URL",
+    "POSTGRES_USER",
+    "POSTGRES_SERVER",
+    "POSTGRES_PORT",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_DB",
+    "POSTGRES_SSL_MODE",
+    "APP_ENV",
+    "DEWFLOW_TEST_PROFILE",
+]
+
 
 def _taskiq_redis_endpoint() -> tuple[str, int]:
     parsed = urlparse(settings.taskiq_redis_url)
@@ -56,14 +76,18 @@ def taskiq_worker():
     except OSError as exc:
         pytest.skip(f"TaskIQ integration test requires Redis at {host}:{port}: {exc}")
 
-    env = os.environ.copy()
-    env.setdefault("SECRET_KEY", "test-secret")
+    env = {}
+    for key in _WORKER_INHERIT_ENV_KEYS:
+        value = os.environ.get(key)
+        if value is not None:
+            env[key] = value
+    env.setdefault("SECRET_KEY", "test-secret-key-with-at-least-32-chars")
 
     proc = subprocess.Popen(
         [
             str(TASKIQ_BIN),
             "worker",
-            "backend.infra.task_broker:broker",
+            "tests.integration.taskiq_test_tasks:_TEST_BROKER",
             "tests.integration.taskiq_test_tasks",
             "--workers",
             "1",

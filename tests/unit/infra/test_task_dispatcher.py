@@ -10,7 +10,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.infra.task_dispatcher import TASK_INGESTION, TASK_NONSTREAM, TASK_STREAM
+from backend.infra.task_dispatcher import (
+    TASK_INGESTION,
+    TASK_NONSTREAM,
+    TASK_REPO_ANALYSIS,
+    TASK_STREAM,
+)
 
 
 class FakeRedis:
@@ -130,6 +135,27 @@ async def test_enqueue_ingestion_passes_params_through() -> None:
 
 
 @pytest.mark.asyncio
+async def test_enqueue_repo_analysis_passes_params_through() -> None:
+    from backend.infra.task_dispatcher import TaskDispatcher
+
+    redis_client = FakeRedis()
+    dispatcher = TaskDispatcher(redis_client)
+    run_id = str(uuid.uuid4())
+    task_id = str(uuid.uuid4())
+    trace_ctx = {"traceparent": "00-test"}
+
+    await dispatcher.enqueue_repo_analysis(
+        run_id=run_id,
+        task_id=task_id,
+        trace_context=trace_ctx,
+    )
+
+    message = _decode_lpush_message(redis_client)
+    assert message["task_name"] == TASK_REPO_ANALYSIS
+    assert message["args"] == [run_id, task_id, trace_ctx]
+
+
+@pytest.mark.asyncio
 async def test_wait_result_timeout_raises_timeout_error() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
@@ -179,11 +205,13 @@ async def test_task_name_constants_match_expected() -> None:
     assert TASK_STREAM == "generate_llm_stream"
     assert TASK_NONSTREAM == "generate_llm_nonstream"
     assert TASK_INGESTION == "ingest_knowledge_file"
+    assert TASK_REPO_ANALYSIS == "analyze_repo_readme"
 
 
 def test_build_taskiq_message_is_loadable_by_worker_broker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    pytest.importorskip("taskiq")
     monkeypatch.setenv("DEBUG", "false")
 
     from backend.infra.task_broker import broker

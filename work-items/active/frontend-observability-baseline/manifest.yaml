@@ -1,0 +1,58 @@
+slug: frontend-observability-baseline
+title: Frontend Observability and Measurement Baseline
+status: done
+
+goal: Fill the frontend observability gaps, correct the migration baseline, and establish bundle and Web Vitals measurement without taking on product rich-text, token storage, Sentry, or stream retry work.
+
+completion_chain:
+  - Client-side render errors, global JavaScript errors, unhandled promise rejections, and chat stream failures are visible through the telemetry path with clear event semantics.
+  - "`frontend/docs/migration-plan.md` reflects the current frontend architecture and no longer lists completed work as pending."
+  - Bundle size analysis and Web Vitals metrics provide a baseline for future performance decisions without performing speculative optimization.
+  - Focused tests or validation prove the new observability and measurement paths, and deferred items remain explicitly out of scope.
+
+workstreams:
+  - id: 1
+    title: Telemetry event semantics.
+    status: done
+    kind: blocking
+    deps: []
+  - id: 2
+    title: Client error and chat stream observability.
+    status: done
+    kind: parallel
+    deps: [1]
+  - id: 3
+    title: Migration plan synchronization.
+    status: done
+    kind: parallel
+    deps: []
+  - id: 4
+    title: Performance and bundle baseline.
+    status: done
+    kind: parallel
+    deps: [1]
+  - id: 5
+    title: Focused validation and handoff.
+    status: done
+    kind: serial
+    deps: [2, 3, 4]
+
+current_checkpoint:
+  name: observability-baseline-validated
+  state: validated
+  summary: All five workstreams are done. WS5 focused validation passed on this work item's changes (make frontend-check with 187 vitest green plus production build, ANALYZE build emits dist/stats.html, telemetry component 14 passed, and ruff/ty/import-boundary checks clean on the touched files); migration-plan.md no longer lists the measurement baseline as pending. The observability and measurement baseline is delivery/review-ready and deferred items stay out of scope.
+
+open_decisions: []
+
+next_choices:
+  - id: A
+    label: Submit the work item for review
+    note: All workstreams are done and validated; submit the PR manually and flip the top-level status to done / archive once merged. Repo-wide ruff lint and format debt lives only in unrelated files (worker_generation_workflow.py, client_ip.py, knowledge_repo.py, test_auth_api.py) and is pre-existing, not introduced here.
+  - id: B
+    label: Open a performance-optimization work item
+    note: Use the recorded bundle baseline to scope chunk splitting, including the confirmed manualChunks ordering bug that folds react-router into react-vendor (no router-vendor chunk is emitted). Out of scope here; track it as a new work item.
+
+attached_artifacts:
+  task_plan: task-plan.md
+  reviews: []
+  debug: []

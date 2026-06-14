@@ -67,7 +67,15 @@ async def ingest_knowledge_file_task(
         await _ingest_knowledge_file_task(file_id=file_id, task_id=task_id)
 
 
-@broker.task(task_name="recover_stale_knowledge_ingestions")
+@broker.task(
+    task_name="recover_stale_knowledge_ingestions",
+    schedule=[
+        {
+            "cron": "*/15 * * * *",
+            "schedule_id": "recover_stale_knowledge_ingestions_every_15m",
+        }
+    ],
+)
 async def recover_stale_knowledge_ingestions_task() -> dict[str, int]:
     """TaskIQ 入口：标记长期卡住的知识文件入库任务为失败。"""
     uow = SQLAlchemyUnitOfWork(get_worker_session_factory())

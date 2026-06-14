@@ -12,6 +12,7 @@ import pytest
 from backend.application.chat.stream_events import (
     encode_done_event,
     encode_error_event,
+    encode_started_event,
 )
 from backend.application.chat.worker_generation_workflow import (
     LLMGenerationWorkerWorkflow,
@@ -104,11 +105,13 @@ async def test_stream_error_publishes_error_and_done_and_cleans_lock(
     )
 
     assert redis.published == [
+        ("stream:err", encode_started_event()),
         ("stream:err", encode_error_event("provider failed")),
         ("stream:err", encode_done_event()),
     ]
     assert redis.deleted == ["idempotency:err"]
-    assert result == "provider failed"
+    assert result.success is False
+    assert result.error == "provider failed"
 
 
 async def test_stream_done_always_published_even_on_system_error(monkeypatch) -> None:
@@ -137,7 +140,8 @@ async def test_stream_done_always_published_even_on_system_error(monkeypatch) ->
         idempotency_lock_key="idempotency:crash",
     )
 
-    assert result == "服务暂时不可用，请稍后重试"
+    assert result.success is False
+    assert result.error == "服务暂时不可用，请稍后重试"
     done_events = [p for p in redis.published if p[1] == encode_done_event()]
     assert len(done_events) == 1
     assert redis.deleted == ["idempotency:crash"]
@@ -152,7 +156,6 @@ async def test_nonstream_idempotency_lock_written_on_success(monkeypatch) -> Non
     assistant_message_id = uuid.uuid4()
     user_id = uuid.uuid4()
     uow.chat_repo.update_message_status.return_value = object()
-    uow.user_repo.try_increment_used_tokens_with_limit.return_value = True
 
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -185,7 +188,6 @@ async def test_nonstream_idempotency_lock_skipped_when_key_none(monkeypatch) -> 
 
     uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
-    uow.user_repo.try_increment_used_tokens_with_limit.return_value = True
 
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,

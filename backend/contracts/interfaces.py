@@ -10,7 +10,9 @@ from backend.contracts.repository_protocols import (
     AccessRepositoryProtocol,
     AuditRepositoryProtocol,
     ChatRepositoryProtocol,
+    CreditRepositoryProtocol,
     KnowledgeRepositoryProtocol,
+    RepoAnalysisRepositoryProtocol,
     TaskRepositoryProtocol,
     UserRepositoryProtocol,
 )
@@ -25,6 +27,8 @@ class AbstractUnitOfWork(ABC):
     chat_repo: ChatRepositoryProtocol
     knowledge_repo: KnowledgeRepositoryProtocol
     task_repo: TaskRepositoryProtocol
+    repo_analysis_repo: RepoAnalysisRepositoryProtocol
+    credit_repo: CreditRepositoryProtocol
 
     async def __aenter__(self) -> "AbstractUnitOfWork":
         return self
@@ -47,6 +51,9 @@ class AbstractUnitOfWork(ABC):
     async def rollback(self) -> None: ...
 
     @abstractmethod
+    def savepoint(self) -> AbstractAsyncContextManager["AbstractUnitOfWork"]: ...
+
+    @abstractmethod
     def read_context(self) -> AbstractAsyncContextManager["AbstractUnitOfWork"]: ...
 
 
@@ -55,6 +62,14 @@ class AbstractLLMService(ABC):
     LLM 服务抽象接口
     与具体的 LLM 提供商解耦 (OpenAI, Claude, Local LLM...)
     """
+
+    @property
+    @abstractmethod
+    def model_name(self) -> str: ...
+
+    @property
+    @abstractmethod
+    def provider_name(self) -> str: ...
 
     @abstractmethod
     async def stream_response(
@@ -71,6 +86,24 @@ class AbstractLLMService(ABC):
         query: LLMQueryDTO,
     ) -> LLMResultDTO:
         """完整返回响应"""
+        ...
+
+    async def close(self) -> None:  # noqa: B027 — optional hook with default no-op
+        """可选：释放底层 HTTP client / 连接池资源。默认无操作。"""
+
+
+class AbstractRerankService(ABC):
+    """Rerank 服务抽象接口。"""
+
+    @abstractmethod
+    async def rerank(
+        self,
+        *,
+        query_text: str,
+        documents: list[str],
+        top_k: int,
+    ) -> list[tuple[int, float]]:
+        """返回 0-based 文档索引与相关性分数，按相关性降序排列。"""
         ...
 
     async def close(self) -> None:  # noqa: B027 — optional hook with default no-op
@@ -167,6 +200,24 @@ class AbstractRAGEmbedder(ABC):
         """可选：释放底层 HTTP client / 连接池资源。默认无操作。"""
 
 
+class AbstractExternalContextProvider(ABC):
+    """外部上下文检索抽象接口"""
+
+    @property
+    @abstractmethod
+    def provider_name(self) -> str:
+        """Provider identifier for metrics and tracing."""
+        ...
+
+    @abstractmethod
+    async def search(self, *, query_text: str, top_k: int) -> list[Any]:
+        """Return provider-neutral chunks for the query."""
+        ...
+
+    async def close(self) -> None:  # noqa: B027 — optional hook with default no-op
+        """可选：释放底层 HTTP client / 连接池资源。默认无操作。"""
+
+
 class AbstractTaskDispatcher(ABC):
     """Web → Worker 任务投递抽象。
 
@@ -207,4 +258,14 @@ class AbstractTaskDispatcher(ABC):
         trace_context: dict[str, str] | None = None,
     ) -> None:
         """投递知识库文件入库任务到 TaskIQ worker。"""
+        ...
+
+    @abstractmethod
+    async def enqueue_repo_analysis(
+        self,
+        run_id: str,
+        task_id: str,
+        trace_context: dict[str, str] | None = None,
+    ) -> None:
+        """投递 GitHub repo README 初筛任务到 TaskIQ worker。"""
         ...

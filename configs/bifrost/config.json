@@ -1,0 +1,166 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "encryption_key": "env.BIFROST_ENCRYPTION_KEY",
+  "client": {
+    "drop_excess_requests": false,
+    "enable_logging": true,
+    "disable_content_logging": true,
+    "allow_per_request_content_storage_override": false,
+    "allow_per_request_raw_override": false,
+    "enforce_auth_on_inference": true,
+    "log_retention_days": 30
+  },
+  "providers": {
+    "dashscope": {
+      "keys": [
+        {
+          "name": "dashscope-primary",
+          "value": "env.DASHSCOPE_API_KEY",
+          "models": [
+            "text-embedding-v4",
+            "qwen3-rerank"
+          ],
+          "weight": 1.0
+        },
+        {
+          "name": "dashscope-secondary",
+          "value": "env.DASHSCOPE_API_KEY_2",
+          "models": [
+            "text-embedding-v4",
+            "qwen3-rerank"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode",
+        "default_request_timeout_in_seconds": 60,
+        "max_retries": 1
+      },
+      "custom_provider_config": {
+        "base_provider_type": "openai"
+      }
+    },
+    "deepseek": {
+      "keys": [
+        {
+          "name": "deepseek-primary",
+          "value": "env.DEEPSEEK_API_KEY",
+          "models": [
+            "deepseek-chat",
+            "deepseek-reasoner",
+            "deepseek-v4-flash",
+            "deepseek-v4-pro"
+          ],
+          "weight": 1.0
+        },
+        {
+          "name": "deepseek-secondary",
+          "value": "env.DEEPSEEK_API_KEY_2",
+          "models": [
+            "deepseek-chat",
+            "deepseek-reasoner",
+            "deepseek-v4-flash",
+            "deepseek-v4-pro"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "base_url": "https://api.deepseek.com",
+        "default_request_timeout_in_seconds": 120,
+        "max_retries": 1,
+        "stream_idle_timeout_in_seconds": 60
+      },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "chat_completion": true,
+          "chat_completion_stream": true
+        }
+      }
+    },
+    "cohere": {
+      "keys": [
+        {
+          "name": "cohere-primary",
+          "value": "env.COHERE_API_KEY",
+          "models": [
+            "rerank-v3.5"
+          ],
+          "weight": 1.0
+        },
+        {
+          "name": "cohere-secondary",
+          "value": "env.COHERE_API_KEY_2",
+          "models": [
+            "rerank-v3.5"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "default_request_timeout_in_seconds": 30,
+        "max_retries": 1
+      }
+    }
+  },
+  "governance": {
+    "auth_config": {
+      "is_enabled": false,
+      "disable_auth_on_inference": true
+    },
+    "virtual_keys": [
+      {
+        "id": "vk-dewflow-platform",
+        "name": "dewflow-platform",
+        "value": "env.BIFROST_API_KEY",
+        "description": "Dewflow platform gateway key for backend chat traffic.",
+        "is_active": true,
+        "provider_configs": [
+          {
+            "provider": "deepseek",
+            "allowed_models": [
+              "deepseek-chat",
+              "deepseek-reasoner",
+              "deepseek-v4-flash",
+              "deepseek-v4-pro"
+            ],
+            "key_ids": [
+              "*"
+            ],
+            "weight": 1
+          },
+          {
+            "provider": "dashscope",
+            "allowed_models": [
+              "text-embedding-v4",
+              "qwen3-rerank"
+            ],
+            "key_ids": [
+              "*"
+            ],
+            "weight": 1
+          },
+          {
+            "provider": "cohere",
+            "allowed_models": [
+              "rerank-v3.5"
+            ],
+            "key_ids": [
+              "*"
+            ],
+            "weight": 1
+          }
+        ]
+      }
+    ]
+  },
+  "config_store": {
+    "enabled": true,
+    "type": "sqlite",
+    "config": {
+      "path": "./config.db"
+    }
+  }
+}

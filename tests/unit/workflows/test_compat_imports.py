@@ -6,6 +6,7 @@ worker tasks 或 AI runtime；边界：仅做 AST 解析和 importlib 导入，�
 
 import ast
 import importlib
+import sys
 from pathlib import Path
 
 
@@ -33,6 +34,26 @@ def test_dispatcher_imports_from_infra() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
     assert TaskDispatcher is not None
+
+
+def test_worker_tasks_package_does_not_eager_import_task_modules() -> None:
+    task_modules = [
+        "backend.worker.tasks.credit_tasks",
+        "backend.worker.tasks.knowledge_tasks",
+        "backend.worker.tasks.llm_tasks",
+    ]
+    for module_name in ["backend.worker.tasks", *task_modules]:
+        sys.modules.pop(module_name, None)
+
+    module = importlib.import_module("backend.worker.tasks")
+
+    assert module.__all__ == [
+        "expire_credits_task",
+        "generate_llm_stream_task",
+        "ingest_knowledge_file_task",
+    ]
+    for module_name in task_modules:
+        assert module_name not in sys.modules
 
 
 def test_web_workflows_do_not_import_worker_or_ai_runtime() -> None:

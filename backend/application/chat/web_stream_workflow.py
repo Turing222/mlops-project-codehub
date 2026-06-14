@@ -21,6 +21,7 @@ from backend.application.chat.stream_events import (
     error_event,
     meta_event,
 )
+from backend.application.chat.timing import elapsed_ms, merge_metrics, perf_start
 from backend.config.settings import settings
 from backend.contracts.interfaces import (
     AbstractTaskDispatcher,
@@ -36,6 +37,7 @@ from backend.observability.trace_utils import (
     trace_span,
 )
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
+from backend.services.feature_flag_service import FeatureFlagService
 from backend.services.permission_service import PermissionService
 
 logger = logging.getLogger(__name__)
@@ -50,12 +52,14 @@ class ChatWorkflow:
         dispatcher: AbstractTaskDispatcher,
         redis_client: redis.Redis,
         permission_service: PermissionService,
+        feature_flag_service: FeatureFlagService,
         session_manager: SessionManager | None = None,
     ) -> None:
         self.uow = uow
         self.dispatcher = dispatcher
         self.redis = redis_client
         self.permission_service = permission_service
+        self._feature_flag_service = feature_flag_service
         self._session_manager = session_manager or SessionManager(
             uow, permission_service
         )
@@ -82,6 +86,7 @@ class ChatWorkflow:
         session_id = command.session_id
         kb_id = command.kb_id
         client_request_id = command.client_request_id
+        request_started = perf_start()
         logger.info(
             "Workflow 流式查询开始: user_id=%s, session_id=%s, query_len=%d",
             user_id,
@@ -103,6 +108,7 @@ class ChatWorkflow:
             self.uow,
             self.redis,
             self.permission_service,
+            self._feature_flag_service,
             self._session_manager,
         )
         idempotency = await orchestrator.check_idempotency(
@@ -145,6 +151,10 @@ class ChatWorkflow:
         channel = f"stream:{task_id}"
 
         pubsub = None
+        worker_wait_started: float | None = None
+        queue_wait_ms: int | None = None
+        # Web-observed first token: HTTP request received -> first SSE chunk yielded.
+        e2e_first_token_ms: int | None = None
         try:
             with trace_span(
                 "chat.stream.dispatch_task",
@@ -153,6 +163,7 @@ class ChatWorkflow:
                 # 必须先订阅后投递，避免 worker 首包发布过快导致丢消息。
                 pubsub = self.redis.pubsub()
                 await pubsub.subscribe(channel)
+                worker_wait_started = perf_start()
                 await self.dispatcher.enqueue_stream(
                     prepared.generation_payload.model_dump(mode="json"),
                     channel,
@@ -203,12 +214,8 @@ class ChatWorkflow:
                 deadline = (
                     loop.time() + settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS
                 )
-                while True:
+                while loop.time() < deadline:
                     remaining = deadline - loop.time()
-                    if remaining <= 0:
-                        raise app_service_error(
-                            "LLM 响应超时，请稍后重试", code="LLM_TIMEOUT"
-                        )
                     try:
                         first_message = await asyncio.wait_for(
                             anext(stream_iter),
@@ -229,6 +236,10 @@ class ChatWorkflow:
                         continue
                     event = decode_stream_event(first_payload)
                     event_type = event.get("type")
+                    if event_type == "started":
+                        if worker_wait_started is not None and queue_wait_ms is None:
+                            queue_wait_ms = elapsed_ms(worker_wait_started)
+                        continue
                     if event_type == "done":
                         done_received = True
                     elif event_type == "error":
@@ -238,12 +249,17 @@ class ChatWorkflow:
                         )
                     else:
                         content = event.get("content", "")
+                        e2e_first_token_ms = elapsed_ms(request_started)
                         accumulated_content.append(content)
                         yield chunk_event(content)
                     break
+                else:
+                    raise app_service_error(
+                        "LLM 响应超时，请稍后重试", code="LLM_TIMEOUT"
+                    )
 
                 if not done_received:
-                    while True:
+                    while not done_received:
                         try:
                             message = await asyncio.wait_for(
                                 anext(stream_iter),
@@ -261,6 +277,13 @@ class ChatWorkflow:
                             continue
                         event = decode_stream_event(payload)
                         event_type = event.get("type")
+                        if event_type == "started":
+                            if (
+                                worker_wait_started is not None
+                                and queue_wait_ms is None
+                            ):
+                                queue_wait_ms = elapsed_ms(worker_wait_started)
+                            continue
                         if event_type == "done":
                             done_received = True
                             break
@@ -270,6 +293,8 @@ class ChatWorkflow:
                                 code="LLM_TASK_FAILED",
                             )
                         content = event.get("content", "")
+                        if e2e_first_token_ms is None:
+                            e2e_first_token_ms = elapsed_ms(request_started)
                         accumulated_content.append(content)
                         yield chunk_event(content)
 
@@ -286,6 +311,16 @@ class ChatWorkflow:
                             len(chunk) for chunk in accumulated_content
                         ),
                         "llm.stream.done_received": done_received,
+                        "chat.queue_wait_ms": queue_wait_ms,
+                        "chat.e2e_first_token_ms": e2e_first_token_ms,
+                    },
+                )
+                await self._merge_web_stream_metrics(
+                    assistant_message_id=assistant_msg.id,
+                    trace_attrs=prepared.trace_attrs,
+                    metrics={
+                        "queue_wait_ms": queue_wait_ms,
+                        "e2e_first_token_ms": e2e_first_token_ms,
                     },
                 )
         except AppException as exc:
@@ -318,3 +353,38 @@ class ChatWorkflow:
                             await maybe_awaitable
 
         yield done_event()
+
+    async def _merge_web_stream_metrics(
+        self,
+        *,
+        assistant_message_id: uuid.UUID,
+        trace_attrs: dict[str, object],
+        metrics: dict[str, object | None],
+    ) -> None:
+        filtered = {key: value for key, value in metrics.items() if value is not None}
+        if not filtered:
+            return
+        try:
+            async with db_concurrency_slot(trace_attrs), self.uow:
+                message = await self.uow.chat_repo.get_message(assistant_message_id)
+                if message is None:
+                    logger.warning(
+                        "流式指标回写跳过，助手消息不存在: message_id=%s",
+                        assistant_message_id,
+                    )
+                    return
+                merged_metadata = merge_metrics(
+                    getattr(message, "message_metadata", None),
+                    filtered,
+                )
+                await self.uow.chat_repo.update_message_status(
+                    message_id=assistant_message_id,
+                    status=message.status,
+                    message_metadata=merged_metadata,
+                )
+        except Exception:
+            logger.debug(
+                "流式指标回写失败: message_id=%s",
+                assistant_message_id,
+                exc_info=True,
+            )

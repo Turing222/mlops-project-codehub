@@ -1,10 +1,9 @@
 ### Smoke / Manual API checks for local docker-compose environment
 ### Usage:
 ### 1. Start the stack: `make env-smoke-up`
-### 2. Register the user below, then create a KB:
-###    `make env-smoke-create-kb ARGS="--username smoke_manual_001"`
-### 3. Copy the printed `kb_id` into `@kbId`
-### 3. Run requests top-to-bottom in REST Client / IntelliJ HTTP Client
+### 2. Register the user below, then create or seed a knowledge base.
+### 3. Copy the KB id into `@kbId`
+### 4. Run requests top-to-bottom in REST Client / IntelliJ HTTP Client
 
 @baseUrl = http://localhost:8000
 @username = smoke_manual

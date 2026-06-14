@@ -20,6 +20,14 @@ from backend.observability.trace_utils import (
 class MockLLMService(AbstractLLMService):
     """用于本地和压测的确定性 LLM 实现。"""
 
+    @property
+    def model_name(self) -> str:
+        return "mock"
+
+    @property
+    def provider_name(self) -> str:
+        return "mock"
+
     async def stream_response(
         self,
         query: LLMQueryDTO,

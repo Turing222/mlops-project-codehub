@@ -1,0 +1,3 @@
+APP_ENV: smoke
+STORAGE_BACKEND: local
+LOCAL_STORAGE_ROOT: .files/smoke_knowledge_files

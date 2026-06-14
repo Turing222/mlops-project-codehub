@@ -1,0 +1,16 @@
+[mcp_servers.serena]
+# Serena tool allowlist mirrors .serena/project.yml fixed_tools (source of truth).
+# This list only controls Codex auto-approve; server-side enforcement is in project.yml.
+enabled = true
+required = false
+startup_timeout_sec = 60
+tool_timeout_sec = 60
+command = "bash"
+args = ["scripts/dev/serena-mcp.sh", "codex"]
+enabled_tools = [
+  "find_declaration",
+  "find_referencing_symbols",
+  "find_symbol",
+  "get_diagnostics_for_file",
+  "get_symbols_overview",
+]

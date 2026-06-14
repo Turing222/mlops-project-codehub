@@ -29,27 +29,35 @@ check_provider_secret() {
 
 # 1. Check LLM_PROVIDER
 if [[ "${LLM_PROVIDER:-mock}" != "mock" ]]; then
-    # Some providers like 'deepseek/deepseek-reasoner' have slashes
-    # We only care about the base provider name.
-    base_provider="${LLM_PROVIDER%%/*}"
+    base_provider="$(llm_secret_provider "$LLM_PROVIDER")"
     check_provider_secret "$base_provider"
+
+    if [[ "$base_provider" == "bifrost" ]]; then
+        enc_secret_path="$(resolve_project_path "$(smoke_env_value "SMOKE_BIFROST_ENCRYPTION_KEY_FILE" "./secrets/smoke/bifrost_encryption_key.txt")")"
+        if [[ ! -s "$enc_secret_path" ]]; then
+            log_warn "LLM_PROVIDER is 'bifrost' but BIFROST_ENCRYPTION_KEY secret file is empty or missing: $enc_secret_path"
+            log_warn "Bifrost may fail to start. Run: make set-llm PROVIDER=bifrost"
+        fi
+    fi
 fi
 
 # 2. Check RAG_EMBED_PROVIDER
 if [[ "${RAG_EMBED_PROVIDER:-mock}" != "mock" ]]; then
     embed_provider="${RAG_EMBED_PROVIDER}"
-    
-    # Map specific embedding models to their generic provider keys if needed
-    if [[ "$embed_provider" == "qwen3-embedding" ]]; then
-        embed_provider="dashscope"
-    elif [[ "$embed_provider" == "google" ]]; then
-        embed_provider="google"
-    elif [[ "$embed_provider" == "openai" ]]; then
-        embed_provider="openai"
-    elif [[ "$embed_provider" == "gemini" ]]; then
-        embed_provider="gemini"
-    fi
-    
+
+    # Alias map: embed profile → base provider whose secret file is reused.
+    # Keep in sync with EMBED_SECRET_ALIAS in set_llm.sh.
+    readonly CHECK_EMBED_SECRET_ALIAS=(
+        "bifrost_embedding:bifrost"
+        "qwen3-embedding:dashscope"
+    )
+    for entry in "${CHECK_EMBED_SECRET_ALIAS[@]}"; do
+        if [[ "${entry%%:*}" == "$embed_provider" ]]; then
+            embed_provider="${entry##*:}"
+            break
+        fi
+    done
+
     check_provider_secret "$embed_provider"
 fi
 

@@ -57,6 +57,7 @@ class BadcaseReason(StrEnum):
     SHOULD_REFUSE_BUT_ANSWERED = "should_refuse_but_answered"
     PERMISSION_OR_PRIVACY_RISK = "permission_or_privacy_risk"
     EMPTY_RETRIEVAL_REFUSAL = "empty_retrieval_refusal"
+    PLANNER_PREFLIGHT_REFUSAL = "planner_preflight_refusal"
     WRONG_OR_UNHELPFUL_ANSWER = "wrong_or_unhelpful_answer"
     SHOULD_ANSWER_BUT_REFUSED = "should_answer_but_refused"
 
@@ -214,6 +215,14 @@ def build_rag_refusal_metadata() -> dict[str, object]:
         response_outcome=ResponseOutcome.REFUSED,
         badcase_severity=BadcaseSeverity.P1,
         badcase_reason=BadcaseReason.EMPTY_RETRIEVAL_REFUSAL,
+    )
+
+
+def build_planner_refusal_metadata() -> dict[str, object]:
+    return build_safety_metadata(
+        response_outcome=ResponseOutcome.REFUSED,
+        badcase_severity=BadcaseSeverity.P1,
+        badcase_reason=BadcaseReason.PLANNER_PREFLIGHT_REFUSAL,
     )
 
 

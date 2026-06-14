@@ -1,0 +1,115 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* Dynamic Palette Custom Properties (Managed dynamically by JS theme store, fallbacks declared here) */
+  --color-primary: #1677ff;
+  --color-primary-hover: #4096ff;
+  --color-primary-shadow: rgba(22, 119, 255, 0.15);
+  
+  --color-bg-page: #fafbfc;
+  --color-bg-container: #ffffff;
+  --color-bg-subtle: #fafafa;
+  --color-border: #f0f0f0;
+  
+  --color-text-main: #1a1a2e;
+  --color-text-desc: #999999;
+  --color-text-light: #ffffff;
+  --color-icon-muted: #bfbfbf;
+
+  --color-error: #cf1322;
+  --color-error-shadow: rgba(207, 19, 34, 0.15);
+  --color-error-bg: #fff1f0;
+
+  --color-success: #52c41a;
+  --color-success-shadow: rgba(82, 196, 26, 0.15);
+  --color-success-bg: rgba(82, 196, 26, 0.04);
+
+  --color-coin: #d97706;
+
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--color-text-main);
+  background-color: var(--color-bg-page);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+[data-theme='dark'] {
+  --color-bg-page: #141414;
+  --color-bg-container: #1f1f1f;
+  --color-bg-subtle: #262626;
+  --color-border: #303030;
+  
+  --color-text-main: #e5e7eb;
+  --color-text-desc: #8c8c8c;
+  --color-icon-muted: #595959;
+
+  --color-error: #ff4d4f;
+  --color-error-shadow: rgba(255, 77, 79, 0.15);
+  --color-error-bg: #2a1215;
+
+  --color-success: #73d13d;
+  --color-success-shadow: rgba(115, 209, 61, 0.15);
+  --color-success-bg: rgba(82, 196, 26, 0.08);
+
+  --color-coin: #fbbf24;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+}
+
+a {
+  font-weight: 500;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--color-primary-hover);
+}
+
+/* Antd overrides */
+.ant-btn-primary {
+  box-shadow: 0 1px 3px var(--color-primary-shadow) !important;
+}
+
+.ant-spin-dot-item {
+  background-color: var(--color-primary) !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
+}

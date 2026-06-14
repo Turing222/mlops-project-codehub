@@ -1,74 +1,136 @@
 #通用的日志模板
 x-logging: &default-logging
-  driver: "json-file"
+  driver: "awslogs"
   options:
-    max-size: "10m"
-    max-file: "3"
+    awslogs-group: ${DEPLOY_CW_LOG_GROUP:-/dewflow/prod}
+    awslogs-region: ${DEPLOY_AWS_REGION:-us-east-1}
+    awslogs-stream-prefix: ${DEPLOY_CW_LOG_STREAM_PREFIX:-dewflow}
+
+x-security: &default-security
+  security_opt:
+    - no-new-privileges:true
+
+x-deploy-env-file: &deploy-env-file
+  - ${DEPLOY_SERVICE_ENV_FILE:-./.env.ec2}
+
+x-app-secrets: &app-secrets
+  - SECRET_KEY
+  - POSTGRES_PASSWORD
+  - REDIS_PASSWORD
+  - OPENAI_API_KEY
+  - DASHSCOPE_API_KEY
+  - DASHSCOPE_API_KEY_2
+  - GEMINI_API_KEY
+  - GOOGLE_API_KEY
+  - GOOGLE_CLIENT_SECRET
+  - GITHUB_TOKEN
+  - GROWTHBOOK_SDK_KEY
+  - DEEPSEEK_API_KEY
+  - DEEPSEEK_API_KEY_2
+  - COHERE_API_KEY
+  - COHERE_API_KEY_2
+  - BIFROST_API_KEY
+  - BIFROST_ENCRYPTION_KEY
+  - LLM_API_KEY
+  - RAG_EMBED_API_KEY
+  - LANGFUSE_PUBLIC_KEY
+  - LANGFUSE_SECRET_KEY
+  - S3_ACCESS_KEY_ID
+  - S3_SECRET_ACCESS_KEY
+  - TAVILY_API_KEY
+
+x-secret-file-env: &secret-file-env
+  SECRET_KEY_FILE: /run/secrets/SECRET_KEY
+  POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
+  REDIS_PASSWORD_FILE: /run/secrets/REDIS_PASSWORD
+  OPENAI_API_KEY_FILE: /run/secrets/OPENAI_API_KEY
+  DASHSCOPE_API_KEY_FILE: /run/secrets/DASHSCOPE_API_KEY
+  DASHSCOPE_API_KEY_2_FILE: /run/secrets/DASHSCOPE_API_KEY_2
+  GEMINI_API_KEY_FILE: /run/secrets/GEMINI_API_KEY
+  GOOGLE_API_KEY_FILE: /run/secrets/GOOGLE_API_KEY
+  GOOGLE_CLIENT_SECRET_FILE: /run/secrets/GOOGLE_CLIENT_SECRET
+  GITHUB_TOKEN_FILE: /run/secrets/GITHUB_TOKEN
+  GROWTHBOOK_SDK_KEY_FILE: /run/secrets/GROWTHBOOK_SDK_KEY
+  DEEPSEEK_API_KEY_FILE: /run/secrets/DEEPSEEK_API_KEY
+  DEEPSEEK_API_KEY_2_FILE: /run/secrets/DEEPSEEK_API_KEY_2
+  COHERE_API_KEY_FILE: /run/secrets/COHERE_API_KEY
+  COHERE_API_KEY_2_FILE: /run/secrets/COHERE_API_KEY_2
+  BIFROST_API_KEY_FILE: /run/secrets/BIFROST_API_KEY
+  BIFROST_ENCRYPTION_KEY_FILE: /run/secrets/BIFROST_ENCRYPTION_KEY
+  LLM_API_KEY_FILE: /run/secrets/LLM_API_KEY
+  RAG_EMBED_API_KEY_FILE: /run/secrets/RAG_EMBED_API_KEY
+  LANGFUSE_PUBLIC_KEY_FILE: /run/secrets/LANGFUSE_PUBLIC_KEY
+  LANGFUSE_SECRET_KEY_FILE: /run/secrets/LANGFUSE_SECRET_KEY
+  S3_ACCESS_KEY_ID_FILE: /run/secrets/S3_ACCESS_KEY_ID
+  S3_SECRET_ACCESS_KEY_FILE: /run/secrets/S3_SECRET_ACCESS_KEY
+  TAVILY_API_KEY_FILE: /run/secrets/TAVILY_API_KEY
+
+x-db-migration-secrets: &db-migration-secrets
+  - SECRET_KEY
+  - POSTGRES_PASSWORD
+
+x-db-migration-secret-file-env: &db-migration-secret-file-env
+  SECRET_KEY_FILE: /run/secrets/SECRET_KEY
+  POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
+
+# AWS-like runtime defaults for backend containers.
+# Keep S3_ENDPOINT_URL and static credentials empty so boto3 uses real AWS S3
+# and the default credential chain, preferably an EC2 instance profile.
+x-backend-aws-env: &backend-aws-env
+  APP_ENV: ${APP_ENV:-prod}
+  STORAGE_BACKEND: ${STORAGE_BACKEND:-s3}
+  S3_BUCKET: ${S3_BUCKET:-}
+  S3_PREFIX: ${S3_PREFIX:-knowledge_files}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+  POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-verify-full}
+  POSTGRES_SSL_ROOT_CERT_FILE: ${POSTGRES_SSL_ROOT_CERT_FILE:-}
+  ENABLE_OTEL_METRICS: ${ENABLE_OTEL_METRICS:-false}
+  ENABLE_OTEL_TRACES: ${ENABLE_OTEL_TRACES:-false}
+  OTEL_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-}
+  OTEL_TRACES_ENDPOINT: ${OTEL_TRACES_ENDPOINT:-}
+  OTEL_SEMCONV_STABILITY_OPT_IN: ${OTEL_SEMCONV_STABILITY_OPT_IN:-http}
+
 services:
 
-  postgres:
-    image: pgvector/pgvector:0.8.1-pg17-bookworm
-    container_name: postgres
-    env_file:
-      - ../.env
-    # 1. 在服务内挂载卷
-    volumes:
-      - pg_data_v17:/var/lib/postgresql/data
-      - ./scripts/pgsql_backup.sh:/usr/local/bin/pg_backup.sh:ro
-      - pg_backups:/backup
-    logging: *default-logging
-    #entrypoint: [ "/bin/sh", "/usr/local/bin/pg_backup.sh" ]
-    deploy:
-      resources:
-        limits:
-          memory: 1024M
-          #共享缓冲区 工作内存 维护工作内存 有效缓存预测 最大连接数
-    command: >
-      postgres -c shared_buffers=256MB   -c work_mem=32MB   -c maintenance_work_mem=128MB  -c effective_cache_size=768MB -c max_connections=200 -c logging_collector=off
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - app_net
-
   redis:
-    image: redis:7.4-alpine
+    <<: *default-security
+    image: redis:7.4.9-alpine
     container_name: redis
-    env_file:
-      - ../.env # 确保路径正确，读取刚才定义的变量
+    restart: unless-stopped
+    env_file: *deploy-env-file
+    secrets:
+      - REDIS_PASSWORD
     deploy:
       resources:
         limits:
           memory: 512M
     logging: *default-logging
-    # 通过 --requirepass 参数启用密码
     command: >
-      redis-server  --maxmemory 384mb  --maxmemory-policy allkeys-lru  --requirepass "${REDIS_PASSWORD}"
+      sh -c 'umask 077 && printf "maxmemory 384mb\nmaxmemory-policy allkeys-lru\nrequirepass %s\n" "$$(cat /run/secrets/REDIS_PASSWORD)" > /tmp/redis.conf && exec redis-server /tmp/redis.conf'
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: [ "CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/REDIS_PASSWORD)\" ping" ]
       interval: 10s
       timeout: 3s
       retries: 5
     networks:
       - app_net
+
   api:
-    image: dewflow-backend:2.0.0-web
+    <<: *default-security
+    image: ${DOCKER_IMAGE_NAME_WEB:?missing DOCKER_IMAGE_NAME_WEB (set in deploy/.env.ec2 via make release-image-env)}
     container_name: api
     stop_grace_period: 40s
-    volumes:
-      - knowledge_files_volume:/data/knowledge_files
     logging: *default-logging
-    user: "${CURRENT_UID}:${CURRENT_GID}"
-    env_file:
-      - ../.env
+    env_file: *deploy-env-file
+    secrets: *app-secrets
     environment:
-      - PYTHONMALLOC=default
-      - WEB_CONCURRENCY=1
-      - LOCAL_STORAGE_ROOT=/data/knowledge_files
-    cap_add:
-      - SYS_PTRACE
+      <<: [ *backend-aws-env, *secret-file-env ]
+      PYTHONMALLOC: default
+      WEB_CONCURRENCY: "1"
+      FORWARDED_ALLOW_IPS: ${API_NGINX_PROXY_IP:-172.30.0.11}
     restart: unless-stopped
     deploy:
       resources:
@@ -78,171 +140,126 @@ services:
         reservations:
           memory: 256M
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       db_migrator:
         condition: service_completed_successfully
-      vector:
-        condition: service_started
     healthcheck:
       test: [ "CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/v1/health_check/live\", timeout=5)' || exit 1" ]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips "*" --timeout-graceful-shutdown 30
     networks:
-      - app_net
-      - monitor_net
-  nginx:
-    image: nginx:1.27.5-bookworm
-    container_name: nginx
+      app_net:
+      edge_net:
+        aliases:
+          - dewflow-api
+
+  api-nginx:
+    <<: *default-security
+    image: nginx:1.30.1-alpine
+    container_name: api-nginx
+    restart: unless-stopped
     logging: *default-logging
-    volumes:
-      # 挂载前端打包后的代码
-      - ../frontend/apps/admin/dist:/usr/share/nginx/html
-      # 引用你之前创建的那个配置文件
-      - ./nginx/project.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       api:
         condition: service_healthy
     ports:
-      - "80:80"
-      - "443:443" # 映射 HTTPS
-    networks:
-      - app_net
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 64M
-
-  prometheus:
-    image: prom/prometheus:v3.1.0
-    container_name: prometheus
-    # 移除 profile 使其默认启动，它是监控系统的核心
-    logging: *default-logging
+      - "${API_NGINX_BIND:-127.0.0.1}:${API_NGINX_PORT:-8081}:8080"
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
-      # 限制数据只保留 7 天，防止硬盘撑爆
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=7d'
-      - '--web.enable-otlp-receiver'
+      - ./nginx/api.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null || exit 1" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      edge_net:
+        ipv4_address: ${API_NGINX_PROXY_IP:-172.30.0.11}
     deploy:
       resources:
         limits:
-          memory: 256M
-        reservations:
           memory: 128M
-    networks:
-      - monitor_net
+        reservations:
+          memory: 32M
 
-  postgres_exporter:
-    image: prometheuscommunity/postgres-exporter:v0.17.1
-    container_name: postgres_exporter
-    environment:
-      # 连接字符串，指向同网络下的 postgres 服务
-      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+  frontend:
+    <<: *default-security
+    image: ${DOCKER_IMAGE_NAME_FRONTEND:?missing DOCKER_IMAGE_NAME_FRONTEND (set in deploy/.env.ec2 via make release-image-env)}
+    container_name: frontend
+    profiles: [ "frontend-fallback" ]
+    restart: unless-stopped
+    logging: *default-logging
     depends_on:
-      postgres:
+      api:
         condition: service_healthy
+    ports:
+      - "${FRONTEND_PUBLIC_PORT:-80}:8080"
     networks:
-      - app_net
-      - monitor_net
+      edge_net:
+        ipv4_address: ${FRONTEND_PROXY_IP:-172.30.0.10}
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 256M
+        reservations:
+          memory: 64M
 
-  redis_exporter:
-    image: oliver006/redis_exporter:v1.67.0
-    container_name: redis_exporter
-    environment:
-      # 指向同网络下的 redis 服务，并传入密码
-      - REDIS_ADDR=redis:6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-    depends_on:
-      redis:
-        condition: service_started
-    networks:
-      - app_net
-      - monitor_net
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  grafana:
-    image: grafana/grafana-oss:11.5.8-ubuntu
-    container_name: grafana
+  bifrost:
+    <<: *default-security
+    image: maximhq/bifrost:v1.4.11
+    container_name: bifrost
+    profiles: [ "bifrost" ]
+    restart: unless-stopped
     logging: *default-logging
     environment:
-      - GF_ANALYTICS_REPORTING_ENABLED=false # 禁用统计上报
-      - GF_AUTH_ANONYMOUS_ENABLED=false # 生产环境必须关闭匿名访问
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8080
+      BIFROST_LOG_LEVEL: ${BIFROST_LOG_LEVEL:-info}
+      LOG_STYLE: json
+    secrets:
+      - BIFROST_API_KEY
+      - BIFROST_ENCRYPTION_KEY
+      - DEEPSEEK_API_KEY
+      - DEEPSEEK_API_KEY_2
+      - DASHSCOPE_API_KEY
+      - DASHSCOPE_API_KEY_2
+      - COHERE_API_KEY
+      - COHERE_API_KEY_2
+    volumes:
+      - bifrost_data:/app/data
+      - ../configs/bifrost/config.json:/app/data/config.json:ro
+    entrypoint:
+      - sh
+      - -c
+      - "export BIFROST_API_KEY=\"$$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" && export BIFROST_ENCRYPTION_KEY=\"$$(cat /run/secrets/BIFROST_ENCRYPTION_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY=\"$$(cat /run/secrets/DEEPSEEK_API_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY_2=\"$$(cat /run/secrets/DEEPSEEK_API_KEY_2 | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY=\"$$(cat /run/secrets/DASHSCOPE_API_KEY | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY_2=\"$$(cat /run/secrets/DASHSCOPE_API_KEY_2 | tr -d '\\015\\012')\" && export COHERE_API_KEY=\"$$(cat /run/secrets/COHERE_API_KEY | tr -d '\\015\\012')\" && export COHERE_API_KEY_2=\"$$(cat /run/secrets/COHERE_API_KEY_2 | tr -d '\\015\\012')\" && exec /app/main -app-dir /app/data -port \"$${APP_PORT}\" -host \"$${APP_HOST}\" -log-level \"$${BIFROST_LOG_LEVEL}\" -log-style \"$${LOG_STYLE}\""
+    ports:
+      - "${BIFROST_BIND:-127.0.0.1}:${BIFROST_PORT:-18080}:8080"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- --header=\"x-bf-vk: $$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" http://localhost:8080/v1/models >/dev/null || exit 1" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - app_net
     deploy:
       resources:
         limits:
           memory: 256M
         reservations:
           memory: 64M
-    volumes:
-      - ./monitoring/grafana_datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
-      - ./monitoring/grafana_dashboards_provisioning.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
-      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards/dewflow:ro
-    networks:
-      - monitor_net
-
-  # 2. 日志中转 (Vector)
-  vector:
-    image: timberio/vector:0.50.0-debian
-    # 移除 profile 使其默认启动
-    container_name: vector
-    volumes:
-      - ./logging/vector.yaml:/etc/vector/vector.yaml:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    networks:
-      - monitor_net
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 64M
-
-  # 3. 日志存储 (Loki)
-  loki:
-    image: grafana/loki:3.4.0
-    container_name: loki
-    # 移除 profile 使其默认启动
-    volumes:
-      - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
-      - loki_data:/loki
-    networks:
-      - monitor_net
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 128M
-  # 1. 专门负责“更新数据库”的工具人
 
   db_migrator:
-    image: dewflow-backend:2.0.0-web
-    depends_on:
-      postgres:
-        condition: service_healthy
-    # 覆盖默认启动命令，只跑迁移
+    <<: *default-security
+    image: ${DOCKER_IMAGE_NAME_WEB:?missing DOCKER_IMAGE_NAME_WEB (set in deploy/.env.ec2 via make release-image-env)}
+    logging: *default-logging
     command: alembic upgrade head
-    env_file:
-      - ../.env
+    env_file: *deploy-env-file
+    secrets: *db-migration-secrets
+    environment:
+      <<: [ *backend-aws-env, *db-migration-secret-file-env ]
     networks:
       - app_net
     deploy:
@@ -252,44 +269,34 @@ services:
         reservations:
           memory: 64M
 
-  # 4. 压力测试 (Locust)
-  locust:
-    image: locustio/locust:2.33.0
-    container_name: locust
-    volumes:
-      - ../tests:/mnt/locust # 挂载测试脚本目录
-    command: -f /mnt/locust/performance/locustfile.py --host http://api:8000
-    profiles: [ "debug" ] # 设置为 debug 模式启动，默认不开启
-    ports:
-      - "8089:8089"
-    networks:
-      - app_net
-      - monitor_net
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 128M
-
-  # 5. 异步长连接任务队列 Taskiq Worker
   task_worker:
-    image: dewflow-backend:2.0.0-ai
+    <<: *default-security
+    image: ${DOCKER_IMAGE_NAME_AI:?missing DOCKER_IMAGE_NAME_AI (set in deploy/.env.ec2 via make release-image-env)}
     container_name: task_worker
     stop_grace_period: 120s
-    volumes:
-      - knowledge_files_volume:/data/knowledge_files
-    env_file:
-      - ../.env
+    env_file: *deploy-env-file
+    secrets: *app-secrets
     environment:
-      - TASKIQ_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
-      - LOCAL_STORAGE_ROOT=/data/knowledge_files
-    command: taskiq worker backend.infra.task_broker:broker backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks --workers 2 --wait-tasks-timeout 105 --shutdown-timeout 10
+      <<: [ *backend-aws-env, *secret-file-env ]
+      TASKIQ_HEALTH_MIN_PROCESSES: "2"
+      # Single source of truth for prod task modules; the image CMD consumes it.
+      TASKIQ_MODULES: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks"
+      TASKIQ_WORKERS: "2"
+      TASKIQ_WAIT_TASKS_TIMEOUT: "105"
+      TASKIQ_SHUTDOWN_TIMEOUT: "10"
+    healthcheck:
+      test: [ "CMD-SHELL", "python -m backend.worker.tasks.healthcheck || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
     logging: *default-logging
     depends_on:
       redis:
         condition: service_healthy
+      db_migrator:
+        condition: service_completed_successfully
     networks:
       - app_net
     deploy:
@@ -299,18 +306,100 @@ services:
         reservations:
           memory: 128M
 
+  # Enqueues TaskIQ tasks carrying a `schedule` label. Reuses the worker image
+  # so release and rollback only manage the existing DOCKER_IMAGE_NAME_AI tag.
+  credit_scheduler:
+    <<: *default-security
+    image: ${DOCKER_IMAGE_NAME_AI:?missing DOCKER_IMAGE_NAME_AI (set in deploy/.env.ec2 via make release-image-env)}
+    container_name: credit_scheduler
+    stop_grace_period: 30s
+    command: sh -c 'exec taskiq scheduler backend.worker.scheduler_entrypoint:build_scheduler $${TASKIQ_SCHEDULER_MODULES:-backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks}'
+    env_file: *deploy-env-file
+    secrets: *app-secrets
+    environment:
+      <<: [ *backend-aws-env, *secret-file-env ]
+      TASKIQ_SCHEDULER_MODULES: "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks"
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c 'from backend.worker.scheduler_entrypoint import validate_scheduler_schedules; validate_scheduler_schedules()' || exit 1" ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      redis:
+        condition: service_healthy
+      db_migrator:
+        condition: service_completed_successfully
+    networks:
+      - app_net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
 networks:
   app_net:
     driver: bridge
-  monitor_net:
+  edge_net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${EDGE_NETWORK_SUBNET:-172.30.0.0/24}
 
 volumes:
-  pg_data_v17:
-    name: prod_db_volume
-  loki_data:
-    name: loki_data_volume
-  pg_backups:
-    name: pg_backups_volume
-  knowledge_files_volume:
-    name: knowledge_files_volume
+  bifrost_data:
+    name: bifrost_data_volume
+
+secrets:
+  SECRET_KEY:
+    file: ${DEPLOY_SECRET_KEY_FILE:-../secrets/ec2/secret_key.txt}
+  POSTGRES_PASSWORD:
+    file: ${DEPLOY_POSTGRES_PASSWORD_FILE:-../secrets/ec2/postgres_password.txt}
+  REDIS_PASSWORD:
+    file: ${DEPLOY_REDIS_PASSWORD_FILE:-../secrets/ec2/redis_password.txt}
+  OPENAI_API_KEY:
+    file: ${DEPLOY_OPENAI_API_KEY_FILE:-../secrets/ec2/openai_api_key.txt}
+  DASHSCOPE_API_KEY:
+    file: ${DEPLOY_DASHSCOPE_API_KEY_FILE:-../secrets/ec2/dashscope_api_key.txt}
+  DASHSCOPE_API_KEY_2:
+    file: ${DEPLOY_DASHSCOPE_API_KEY_2_FILE:-../secrets/ec2/dashscope_api_key_2.txt}
+  GEMINI_API_KEY:
+    file: ${DEPLOY_GEMINI_API_KEY_FILE:-../secrets/ec2/gemini_api_key.txt}
+  GOOGLE_API_KEY:
+    file: ${DEPLOY_GOOGLE_API_KEY_FILE:-../secrets/ec2/google_api_key.txt}
+  GOOGLE_CLIENT_SECRET:
+    file: ${DEPLOY_GOOGLE_CLIENT_SECRET_FILE:-../secrets/ec2/google_client_secret.txt}
+  GITHUB_TOKEN:
+    file: ${DEPLOY_GITHUB_TOKEN_FILE:-../secrets/ec2/github_token.txt}
+  GROWTHBOOK_SDK_KEY:
+    file: ${DEPLOY_GROWTHBOOK_SDK_KEY_FILE:-../secrets/ec2/growthbook_sdk_key.txt}
+  DEEPSEEK_API_KEY:
+    file: ${DEPLOY_DEEPSEEK_API_KEY_FILE:-../secrets/ec2/deepseek_api_key.txt}
+  DEEPSEEK_API_KEY_2:
+    file: ${DEPLOY_DEEPSEEK_API_KEY_2_FILE:-../secrets/ec2/deepseek_api_key_2.txt}
+  COHERE_API_KEY:
+    file: ${DEPLOY_COHERE_API_KEY_FILE:-../secrets/ec2/cohere_api_key.txt}
+  COHERE_API_KEY_2:
+    file: ${DEPLOY_COHERE_API_KEY_2_FILE:-../secrets/ec2/cohere_api_key_2.txt}
+  BIFROST_API_KEY:
+    file: ${DEPLOY_BIFROST_API_KEY_FILE:-../secrets/ec2/bifrost_api_key.txt}
+  BIFROST_ENCRYPTION_KEY:
+    file: ${DEPLOY_BIFROST_ENCRYPTION_KEY_FILE:-../secrets/ec2/bifrost_encryption_key.txt}
+  LLM_API_KEY:
+    file: ${DEPLOY_LLM_API_KEY_FILE:-../secrets/ec2/llm_api_key.txt}
+  RAG_EMBED_API_KEY:
+    file: ${DEPLOY_RAG_EMBED_API_KEY_FILE:-../secrets/ec2/rag_embed_api_key.txt}
+  LANGFUSE_PUBLIC_KEY:
+    file: ${DEPLOY_LANGFUSE_PUBLIC_KEY_FILE:-../secrets/ec2/langfuse_public_key.txt}
+  LANGFUSE_SECRET_KEY:
+    file: ${DEPLOY_LANGFUSE_SECRET_KEY_FILE:-../secrets/ec2/langfuse_secret_key.txt}
+  S3_ACCESS_KEY_ID:
+    file: ${DEPLOY_S3_ACCESS_KEY_ID_FILE:-../secrets/ec2/s3_access_key_id.txt}
+  S3_SECRET_ACCESS_KEY:
+    file: ${DEPLOY_S3_SECRET_ACCESS_KEY_FILE:-../secrets/ec2/s3_secret_access_key.txt}
+  TAVILY_API_KEY:
+    file: ${DEPLOY_TAVILY_API_KEY_FILE:-../secrets/ec2/tavily_api_key.txt}

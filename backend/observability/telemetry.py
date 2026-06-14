@@ -24,6 +24,9 @@ from backend.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+# 基础设施探针流量不进入业务 trace；同时覆盖 root_path=/api 和裸 /v1 两种形态。
+_EXCLUDED_FASTAPI_URLS = "/api/v1/health_check/.*,/v1/health_check/.*,/metrics"
+
 # service.name 会成为 Prometheus/trace 后端中的服务标识。
 _RESOURCE = Resource.create(
     {
@@ -61,7 +64,7 @@ def setup_telemetry(app: FastAPI) -> None:
     metrics.set_meter_provider(meter_provider)
 
     # 自动生成 http.server.request.duration 等 OTel 标准指标和 span。
-    FastAPIInstrumentor.instrument_app(app)
+    FastAPIInstrumentor.instrument_app(app, excluded_urls=_EXCLUDED_FASTAPI_URLS)
 
     logger.info(
         "OpenTelemetry 初始化完成: metrics=%s%s, traces=%s%s",
@@ -70,6 +73,12 @@ def setup_telemetry(app: FastAPI) -> None:
         "enabled" if settings.ENABLE_OTEL_TRACES else "disabled",
         f"→{settings.OTEL_TRACES_ENDPOINT}" if settings.ENABLE_OTEL_TRACES else "",
     )
+
+    # Langfuse 客户端初始化 + span 过滤器安装。
+    # 必须在 TracerProvider 创建之后调用，Langfuse SDK 才能找到它并附加 SpanProcessor。
+    from backend.observability.langfuse_utils import init_langfuse_client
+
+    init_langfuse_client()
 
 
 def shutdown_telemetry() -> None:

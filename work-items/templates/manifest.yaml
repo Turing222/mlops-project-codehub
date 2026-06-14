@@ -1,0 +1,50 @@
+# Keep this file fully English. It is the machine-readable source of truth for
+# work-item resume state; put Chinese narrative in task-plan.md instead.
+slug: example-task-slug
+title: Human-readable task title
+status: active                 # active | paused | done
+
+goal: One sentence describing the stable goal.
+
+# Acceptance conditions that define "done". A different axis from workstreams.
+completion_chain:
+  - First durable completion condition.
+  - Second durable completion condition.
+
+# Execution units + machine-readable status. This block is the source of truth
+# for progress; task-plan.md never duplicates these fields.
+workstreams:
+  - id: 1
+    title: Scope or decision that must happen first.
+    status: pending           # pending | in_progress | done | deferred
+    kind: blocking            # blocking | parallel | serial
+    deps: []                  # ids of workstreams this one waits on
+  - id: 2
+    title: Dependent workstream.
+    status: pending
+    kind: serial
+    deps: [1]
+
+current_checkpoint:
+  name: scope-aligned
+  state: planned              # planned | in_progress | implemented | validated
+  summary: Brief machine note about the current checkpoint.
+
+# Open questions or prerequisites not yet decided. NOT task ordering (that is deps).
+open_decisions:
+  - id: example-decision
+    note: What must be decided and why it blocks clean implementation.
+
+# Resume interface. Use sequential ids A, B, C (do not skip letters).
+next_choices:
+  - id: A
+    label: Recommended next choice
+    note: Why this is the best next move.
+  - id: B
+    label: Alternative next choice
+    note: Trade-off or uncertainty.
+
+attached_artifacts:
+  task_plan: task-plan.md
+  reviews: []
+  debug: []

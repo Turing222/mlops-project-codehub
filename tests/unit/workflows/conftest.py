@@ -23,11 +23,33 @@ class FakeAsyncUow:
 
 
 class FakeChatUow:
-    """Async UoW with chat_repo and user_repo AsyncMocks."""
+    """Async UoW with chat_repo, user_repo and credit_repo AsyncMocks."""
 
     def __init__(self) -> None:
+        from contextlib import asynccontextmanager
+        from unittest.mock import MagicMock
+
         self.chat_repo = AsyncMock()
+        self.chat_repo.get_message = AsyncMock(return_value=None)
         self.user_repo = AsyncMock()
+        self.credit_repo = AsyncMock()
+
+        credit_account = MagicMock()
+        credit_account.balance = 1000
+        self.credit_repo.get_account_with_lock = AsyncMock(return_value=credit_account)
+        self.credit_repo.create_account = AsyncMock(return_value=credit_account)
+        self.credit_repo.get_transaction_by_idempotency_key = AsyncMock(
+            return_value=None
+        )
+        self.credit_repo.get_usage_record_by_chat_message_id = AsyncMock(
+            return_value=None
+        )
+
+        @asynccontextmanager
+        async def _noop_savepoint():
+            yield self
+
+        self.savepoint = _noop_savepoint
 
     async def __aenter__(self) -> FakeChatUow:
         return self

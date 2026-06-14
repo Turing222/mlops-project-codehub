@@ -5,7 +5,6 @@
 风险：只有来源 IP 在可信代理网段内时才读取代理头，避免伪造客户端 IP。
 """
 
-import ipaddress
 import os
 import time
 from collections.abc import Awaitable
@@ -14,6 +13,7 @@ from typing import cast
 from fastapi import Request
 
 from backend.config.settings import settings
+from backend.core.client_ip import ClientIPResolver
 from backend.core.exceptions import app_too_many_requests
 from backend.infra.redis import redis_client
 from backend.observability.trace_utils import (
@@ -61,12 +61,12 @@ class RateLimiter:
     ) -> None:
         self.times = times
         self.window_ms = seconds * 1000
-        raw_cidrs = (
+        trusted_proxy_cidrs = (
             trusted_proxy_cidrs
             if trusted_proxy_cidrs is not None
             else settings.RATE_LIMIT_TRUSTED_PROXY_CIDRS
         )
-        self.trusted_proxy_networks = self._parse_cidr_list(raw_cidrs)
+        self._client_ip_resolver = ClientIPResolver(trusted_proxy_cidrs)
 
     async def __call__(self, request: Request) -> None:
         client_ip = self._get_client_ip(request)
@@ -120,38 +120,7 @@ class RateLimiter:
 
     def _get_client_ip(self, request: Request) -> str:
         peer_ip = request.client.host if request.client else ""
-        if peer_ip and self._is_trusted_proxy(peer_ip):
-            real_ip = request.headers.get("x-real-ip", "").strip()
-            if self._is_valid_ip(real_ip):
-                return real_ip
-        return peer_ip or "unknown"
-
-    def _is_trusted_proxy(self, peer_ip: str) -> bool:
-        if not self.trusted_proxy_networks:
-            return False
-        try:
-            ip_obj = ipaddress.ip_address(peer_ip)
-        except ValueError:
-            return False
-        return any(ip_obj in network for network in self.trusted_proxy_networks)
-
-    @staticmethod
-    def _is_valid_ip(value: str) -> bool:
-        if not value:
-            return False
-        try:
-            ipaddress.ip_address(value)
-            return True
-        except ValueError:
-            return False
-
-    @staticmethod
-    def _parse_cidr_list(
-        raw_cidrs: str,
-    ) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
-        cidr_items = [item.strip() for item in raw_cidrs.split(",") if item.strip()]
-        networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
-        for item in cidr_items:
-            network = ipaddress.ip_network(item, strict=False)
-            networks.append(network)
-        return networks
+        return self._client_ip_resolver.resolve(
+            peer_ip,
+            request.headers.get("x-real-ip"),
+        )

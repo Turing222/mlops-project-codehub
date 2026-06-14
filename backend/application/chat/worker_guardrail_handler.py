@@ -18,6 +18,7 @@ from backend.services.chat_safety_metadata import (
     GuardrailDecision,
     GuardrailReason,
     ResponseOutcome,
+    build_planner_refusal_metadata,
     build_rag_refusal_metadata,
     build_safety_metadata,
 )
@@ -84,7 +85,12 @@ class WorkerGuardrailHandler:
         start_time: float,
         idempotency_lock_key: str | None,
     ) -> None:
-        refusal_content = ai_settings.RAG_REFUSAL_MESSAGE
+        planner_refusal = bool(search_context and search_context.get("planner_refusal"))
+        refusal_content = (
+            ai_settings.RAG_PLANNER_REFUSAL_MESSAGE
+            if planner_refusal
+            else ai_settings.RAG_REFUSAL_MESSAGE
+        )
         tokens_output = self._count_output_tokens(refusal_content)
         if self._stream_publisher is not None:
             await self._stream_publisher.publish_chunk(channel, refusal_content)
@@ -96,7 +102,11 @@ class WorkerGuardrailHandler:
             tokens_output=tokens_output,
             search_context=search_context,
             start_time=start_time,
-            message_metadata=build_rag_refusal_metadata(),
+            message_metadata=(
+                build_planner_refusal_metadata()
+                if planner_refusal
+                else build_rag_refusal_metadata()
+            ),
             idempotency_lock_key=idempotency_lock_key,
         )
 
@@ -147,7 +157,12 @@ class WorkerGuardrailHandler:
         start_time: float,
         idempotency_lock_key: str | None,
     ) -> GenerationResult:
-        refusal_content = ai_settings.RAG_REFUSAL_MESSAGE
+        planner_refusal = bool(search_context and search_context.get("planner_refusal"))
+        refusal_content = (
+            ai_settings.RAG_PLANNER_REFUSAL_MESSAGE
+            if planner_refusal
+            else ai_settings.RAG_REFUSAL_MESSAGE
+        )
         tokens_output = self._count_output_tokens(refusal_content)
         await self._persist_refusal(
             assistant_message_id=assistant_message_id,
@@ -157,7 +172,11 @@ class WorkerGuardrailHandler:
             tokens_output=tokens_output,
             search_context=search_context,
             start_time=start_time,
-            message_metadata=build_rag_refusal_metadata(),
+            message_metadata=(
+                build_planner_refusal_metadata()
+                if planner_refusal
+                else build_rag_refusal_metadata()
+            ),
             idempotency_lock_key=idempotency_lock_key,
         )
         return GenerationResult(
@@ -192,6 +211,7 @@ class WorkerGuardrailHandler:
             search_context=search_context,
             start_time=start_time,
             message_metadata=message_metadata,
+            model_name="default",
         )
         if idempotency_lock_key is not None and assistant_message_id is not None:
             await self._persistence_handler.write_idempotency_message(

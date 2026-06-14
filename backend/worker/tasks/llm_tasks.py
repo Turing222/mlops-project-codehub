@@ -16,18 +16,18 @@ from backend.models.schemas.chat.payloads import (
     GenerationPayload,
     GenerationResult,
     LLMTaskPayload,
+    StreamGenerationResult,
 )
 from backend.observability.langfuse_utils import (
     langfuse_generation,
     set_langfuse_trace_metadata,
 )
-from backend.observability.trace_utils import (
-    trace_span,
-    use_trace_context,
-)
+from backend.observability.trace_utils import use_trace_context
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.worker.dependencies import (
+    get_worker_external_context_provider,
     get_worker_llm_service,
+    get_worker_llm_service_for_provider,
     get_worker_rag_planning_service,
     get_worker_rag_service,
     get_worker_session_factory,
@@ -128,18 +128,36 @@ async def generate_llm_stream_task(*args: object) -> None:
             langfuse_generation(
                 name="generate_llm_stream",
                 input_payload=generation_payload,
+                model=generation_payload.get("billing_model_name"),
                 metadata={"stream": True, "session_id": str(payload.session_id)},
             ) as recorder,
         ):
-            error = await _generate_llm_stream_task(
+            result = await _generate_llm_stream_task(
                 payload=payload,
                 channel=channel,
                 assistant_message_id=assistant_message_id,
                 user_id=user_id,
                 idempotency_lock_key=idempotency_lock_key,
             )
-            if error is not None:
-                recorder.record(error=error)
+            if not result.success:
+                recorder.record(error=result.error)
+            else:
+                usage_dict = {}
+                if result.tokens_input is not None:
+                    usage_dict["prompt_tokens"] = result.tokens_input
+                if result.tokens_output is not None:
+                    usage_dict["completion_tokens"] = result.tokens_output
+                if usage_dict:
+                    usage_dict["total_tokens"] = usage_dict.get(
+                        "prompt_tokens", 0
+                    ) + usage_dict.get("completion_tokens", 0)
+
+                recorder.record(
+                    output=result.output,
+                    usage=usage_dict if usage_dict else None,
+                    model=result.model_name,
+                    metadata=result.langfuse_metadata,
+                )
 
 
 async def _generate_llm_stream_task(
@@ -149,29 +167,22 @@ async def _generate_llm_stream_task(
     assistant_message_id: str | None = None,
     user_id: str | None = None,
     idempotency_lock_key: str | None = None,
-) -> str | None:
-    """执行流式生成，返回错误信息或 None。"""
+) -> StreamGenerationResult:
+    """执行流式生成，返回 StreamGenerationResult。"""
     logger.info("TaskIQ Worker 开始处理流式请求: %s", channel)
 
-    with trace_span(
-        "taskiq.llm_stream.setup",
-        {
-            "redis.channel": channel,
-            "chat.assistant_message_id": assistant_message_id,
-        },
-    ):
-        llm_service = get_worker_llm_service()
-        workflow = LLMGenerationWorkerWorkflow(
-            uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
-            redis_client=redis_client,
-            llm_service=llm_service,
-            rag_service=get_worker_rag_service(llm_service=llm_service),
-            rag_planning_service=get_worker_rag_planning_service(),
-        )
-        assistant_uuid = (
-            uuid.UUID(assistant_message_id) if assistant_message_id else None
-        )
-        user_uuid = uuid.UUID(user_id) if user_id else None
+    llm_service = get_worker_llm_service()
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
+        redis_client=redis_client,
+        llm_service=llm_service,
+        llm_service_resolver=get_worker_llm_service_for_provider,
+        rag_service=get_worker_rag_service(),
+        rag_planning_service=get_worker_rag_planning_service(),
+        external_context_provider=get_worker_external_context_provider(),
+    )
+    assistant_uuid = uuid.UUID(assistant_message_id) if assistant_message_id else None
+    user_uuid = uuid.UUID(user_id) if user_id else None
 
     return await workflow.generate_stream(
         payload=payload,
@@ -219,6 +230,7 @@ async def generate_llm_nonstream_task(*args: object) -> GenerationResult:
             langfuse_generation(
                 name="generate_llm_nonstream",
                 input_payload=generation_payload,
+                model=generation_payload.get("billing_model_name"),
                 metadata={"stream": False, "session_id": str(payload.session_id)},
             ) as recorder,
         ):
@@ -230,8 +242,10 @@ async def generate_llm_nonstream_task(*args: object) -> GenerationResult:
             )
             if result.success:
                 recorder.record(
-                    output=result.content[:500],
+                    output=result.content,
                     usage=_build_usage_details(result),
+                    model=result.model_name,
+                    metadata=result.langfuse_metadata,
                 )
             else:
                 recorder.record(error=result.error or "LLM 服务返回失败")
@@ -250,22 +264,18 @@ async def _generate_llm_nonstream_task(
         assistant_message_id,
     )
 
-    with trace_span(
-        "taskiq.llm_nonstream.setup",
-        {"chat.assistant_message_id": assistant_message_id},
-    ):
-        llm_service = get_worker_llm_service()
-        workflow = LLMGenerationWorkerWorkflow(
-            uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
-            redis_client=redis_client,
-            llm_service=llm_service,
-            rag_service=get_worker_rag_service(llm_service=llm_service),
-            rag_planning_service=get_worker_rag_planning_service(),
-        )
-        assistant_uuid = (
-            uuid.UUID(assistant_message_id) if assistant_message_id else None
-        )
-        user_uuid = uuid.UUID(user_id) if user_id else None
+    llm_service = get_worker_llm_service()
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
+        redis_client=redis_client,
+        llm_service=llm_service,
+        llm_service_resolver=get_worker_llm_service_for_provider,
+        rag_service=get_worker_rag_service(),
+        rag_planning_service=get_worker_rag_planning_service(),
+        external_context_provider=get_worker_external_context_provider(),
+    )
+    assistant_uuid = uuid.UUID(assistant_message_id) if assistant_message_id else None
+    user_uuid = uuid.UUID(user_id) if user_id else None
 
     return await workflow.generate_nonstream(
         payload=payload,

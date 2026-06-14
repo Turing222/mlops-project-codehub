@@ -21,6 +21,8 @@ from backend.ai.core.context_budgeter import (
 from backend.ai.core.live_window_builder import LiveWindowBuilder
 from backend.ai.core.message_compressor import MessageCompressor
 from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
+from backend.ai.core.prompt_resolver import get_prompt_resolver
+from backend.ai.core.prompt_templates import render_system_prompt
 from backend.ai.core.token_counter import count_messages_tokens, count_tokens
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractRAGService
@@ -173,10 +175,24 @@ class ChatContextBuilder:
         # 4. Assemble prompt
         prompt_manager = self.rag_prompt_manager if rag_chunks else self.prompt_manager
         search_context = rag_references.search_context if rag_chunks else None
+        prompt_extra_vars = {
+            "context_state": self._context_state_to_prompt_dict(context_state),
+            "conversation_summary": window_result.bridge_summary,
+        }
+        fixed_prompt_tokens = self._estimate_fixed_prompt_tokens(
+            prompt_manager=prompt_manager,
+            history=window_result.exact_messages,
+            current_query=current_query,
+            extra_vars=prompt_extra_vars,
+        )
+        effective_rag_budget = min(
+            rag_chunks_budget,
+            max(0, self.context_budgeter.total_budget - fixed_prompt_tokens),
+        )
 
         context_chunks = self._fit_context_chunks(
             rag_references.context_chunks,
-            budget_tokens=rag_chunks_budget,
+            budget_tokens=effective_rag_budget,
             model=model,
         )
 
@@ -185,10 +201,27 @@ class ChatContextBuilder:
             current_query=current_query,
             extra_vars={
                 "context_chunks": context_chunks,
-                "context_state": self._context_state_to_prompt_dict(context_state),
-                "conversation_summary": window_result.bridge_summary,
+                **prompt_extra_vars,
             },
         )
+        if (
+            context_chunks
+            and assembled.total_tokens > self.context_budgeter.total_budget
+        ):
+            overflow = assembled.total_tokens - self.context_budgeter.total_budget
+            context_chunks = self._fit_context_chunks(
+                context_chunks,
+                budget_tokens=max(0, effective_rag_budget - overflow),
+                model=model,
+            )
+            assembled = prompt_manager.assemble(
+                history=window_result.exact_messages,
+                current_query=current_query,
+                extra_vars={
+                    "context_chunks": context_chunks,
+                    **prompt_extra_vars,
+                },
+            )
 
         # 5. Final validation
         ok, actual = self.context_budgeter.validate(
@@ -258,6 +291,33 @@ class ChatContextBuilder:
             if block.name == name:
                 return block.allocated
         return 0
+
+    @staticmethod
+    def _estimate_fixed_prompt_tokens(
+        *,
+        prompt_manager: PromptManager,
+        history: list[ConversationMessage],
+        current_query: str,
+        extra_vars: dict[str, object],
+    ) -> int:
+        system_template = (
+            prompt_manager.system_template
+            or get_prompt_resolver().get_template(prompt_manager.template_name)
+        )
+        system_content = render_system_prompt(
+            template=system_template,
+            **{
+                **prompt_manager.template_vars,
+                "context_chunks": [],
+                **extra_vars,
+            },
+        )
+        messages: list[ConversationMessage] = []
+        if system_content.strip():
+            messages.append({"role": "system", "content": system_content})
+        messages.extend(history)
+        messages.append({"role": "user", "content": current_query})
+        return count_messages_tokens(messages, prompt_manager.model_name)
 
     @staticmethod
     def _fit_context_chunks(
@@ -346,7 +406,10 @@ class ChatContextBuilder:
                     span,
                     {
                         "rag.hit_count": len(chunks),
-                        "rag.rerank.enabled": settings.RAG_RERANK_ENABLED,
+                        "rag.rerank.enabled": getattr(
+                            self.rag_service, "reranker", None
+                        )
+                        is not None,
                     },
                 )
                 return chunks
@@ -364,7 +427,7 @@ class ChatContextBuilder:
         if rag_service is None:
             return []
 
-        if settings.RAG_RERANK_ENABLED:
+        if getattr(self.rag_service, "reranker", None) is not None:
             retrieve_with_rerank = getattr(
                 rag_service,
                 "retrieve_with_rerank",
@@ -420,6 +483,7 @@ class ChatContextBuilder:
 
         groups: list[dict[str, Any]] = []
         group_indexes: dict[tuple[str | None, str | None, str | None], int] = {}
+        ref_counters = {"R": 0, "W": 0}
         context_chunks: list[str] = []
         flat_chunks: list[dict[str, Any]] = []
         scores = [float(chunk.get("score", 0.0) or 0.0) for chunk in rag_chunks]
@@ -433,13 +497,18 @@ class ChatContextBuilder:
             if group_index is None:
                 group_index = len(groups)
                 group_indexes[key] = group_index
+                ref_prefix = "W" if source_type == "web" else "R"
+                ref_counters[ref_prefix] += 1
                 groups.append(
                     {
-                        "ref_id": f"R{group_index + 1}",
+                        "ref_id": f"{ref_prefix}{ref_counters[ref_prefix]}",
                         "source_type": source_type,
                         "file_id": file_id,
                         "message_id": message_id,
                         "filename": chunk.get("filename"),
+                        "title": chunk.get("title"),
+                        "url": chunk.get("url"),
+                        "provider": chunk.get("provider"),
                         "chunks": [],
                     }
                 )
@@ -455,6 +524,7 @@ class ChatContextBuilder:
                 "score": chunk.get("score"),
                 "distance": chunk.get("distance"),
                 "meta_info": chunk.get("meta_info") or {},
+                "text": chunk.get("content", ""),
             }
             ChatContextBuilder._copy_optional_evidence_fields(chunk, chunk_ref)
             group["chunks"].append(chunk_ref)
@@ -466,7 +536,11 @@ class ChatContextBuilder:
                 "source_type": source_type,
                 "file_id": file_id,
                 "message_id": message_id,
+                "title": chunk.get("title"),
+                "url": chunk.get("url"),
+                "provider": chunk.get("provider"),
                 "chunk_index": chunk_index,
+                "text": chunk.get("content", ""),
             }
             ChatContextBuilder._copy_optional_evidence_fields(chunk, flat_chunk)
             flat_chunks.append(flat_chunk)
@@ -503,6 +577,9 @@ class ChatContextBuilder:
             "evidence_score",
             "matched_by",
             "rerank_score",
+            "provider",
+            "title",
+            "url",
         ):
             value = source.get(key)
             if value is not None:
@@ -511,14 +588,18 @@ class ChatContextBuilder:
     @staticmethod
     def _format_context_chunk(ref_id: str, chunk: dict) -> str:
         source_label = (
-            chunk.get("filename")
+            chunk.get("title")
+            or chunk.get("url")
+            or chunk.get("filename")
             or chunk.get("file_id")
             or chunk.get("message_id")
             or "unknown"
         )
         details = [f"来源：{source_label}"]
+        if chunk.get("source_type") == "web":
+            details.append("类型：联网")
         chunk_index = chunk.get("chunk_index")
-        if chunk_index is not None:
+        if chunk_index is not None and chunk.get("source_type") != "web":
             details.append(f"chunk {chunk_index}")
         meta_info = chunk.get("meta_info") or {}
         page_label = meta_info.get("page_label") or meta_info.get("page")

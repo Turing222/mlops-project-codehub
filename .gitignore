@@ -8,6 +8,7 @@ venv/
 
 # 编辑器/IDE 忽略项
 .vscode/
+.cursor/
 
 # Docker 忽略项
 *.o
@@ -16,7 +17,6 @@ venv/
 
 # 测试数据
 data/
-src/
 
 #mlflow的本地数据存储
 mlruns/
@@ -27,6 +27,7 @@ mlartifacts/
 .env.smoke
 key.env
 *.env
+deploy/.env.ec2
 
 # 忽略 Jupyter 的检查点备份
 .ipynb_checkpoints/
@@ -42,7 +43,11 @@ postgres_data/
 
 #前端
 .frontend/
-frontend/
+frontend/node_modules/
+frontend/apps/*/node_modules/
+frontend/apps/*/dist/
+frontend/apps/*/dist-ssr/
+frontend/apps/*/coverage/
 
 # 数据与日志 (非常重要，防止镜像过大)
 logs/*
@@ -51,6 +56,7 @@ postgres_data/
 redis_data/
 *.log
 .logs/
+.tmp/
 
 #密钥 & SSL 证书（私钥绝不能入库）
 deploy/nginx/ssl/
@@ -58,6 +64,12 @@ deploy/k8s/local-scaling/secret.local.yaml
 secrets/smoke/*
 !secrets/smoke/README.md
 !secrets/smoke/.gitkeep
+secrets/ec2/*
+!secrets/ec2/README.md
+!secrets/ec2/.gitkeep
+secrets/local-prod/*
+!secrets/local-prod/README.md
+!secrets/local-prod/.gitkeep
 #本地测试
 tests/test_demo.py
 .traces/
@@ -66,9 +78,11 @@ alembic/archive_versions
 test_demo.py
 .antigravityignore
 .codex/*
+!.codex/config.toml
 !.codex/skills/
 !.codex/skills/**
 .cache/
+.serena/project.local.yml
 
 # 测试快照归档（不提交到仓库）
 snapshots/*.json
@@ -81,3 +95,10 @@ htmlcov/
 # 工具目录
 tools/
 test-debug-agent/
+.claude/plans/*
+
+# coding agent 产物：忽略临时工作区，但追踪结构化任务卡与模板
+work-items/*
+!work-items/active/
+!work-items/README.md
+!work-items/templates/

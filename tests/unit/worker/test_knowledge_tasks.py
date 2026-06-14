@@ -9,12 +9,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.worker.tasks.knowledge_tasks import safe_mark_failed
-
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.requires_taskiq]
 
 
 async def test_safe_mark_failed_swallows_mark_failed_error() -> None:
+    from backend.worker.tasks.knowledge_tasks import safe_mark_failed
+
     task_id = uuid.uuid4()
     uow = AsyncMock()
     uow.__aenter__ = AsyncMock(return_value=uow)
@@ -36,6 +36,8 @@ async def test_safe_mark_failed_swallows_mark_failed_error() -> None:
 
 
 async def test_safe_mark_failed_skips_none_task_id() -> None:
+    from backend.worker.tasks.knowledge_tasks import safe_mark_failed
+
     uow = AsyncMock()
     task_service = AsyncMock()
 

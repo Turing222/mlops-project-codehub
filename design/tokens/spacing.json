@@ -1,0 +1,28 @@
+{
+  "$description": "4px base grid. Chat uses larger gaps; Admin uses tighter.",
+  "space": {
+    "0": { "$type": "dimension", "$value": "0px" },
+    "1": { "$type": "dimension", "$value": "4px" },
+    "2": { "$type": "dimension", "$value": "8px" },
+    "3": { "$type": "dimension", "$value": "12px" },
+    "4": { "$type": "dimension", "$value": "16px" },
+    "5": { "$type": "dimension", "$value": "20px" },
+    "6": { "$type": "dimension", "$value": "24px" },
+    "7": { "$type": "dimension", "$value": "32px" },
+    "8": { "$type": "dimension", "$value": "40px" }
+  },
+  "usage": {
+    "chat": {
+      "message-gap": "space.3",
+      "scroll-padding": "space.5 space.4",
+      "bubble-padding": "10px 14px",
+      "input-area-padding": "space.3 space.4"
+    },
+    "admin": {
+      "content-padding": "space.4 space.6",
+      "card-padding": "space.4 space.5",
+      "card-header-gap": "space.5",
+      "header-padding-x": "space.6"
+    }
+  }
+}

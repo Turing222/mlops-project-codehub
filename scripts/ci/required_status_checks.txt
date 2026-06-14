@@ -1,0 +1,7 @@
+# Required GitHub status checks for main (one context name per line).
+# Keep in sync with docs/workflows/ci-test-matrix.md §5.1 and docs/platform/deploy-ec2.md.
+Backend static
+Frontend static
+PR gate
+Frontend e2e smoke (real backend)
+Docker smoke

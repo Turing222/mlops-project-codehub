@@ -9,7 +9,7 @@ cd "$PROJECT_ROOT"
 require_cmd docker
 
 log_section "Building web image"
-docker build --target web -t "${DOCKER_IMAGE_NAME_WEB:-dewflow-backend:2.0.0-web}" .
+docker build --target web -t "${DOCKER_IMAGE_NAME_WEB:?missing DOCKER_IMAGE_NAME_WEB (build via make image-build or image-build-release)}" .
 
 log_section "Building worker image"
-docker build --target worker -t "${DOCKER_IMAGE_NAME_AI:-dewflow-backend:2.0.0-ai}" .
+docker build --target worker -t "${DOCKER_IMAGE_NAME_AI:?missing DOCKER_IMAGE_NAME_AI (build via make image-build or image-build-release)}" .

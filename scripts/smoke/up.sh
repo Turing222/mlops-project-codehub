@@ -11,5 +11,6 @@ require_cmd docker
 log_section "Starting smoke environment"
 ensure_smoke_required_secrets
 ensure_smoke_volumes
+compose_smoke_pull_registry
 compose_smoke up -d
 compose_smoke ps

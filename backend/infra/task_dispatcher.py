@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 TASK_STREAM = "generate_llm_stream"
 TASK_NONSTREAM = "generate_llm_nonstream"
 TASK_INGESTION = "ingest_knowledge_file"
+TASK_REPO_ANALYSIS = "analyze_repo_readme"
 TASKIQ_QUEUE_NAME = "taskiq"
 TASK_RESULT_POLL_INTERVAL_SECONDS = 0.1
 
@@ -136,6 +137,19 @@ class TaskDispatcher(AbstractTaskDispatcher):
         await self._send_task(
             TASK_INGESTION,
             file_id,
+            task_id,
+            trace_context,
+        )
+
+    async def enqueue_repo_analysis(
+        self,
+        run_id: str,
+        task_id: str,
+        trace_context: dict[str, str] | None = None,
+    ) -> None:
+        await self._send_task(
+            TASK_REPO_ANALYSIS,
+            run_id,
             task_id,
             trace_context,
         )

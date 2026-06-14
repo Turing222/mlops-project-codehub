@@ -12,6 +12,9 @@ uv run ruff check .
 log_section "Running import boundary check"
 uv run python scripts/check_import_boundaries.py
 
+log_section "Checking for bare while True loops"
+uv run python scripts/qa/check_no_while_true.py
+
 log_section "Running test marker audit"
 uv run python scripts/qa/check_test_markers.py
 

@@ -161,17 +161,17 @@ async def run_ragas(rows: list[dict[str, Any]]) -> dict[str, Any]:
     if not ragas_rows:
         return {"scores": {}, "details": []}
 
-    metrics = [Faithfulness(), AnswerRelevancy()]
+    metrics = [Faithfulness(), AnswerRelevancy()]  # type: ignore[call-arg]
     if any(row.get("reference_answer") for row in ragas_rows):
-        metrics.append(AnswerCorrectness())
+        metrics.append(AnswerCorrectness())  # type: ignore[call-arg]
 
     eval_llm, _eval_model = _create_eval_llm()
     result = evaluate(
         dataset=EvaluationDataset(samples=build_ragas_samples(ragas_rows)),
-        metrics=metrics,
+        metrics=metrics,  # type: ignore[arg-type]
         llm=eval_llm,
     )
-    frame = result.to_pandas()
+    frame = result.to_pandas()  # type: ignore[union-attr]
     if len(frame) != len(ragas_rows):
         raise RuntimeError(
             f"Ragas returned {len(frame)} rows for {len(ragas_rows)} eval samples"
@@ -246,7 +246,7 @@ async def run(args: argparse.Namespace) -> None:
     except Exception as exc:
         ragas_result = {"scores": {"ragas_error": str(exc)}, "details": []}
     ragas_scores = ragas_result["scores"]
-    _merge_ragas_details(rows, ragas_result["details"])
+    _merge_ragas_details(rows, ragas_result["details"])  # type: ignore[call-arg]
     summary = {
         "samples": len(samples),
         "base_url": args.base_url,

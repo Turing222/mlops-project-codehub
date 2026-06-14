@@ -11,6 +11,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.models.enums import MessageStatus
+from backend.models.schemas.chat.context_routing import ContextMode
 from backend.models.schemas.chat.params import LLMExtraBody
 
 QueryStr = Annotated[
@@ -31,6 +32,14 @@ class QuerySentRequest(BaseModel):
         None,
         max_length=64,
         description="客户端生成的唯一请求 ID，用于幂等控制",
+    )
+    enable_external_context: bool = Field(
+        False,
+        description="允许 Planner 按需检索外部上下文",
+    )
+    context_mode: ContextMode | None = Field(
+        None,
+        description="上下文路由模式：auto/kb_only/web_only/off；为空时兼容 enable_external_context",
     )
     extra_body: LLMExtraBody | None = Field(
         None, description="透传到 LLM API 的受控额外参数，如 thinking 模式控制"
@@ -68,6 +77,7 @@ class MessageResponse(BaseModel):
     status: MessageStatus
     latency_ms: int | None = None
     search_context: dict | None = None
+    message_metadata: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 

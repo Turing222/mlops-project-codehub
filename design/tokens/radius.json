@@ -1,0 +1,11 @@
+{
+  "$description": "Three-tier radius system. Do not introduce new values without updating this file.",
+  "radius": {
+    "sm": { "$type": "dimension", "$value": "8px", "$description": "buttons, menu items, upload hover" },
+    "md": { "$type": "dimension", "$value": "12px", "$description": "bubbles, inputs, cards, send button" },
+    "lg": { "$type": "dimension", "$value": "16px", "$description": "modals, mode selector cards" },
+    "pill": { "$type": "dimension", "$value": "20px", "$description": "badges, header chips" },
+    "full": { "$type": "dimension", "$value": "9999px", "$description": "close button, avatars" },
+    "bubble-tail": { "$type": "dimension", "$value": "4px", "$description": "chat bubble corner notch" }
+  }
+}

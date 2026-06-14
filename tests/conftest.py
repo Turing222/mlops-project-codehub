@@ -5,18 +5,23 @@ Fixtures that require app startup should live in tests/component or tests/integr
 """
 
 import os
-from collections.abc import Iterator
 
 import pytest
 
-from tests.helpers.env import REQUIRED_ENV_BY_MARKER, get_test_profile, optional_env
+from tests.helpers.env import (
+    REQUIRED_ENV_BY_MARKER,
+    REQUIRED_PKG_BY_MARKER,
+    get_test_profile,
+    optional_env,
+    pkgs_available_for_marker,
+)
 
 
 def pytest_configure() -> None:
     """Normalize env before test collection imports backend settings."""
     get_test_profile()
     os.environ.setdefault("APP_ENV", "test")
-    os.environ.setdefault("SECRET_KEY", "test-secret")
+    os.environ.setdefault("SECRET_KEY", "test-secret-key-with-at-least-32-chars")
     os.environ.setdefault("AUTH_REGISTER_RATE_LIMIT_TIMES", "100000")
     os.environ.setdefault("AUTH_LOGIN_RATE_LIMIT_TIMES", "100000")
     os.environ.setdefault("BUSINESS_RATE_LIMIT_TIMES", "100000")
@@ -38,13 +43,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         if marker_name in marker_names and optional_env(env_name) is None:
             pytest.skip(f"{marker_name} requires {env_name}")
 
-
-@pytest.fixture(autouse=True)
-def stable_token_counter(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Keep token counting local and deterministic in tests."""
-    from backend.ai.core import token_counter
-
-    token_counter._encoding_cache.clear()
-    monkeypatch.setattr(token_counter, "_tiktoken_available", False)
-    yield
-    token_counter._encoding_cache.clear()
+    for marker_name in REQUIRED_PKG_BY_MARKER:
+        if marker_name in marker_names and not pkgs_available_for_marker(marker_name):
+            pytest.skip(f"{marker_name} requires missing Python package(s)")

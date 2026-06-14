@@ -1,12 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ../namespace.yaml
-  - ../configmap.yaml
+  - namespace.yaml
   - redis.yaml
-  - ../knowledge-files-pvc.yaml
-  - ../worker-deployment.yaml
+  - worker-demo-deployment.yaml
   - worker-keda-local.yaml
-
-patchesStrategicMerge:
-  - worker-scaling-demo-patch.yaml

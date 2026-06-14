@@ -124,6 +124,9 @@ async def test_create_passes_persistence_data_only_returns_created(
         "email": "alice@example.com",
         "hashed_password": "hashed-password",
         "max_tokens": 100000,
+        "phone": None,
+        "auth_provider": None,
+        "google_sub": None,
     }
     assert "password" not in create_data
     assert "confirm_password" not in create_data

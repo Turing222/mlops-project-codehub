@@ -29,3 +29,24 @@ def test_extra_body_rejects_unknown_keys() -> None:
                 "extra_body": {"temperature": 0.7},
             }
         )
+
+
+def test_context_mode_accepts_known_values() -> None:
+    request = QuerySentRequest.model_validate(
+        {
+            "query": "需要最新资料吗",
+            "context_mode": "auto",
+        }
+    )
+
+    assert request.context_mode == "auto"
+
+
+def test_context_mode_rejects_unknown_value() -> None:
+    with pytest.raises(ValidationError):
+        QuerySentRequest.model_validate(
+            {
+                "query": "你好",
+                "context_mode": "everything",
+            }
+        )

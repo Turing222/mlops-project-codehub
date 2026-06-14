@@ -25,8 +25,15 @@ def _is_ci() -> bool:
 @pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_ci_postgres_service_is_reachable() -> None:
+    url = os.getenv("TEST_DATABASE_URL") or settings.database_url
+    if not url.startswith("postgresql+asyncpg"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # Strip query params (like sslmode=) that asyncpg doesn't accept
+    # as connect_args — SSL is configured via connect_args instead.
+    if "?" in url:
+        url = url.split("?", 1)[0]
     engine = create_async_engine(
-        settings.database_url,
+        url,
         connect_args=settings.database_connect_args,
         pool_pre_ping=True,
     )
@@ -45,7 +52,8 @@ async def test_ci_postgres_service_is_reachable() -> None:
 @pytest.mark.asyncio
 @pytest.mark.requires_redis
 async def test_ci_redis_service_is_reachable() -> None:
-    client = redis.from_url(settings.taskiq_redis_url, decode_responses=True)
+    url = settings.redis_url
+    client = redis.from_url(url, decode_responses=True)
     try:
         assert await client.ping() is True
     except Exception as exc:

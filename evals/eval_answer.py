@@ -32,10 +32,12 @@ from typing import Any
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.ai.providers.llm.factory import LLMProviderFactory
+from backend.ai.providers.rerank.factory import RerankProviderFactory
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
 from backend.infra.database import create_db_assets
 from backend.models.schemas.chat.dto import LLMQueryDTO
+from backend.models.schemas.chat.payloads import FeatureFlags
 from backend.services.rag_planning_service import (
     RAG_PLANNER_FALLBACK_REASON,
 )
@@ -77,7 +79,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--rerank",
         action="store_true",
-        help="Enable LLM rerank after candidate retrieval",
+        help="Enable rerank after candidate retrieval",
     )
     parser.add_argument(
         "--candidate-count",
@@ -132,7 +134,7 @@ def _create_eval_llm():
     kwargs: dict[str, str] = {"provider": "openai", "model": model, "api_key": api_key}
     if base_url:
         kwargs["base_url"] = base_url
-    return llm_factory(**kwargs), model
+    return llm_factory(**kwargs), model  # type: ignore[call-arg]
 
 
 async def run(args: argparse.Namespace) -> None:
@@ -156,16 +158,23 @@ async def run(args: argparse.Namespace) -> None:
         vector_index_service = VectorIndexService(uow=uow, embedder=embedder)
 
         llm_service = LLMProviderFactory.create()
+        reranker = (
+            RerankProviderFactory.create() if args.rerank or args.use_planner else None
+        )
         rag_service = build_rag_service(
             embedder=embedder,
             vector_index_service=vector_index_service,
             top_k=args.top_k,
-            llm_service=llm_service if args.rerank or args.use_planner else None,
+            reranker=reranker,
             rerank_candidate_count=args.candidate_count,
             rerank_top_k=args.rerank_top_k,
         )
         planner = (
             create_rag_planner(args.planner_provider) if args.use_planner else None
+        )
+        infra_flags = FeatureFlags(
+            enable_rag_rerank=args.rerank,
+            enable_rag_planner=args.use_planner,
         )
         chat_context_builder = ChatContextBuilder()
 
@@ -199,6 +208,7 @@ async def run(args: argparse.Namespace) -> None:
                         query_text=sample.query,
                         conversation_history=[],
                         kb_id=sample.kb_id,
+                        infra_flags=infra_flags,
                     )
                     planner_latency_ms = int(
                         (time.perf_counter() - planner_started_at) * 1000
@@ -339,7 +349,7 @@ async def run(args: argparse.Namespace) -> None:
             )
 
         # ── 运行 Ragas 指标 ─────────────────────────────────────────
-        ragas_scores: dict[str, float] = {}
+        ragas_scores: dict[str, float | str] = {}
         ragas_details: list[dict] = []
 
         if ragas_samples and _has_ragas():
@@ -353,23 +363,23 @@ async def run(args: argparse.Namespace) -> None:
             eval_llm, eval_model = _create_eval_llm()
 
             metrics = [
-                Faithfulness(),
-                AnswerRelevancy(),
+                Faithfulness(),  # type: ignore[call-arg]
+                AnswerRelevancy(),  # type: ignore[call-arg]
             ]
             has_reference = any(
                 s.reference_answer for s in samples if s.reference_answer
             )
             if has_reference:
-                metrics.append(AnswerCorrectness())
+                metrics.append(AnswerCorrectness())  # type: ignore[call-arg]
 
             try:
                 dataset = EvaluationDataset(samples=ragas_samples)
                 ragas_result = evaluate(
                     dataset=dataset,
-                    metrics=metrics,
+                    metrics=metrics,  # type: ignore[arg-type]
                     llm=eval_llm,
                 )
-                ragas_df = ragas_result.to_pandas()
+                ragas_df = ragas_result.to_pandas()  # type: ignore[union-attr]
                 ragas_scores = {
                     col: float(ragas_df[col].mean())
                     for col in ragas_df.columns
@@ -425,7 +435,7 @@ async def run(args: argparse.Namespace) -> None:
             "run": build_run_metadata(
                 kind="answer",
                 dataset_path=args.dataset,
-                config=_run_config(args, embedding_profile, eval_model),
+                config=_run_config(args, embedding_profile, eval_model, infra_flags),
             ),
             "summary": summary,
             "details": rows,
@@ -444,6 +454,7 @@ def _run_config(
     args: argparse.Namespace,
     embedding_profile: Any,
     eval_model: str | None,
+    infra_flags: FeatureFlags,
 ) -> dict[str, Any]:
     generation_profile = get_llm_model_config().resolve_profile()
     return {
@@ -471,7 +482,7 @@ def _run_config(
         },
         "rag": {
             "planner_enabled": args.use_planner,
-            "config_rerank_enabled": ai_settings.RAG_RERANK_ENABLED,
+            "config_rerank_enabled": infra_flags.enable_rag_rerank,
         },
     }
 

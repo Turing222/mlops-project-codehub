@@ -13,10 +13,6 @@ def test_hybrid_retrieval_raises_on_low_relevance_score(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
         "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
         1,
     )
@@ -44,6 +40,7 @@ def test_hybrid_retrieval_raises_on_low_relevance_score(
                 "matched_by": ["vector"],
             }
         ],
+        enable_rag_refusal=True,
     )
 
     assert decision.should_refuse is True
@@ -53,10 +50,6 @@ def test_hybrid_retrieval_raises_on_low_relevance_score(
 def test_hybrid_retrieval_passes_on_sufficient_relevance_score(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        True,
-    )
     monkeypatch.setattr(
         "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
         1,
@@ -85,6 +78,7 @@ def test_hybrid_retrieval_passes_on_sufficient_relevance_score(
                 "matched_by": ["vector", "fulltext"],
             }
         ],
+        enable_rag_refusal=True,
     )
 
     assert decision.should_refuse is False
@@ -94,10 +88,6 @@ def test_hybrid_retrieval_passes_on_sufficient_relevance_score(
 def test_hybrid_dual_match_refuses_when_evidence_score_is_low(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        True,
-    )
     monkeypatch.setattr(
         "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
         1,
@@ -126,6 +116,7 @@ def test_hybrid_dual_match_refuses_when_evidence_score_is_low(
                 "matched_by": ["vector", "fulltext"],
             }
         ],
+        enable_rag_refusal=True,
     )
 
     assert decision.should_refuse is True
@@ -135,10 +126,6 @@ def test_hybrid_dual_match_refuses_when_evidence_score_is_low(
 def test_hybrid_retrieval_passes_on_multiple_relevant_chunks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        True,
-    )
     monkeypatch.setattr(
         "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
         1,
@@ -173,6 +160,7 @@ def test_hybrid_retrieval_passes_on_multiple_relevant_chunks(
                 "matched_by": ["fulltext"],
             },
         ],
+        enable_rag_refusal=True,
     )
 
     assert decision.should_refuse is False
@@ -182,10 +170,6 @@ def test_hybrid_retrieval_passes_on_multiple_relevant_chunks(
 def test_rerank_score_below_threshold_refuses(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        True,
-    )
     monkeypatch.setattr(
         "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
         1,
@@ -209,6 +193,7 @@ def test_rerank_score_below_threshold_refuses(
         chunks=[
             {"retrieval_mode": "hybrid", "evidence_score": 0.9, "rerank_score": 2.0}
         ],
+        enable_rag_refusal=True,
     )
 
     assert decision.should_refuse is True
@@ -219,10 +204,6 @@ def test_rerank_score_below_threshold_refuses(
 def test_rerank_score_at_threshold_allows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        True,
-    )
     monkeypatch.setattr(
         "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
         1,
@@ -246,6 +227,7 @@ def test_rerank_score_at_threshold_allows(
         chunks=[
             {"retrieval_mode": "hybrid", "evidence_score": 0.1, "rerank_score": 4.0}
         ],
+        enable_rag_refusal=True,
     )
 
     assert decision.should_refuse is False
@@ -255,10 +237,6 @@ def test_rerank_score_at_threshold_allows(
 def test_refusal_disabled_allows_even_with_low_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        False,
-    )
     plan = RAGExecutionPlan(
         should_use_rag=True,
         retrieval_mode="hybrid",
@@ -269,7 +247,64 @@ def test_refusal_disabled_allows_even_with_low_evidence(
         kb_id=object(),
         rag_plan=plan,
         chunks=[{"retrieval_mode": "hybrid", "evidence_score": 0.0}],
+        enable_rag_refusal=False,
     )
 
     assert decision.should_refuse is False
     assert decision.reason == "RAG 拒答策略未启用"
+
+
+def test_external_context_evidence_allows_without_kb(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
+        1,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_RELEVANCE_SCORE",
+        0.2,
+    )
+    plan = RAGExecutionPlan(
+        should_use_rag=False,
+        should_use_external_context=True,
+        external_sources=["web"],
+    )
+
+    decision = RAGEvidencePolicy().evaluate(
+        kb_id=None,
+        rag_plan=plan,
+        chunks=[{"source_type": "web", "retrieval_mode": "external", "score": 0.7}],
+        enable_rag_refusal=True,
+    )
+
+    assert decision.should_refuse is False
+    assert decision.reason == "外部上下文证据充足"
+
+
+def test_external_context_insufficient_without_kb_allows_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
+        1,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_RELEVANCE_SCORE",
+        0.9,
+    )
+    plan = RAGExecutionPlan(
+        should_use_rag=False,
+        should_use_external_context=True,
+        external_sources=["web"],
+    )
+
+    decision = RAGEvidencePolicy().evaluate(
+        kb_id=None,
+        rag_plan=plan,
+        chunks=[{"source_type": "web", "retrieval_mode": "external", "score": 0.3}],
+        enable_rag_refusal=True,
+    )
+
+    assert decision.should_refuse is False
+    assert "外部上下文证据不充分" in decision.reason

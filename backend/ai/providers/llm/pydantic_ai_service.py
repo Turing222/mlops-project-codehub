@@ -10,7 +10,6 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from backend.ai.core.token_counter import count_tokens
 from backend.ai.providers.llm.pydantic_ai_models import create_pydantic_ai_model
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import LLMProfile, get_llm_model_config
@@ -27,6 +26,7 @@ from backend.observability.trace_utils import (
     set_span_attributes,
     trace_span,
 )
+from backend.utils.token_estimation import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,14 @@ _ROLE_LABELS = {
 
 class PydanticAILLMService(AbstractLLMService):
     """Pydantic AI provider 的 LLM 服务适配器。"""
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    @property
+    def provider_name(self) -> str:
+        return self._provider_name
 
     def __init__(
         self,
@@ -72,11 +80,11 @@ class PydanticAILLMService(AbstractLLMService):
                 extra_body=resolved_profile.extra_body,
             )
         )
-        self.provider_name = provider_name or self.profile.provider
+        self._provider_name = provider_name or self.profile.provider
         self.api_key = (
             api_key if api_key is not None else self.profile.resolve_api_key()
         )
-        self.model_name = self.profile.model
+        self._model_name = self.profile.model
         self.max_retries = max_retries
         self._extra_body = (
             extra_body if extra_body is not None else self.profile.extra_body
@@ -126,12 +134,14 @@ class PydanticAILLMService(AbstractLLMService):
                         _merge_extra_body(self._extra_body, query.extra_body)
                     ),
                 ) as result:
-                    await self._circuit.on_success()
                     async for delta in result.stream_text(delta=True):
                         if delta:
                             chunk_count += 1
                             char_count += len(delta)
                             yield delta
+                # 流正常迭代结束后才标记成功：避免连接建立但流式中途失败时
+                # 先被记为成功（计数清零）再记失败，削弱熔断灵敏度。
+                await self._circuit.on_success()
                 set_span_attributes(
                     span,
                     {
@@ -194,9 +204,8 @@ class PydanticAILLMService(AbstractLLMService):
                 content = str(getattr(result, "output", ""))
                 latency_ms = int((time.perf_counter() - start) * 1000)
                 prompt_tokens, completion_tokens = _usage_tokens(result)
-                completion_tokens = completion_tokens or count_tokens(
-                    content, self.model_name
-                )
+                if completion_tokens is None:
+                    completion_tokens = estimate_tokens(content, self.model_name)
                 set_span_attributes(
                     span,
                     {

@@ -46,7 +46,7 @@ check_not_has() {
 }
 
 check_ai_worker_imports() {
-    if DEBUG=false uv run --no-dev --extra ai --extra worker python -c "import backend.worker.tasks.llm_tasks; import backend.worker.tasks.knowledge_tasks" >/dev/null 2>&1; then
+    if DEBUG=false uv run --no-dev --extra ai --extra worker python -c "import backend.worker.tasks.llm_tasks; import backend.worker.tasks.knowledge_tasks; import backend.worker.tasks.repo_analysis_tasks" >/dev/null 2>&1; then
         printf "  ${GREEN}[+]${NC} ai+worker imports worker task modules without web extras\n"
     else
         printf "  ${RED}[-]${NC} ai+worker cannot import worker task modules without web extras\n"
@@ -63,7 +63,6 @@ check_not_has "web" "web" "taskiq-redis"
 echo ""
 
 echo "==> Checking ai extras (extra=ai)"
-check_has     "ai" "ai" "pypdfium2"
 check_has     "ai" "ai" "openai"
 check_not_has "ai" "ai" "fastapi"
 check_not_has "ai" "ai" "taskiq"

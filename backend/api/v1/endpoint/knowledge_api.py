@@ -14,6 +14,7 @@ from backend.application.knowledge.upload_workflow import KnowledgeUploadWorkflo
 from backend.core.exceptions import app_not_found
 from backend.models.orm.user import User
 from backend.models.schemas.knowledge_schema import (
+    KnowledgeBaseResponse,
     KnowledgeFileResponse,
     KnowledgeUploadResponse,
 )
@@ -128,3 +129,56 @@ async def get_file_status(
             user_id=current_user.id,
         )
     return KnowledgeFileResponse.model_validate(knowledge_file)
+
+
+@router.get("/default")
+async def get_default_kb(
+    current_user: CurrentUserDep,
+    service: KnowledgeServiceDep,
+) -> KnowledgeBaseResponse:
+    async with service.read():
+        kb = await service.get_default_kb_for_user(user_id=current_user.id)
+    if kb is None:
+        async with service.write():
+            kb = await service.get_or_create_default_kb(user_id=current_user.id)
+    return KnowledgeBaseResponse.model_validate(kb)
+
+
+@router.get(
+    "/default/files",
+)
+async def get_default_kb_files(
+    current_user: CurrentUserDep,
+    service: KnowledgeServiceDep,
+) -> list[KnowledgeFileResponse]:
+    async with service.read():
+        kb = await service.get_default_kb_for_user(user_id=current_user.id)
+    if kb is None:
+        async with service.write():
+            kb = await service.get_or_create_default_kb(user_id=current_user.id)
+    async with service.read():
+        files = await service.list_files_by_kb_id(kb_id=kb.id, user_id=current_user.id)
+    return [KnowledgeFileResponse.model_validate(f) for f in files]
+
+
+@router.delete(
+    "/files/{file_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_kb_file(
+    file_id: uuid.UUID,
+    current_user: CurrentUserDep,
+    service: KnowledgeServiceDep,
+    audit_service: AuditServiceDep,
+) -> None:
+    async with (
+        capture_audit(
+            audit_service,
+            action=AuditAction.FILE_DELETE,
+            actor_user_id=current_user.id,
+            resource_type="file",
+            resource_id=file_id,
+        ),
+        service.write(),
+    ):
+        await service.remove_file(file_id=file_id, user_id=current_user.id)

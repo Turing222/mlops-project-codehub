@@ -108,6 +108,7 @@ async def test_build_uses_rag_prompt_and_search_context_when_chunks_found() -> N
         "score": 0.8,
         "distance": 0.2,
         "meta_info": {"page_label": "1", "section_path": "Guide / Setup"},
+        "text": "索引里的事实: Codex smoke RAG 正常。",
     }
     assert result.search_context["refs"][0]["chunks"][1]["ref_id"] == "R1.2"
     assert result.search_context["refs"][0]["chunks"][1]["chunk_id"] == str(chunk_id_2)
@@ -175,10 +176,7 @@ async def test_build_uses_rerank_when_enabled(monkeypatch) -> None:
                 }
             ]
         ),
-    )
-    monkeypatch.setattr(
-        "backend.ai.core.chat_context_builder.settings.RAG_RERANK_ENABLED",
-        True,
+        reranker=object(),  # non-None signals rerank is configured
     )
     monkeypatch.setattr(
         "backend.ai.core.chat_context_builder.settings.RAG_RERANK_TOP_K",
@@ -361,6 +359,51 @@ def test_build_from_chunks_trims_rag_chunks_to_budget() -> None:
     assert result.assembled_prompt.total_tokens <= builder.context_budgeter.total_budget
     assert retained_content in result.assembled_prompt.messages[0]["content"]
     assert len(result.assembled_prompt.messages[0]["content"]) < 8000
+
+
+def test_build_from_chunks_reserves_budget_for_rag_template_overhead() -> None:
+    builder = ChatContextBuilder(
+        rag_prompt_manager=PromptManager(
+            system_template=Template(
+                "固定说明: {{ 'S' * 220 }}\n"
+                "{% for chunk in context_chunks %}{{ chunk }}\n{% endfor %}"
+            ),
+            max_context_tokens=280,
+            reserved_response_tokens=80,
+            model_name="gpt-4",
+        ),
+        context_budgeter=ContextBudgeter(
+            max_context_tokens=280,
+            reserved_response_tokens=80,
+            model_name="gpt-4",
+        ),
+        live_window_builder=LiveWindowBuilder(recent_rounds=1),
+    )
+
+    result = builder.build_from_chunks(
+        history_messages=[],
+        current_query="问题",
+        kb_id=uuid.uuid4(),
+        rag_chunks=[
+            {
+                "id": str(uuid.uuid4()),
+                "content": "A" * 1200,
+                "source_type": "file",
+                "file_id": str(uuid.uuid4()),
+                "message_id": None,
+                "filename": "source.md",
+                "chunk_index": 0,
+                "meta_info": {},
+                "distance": 0.1,
+                "score": 0.9,
+            }
+        ],
+    )
+
+    assert result.assembled_prompt.total_tokens <= builder.context_budgeter.total_budget
+    assert "固定说明" in result.assembled_prompt.messages[0]["content"]
+    assert "A" in result.assembled_prompt.messages[0]["content"]
+    assert len(result.assembled_prompt.messages[0]["content"]) < 1200
 
 
 def test_build_from_chunks_raises_when_final_context_exceeds_budget() -> None:

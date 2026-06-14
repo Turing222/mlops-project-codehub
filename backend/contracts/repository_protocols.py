@@ -16,7 +16,9 @@ from backend.models.enums import MessageStatus, WorkspaceRole
 from backend.models.orm.access import UserWorkspaceRole, Workspace
 from backend.models.orm.chat import ChatMessage, ChatSession
 from backend.models.orm.chunk import DocumentChunk
+from backend.models.orm.credits import CreditAccount, CreditTransaction, UsageRecord
 from backend.models.orm.knowledge import File, FileStatus, FileVisibility, KnowledgeBase
+from backend.models.orm.repo_analysis import RepoAnalysisResult, RepoAnalysisRun
 from backend.models.orm.task import TaskJob, TaskStatus
 from backend.models.orm.user import User
 from backend.models.schemas.audit_schema import AuditEventFilters
@@ -218,6 +220,10 @@ class KnowledgeRepositoryProtocol(Protocol):
 
     async def get_file(self, file_id: uuid.UUID) -> File | None: ...
 
+    async def list_files_by_kb(self, kb_id: uuid.UUID) -> Sequence[File]: ...
+
+    async def delete_file_record(self, file_id: uuid.UUID) -> None: ...
+
     async def get_file_by_hash_and_status(
         self, *, kb_id: uuid.UUID, content_sha256: str, status: FileStatus
     ) -> File | None: ...
@@ -299,6 +305,52 @@ class TaskRepositoryProtocol(Protocol):
     ) -> int: ...
 
 
+class RepoAnalysisRepositoryProtocol(Protocol):
+    async def create_run(
+        self,
+        *,
+        user_id: uuid.UUID,
+        repo_url: str,
+        owner: str,
+        repo: str,
+        rubric_version: str,
+    ) -> RepoAnalysisRun: ...
+
+    async def get_run(self, run_id: uuid.UUID) -> RepoAnalysisRun | None: ...
+
+    async def get_run_for_user(
+        self, *, run_id: uuid.UUID, user_id: uuid.UUID
+    ) -> RepoAnalysisRun | None: ...
+
+    async def set_task_id(
+        self, *, run_id: uuid.UUID, task_id: uuid.UUID
+    ) -> RepoAnalysisRun | None: ...
+
+    async def mark_running(self, *, run_id: uuid.UUID) -> RepoAnalysisRun | None: ...
+
+    async def mark_failed(
+        self, *, run_id: uuid.UUID, error_message: str
+    ) -> RepoAnalysisRun | None: ...
+
+    async def mark_succeeded(self, *, run_id: uuid.UUID) -> RepoAnalysisRun | None: ...
+
+    async def create_result(
+        self,
+        *,
+        run_id: uuid.UUID,
+        subject: dict[str, Any],
+        snapshot: dict[str, Any],
+        evidence: dict[str, Any],
+        structured_report: dict[str, Any],
+        markdown_report: str,
+        generated_by: str,
+    ) -> RepoAnalysisResult: ...
+
+    async def get_result_for_run(
+        self, run_id: uuid.UUID
+    ) -> RepoAnalysisResult | None: ...
+
+
 class UserRepositoryProtocol(Protocol):
     async def get(self, id: Any) -> User | None: ...
 
@@ -316,6 +368,10 @@ class UserRepositoryProtocol(Protocol):
 
     async def get_by_username(self, username: str) -> User | None: ...
 
+    async def get_by_phone(self, phone: str) -> User | None: ...
+
+    async def get_by_google_sub(self, google_sub: str) -> User | None: ...
+
     async def get_existing_usernames(self, usernames: list[str]) -> set[str]: ...
 
     async def bulk_upsert(self, user_maps: list[dict[str, str]]) -> None: ...
@@ -327,3 +383,91 @@ class UserRepositoryProtocol(Protocol):
     async def try_increment_used_tokens_with_limit(
         self, user_id: uuid.UUID, amount: int
     ) -> bool: ...
+
+
+class CreditRepositoryProtocol(Protocol):
+    async def get_account(self, user_id: uuid.UUID) -> CreditAccount | None: ...
+
+    async def get_account_with_lock(
+        self, user_id: uuid.UUID
+    ) -> CreditAccount | None: ...
+
+    async def get_account_by_id_with_lock(
+        self, account_id: uuid.UUID
+    ) -> CreditAccount | None: ...
+
+    async def create_account(self, user_id: uuid.UUID) -> CreditAccount: ...
+
+    async def update_account_balance(
+        self, account_id: uuid.UUID, balance: int
+    ) -> None: ...
+
+    async def try_decrement_balance(self, account_id: uuid.UUID, cost: int) -> bool: ...
+
+    async def try_increment_balance(
+        self, account_id: uuid.UUID, amount: int
+    ) -> bool: ...
+
+    async def add_transaction(
+        self,
+        *,
+        account_id: uuid.UUID,
+        amount: int,
+        source: str,
+        expires_at: datetime.datetime | None = None,
+        idempotency_key: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> CreditTransaction: ...
+
+    async def get_transaction_by_idempotency_key(
+        self, idempotency_key: str
+    ) -> CreditTransaction | None: ...
+
+    async def create_usage_record(
+        self,
+        *,
+        user_id: uuid.UUID,
+        chat_message_id: uuid.UUID | None = None,
+        model_name: str,
+        input_tokens: int,
+        output_tokens: int,
+        credit_cost: int,
+        metadata: dict[str, Any] | None = None,
+    ) -> UsageRecord: ...
+
+    async def get_usage_record_by_chat_message_id(
+        self, chat_message_id: uuid.UUID
+    ) -> UsageRecord | None: ...
+
+    async def list_transactions(
+        self,
+        *,
+        account_id: uuid.UUID,
+        source: str | None = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> Sequence[CreditTransaction]: ...
+
+    async def count_transactions(
+        self, account_id: uuid.UUID, source: str | None = None
+    ) -> int: ...
+
+    async def get_expired_grants_sum(
+        self, account_id: uuid.UUID, now: datetime.datetime
+    ) -> int: ...
+
+    async def get_already_expired_sum(self, account_id: uuid.UUID) -> int: ...
+
+    async def get_spent_sum(self, account_id: uuid.UUID) -> int: ...
+
+    async def get_protected_positive_sum(
+        self, account_id: uuid.UUID, now: datetime.datetime
+    ) -> int: ...
+
+    async def list_accounts_needing_expiration(
+        self,
+        now: datetime.datetime,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> Sequence[uuid.UUID]: ...

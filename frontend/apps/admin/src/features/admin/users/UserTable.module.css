@@ -1,0 +1,73 @@
+.user-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.user-cell-avatar {
+    background: #4f6b8a !important;
+}
+
+.token-compact-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.token-digits {
+    font-family: monospace;
+    color: var(--color-text-main);
+    flex-shrink: 0;
+}
+
+.mini-progress-track {
+    flex: 1;
+    height: 4px;
+    background: var(--color-bg-subtle);
+    border-radius: 2px;
+    overflow: hidden;
+    min-width: 40px;
+}
+
+.mini-progress-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.mini-progress-fill.level-low {
+    background: var(--color-primary);
+}
+
+.mini-progress-fill.level-mid {
+    background: #faad14;
+}
+
+.mini-progress-fill.level-high {
+    background: #ff4d4f;
+}
+
+.token-percent-label {
+    font-size: 11px;
+    color: var(--color-text-desc);
+    width: 32px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.user-table-empty {
+    padding: 40px 0;
+    text-align: center;
+    color: var(--color-text-desc);
+}
+
+.user-table-empty-icon {
+    color: var(--color-icon-muted);
+    margin-bottom: 8px;
+}
+
+.user-table-empty-text {
+    font-size: 14px;
+    color: var(--color-text-desc);
+}

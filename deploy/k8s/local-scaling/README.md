@@ -49,9 +49,8 @@ kind load docker-image dewflow-backend:2.0.0-ai
 
 ```bash
 cp deploy/k8s/local-scaling/secret.local.example.yaml /tmp/dewflow-secret.local.yaml
-kubectl apply -f deploy/k8s/namespace.yaml
-kubectl apply -f /tmp/dewflow-secret.local.yaml
 kubectl apply -k deploy/k8s/local-scaling
+kubectl apply -f /tmp/dewflow-secret.local.yaml
 kubectl -n dewflow wait --for=condition=available deploy/redis --timeout=120s
 kubectl -n dewflow wait --for=condition=available deploy/dewflow-worker --timeout=120s
 ```

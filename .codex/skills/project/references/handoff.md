@@ -11,6 +11,9 @@ If files were modified during the turn, append this block after the normal respo
 **Affected**: [1-3 files/modules touched]
 ```
 
+Use Chinese for Change Summary when the conversation is Chinese. Keep file paths,
+commands, code symbols, and status values in English.
+
 ## Commit Messages
 
 Use Conventional Commits. Keep the subject in English and no more than 50 characters.
@@ -25,6 +28,9 @@ type[(scope)]: English summary
 Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`.
 
 Default to a body for code, config, or deploy changes. Omit the body only for truly trivial docs or tests.
+
+Commit bodies may use Chinese for project-internal reasoning. Keep commands,
+identifiers, and error codes in English.
 
 ## Pre-Commit Checklist
 

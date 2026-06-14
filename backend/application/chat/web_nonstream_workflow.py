@@ -30,6 +30,7 @@ from backend.observability.trace_utils import (
     trace_span,
 )
 from backend.services.chat_service import SessionManager
+from backend.services.feature_flag_service import FeatureFlagService
 from backend.services.permission_service import PermissionService
 
 logger = logging.getLogger(__name__)
@@ -44,12 +45,14 @@ class ChatNonStreamWorkflow:
         dispatcher: AbstractTaskDispatcher,
         redis_client: redis.Redis,
         permission_service: PermissionService,
+        feature_flag_service: FeatureFlagService,
         session_manager: SessionManager | None = None,
     ) -> None:
         self.uow = uow
         self.dispatcher = dispatcher
         self.redis = redis_client
         self.permission_service = permission_service
+        self._feature_flag_service = feature_flag_service
         self._session_manager = session_manager or SessionManager(
             uow, permission_service
         )
@@ -98,6 +101,7 @@ class ChatNonStreamWorkflow:
             self.uow,
             self.redis,
             self.permission_service,
+            self._feature_flag_service,
             self._session_manager,
         )
         idempotency = await orchestrator.check_idempotency(

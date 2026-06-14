@@ -22,6 +22,65 @@ profiles:
       - openai-compatible
       - external-api
 
+  bifrost:
+    provider: openai-compatible
+    model: deepseek/deepseek-chat
+    base_url: http://bifrost:8080/v1  # Docker network only
+    api_key_envs:
+      - BIFROST_API_KEY
+    aliases:
+      - bifrost
+      - llm-gateway
+      - ai-gateway
+
+  bifrost_reasoner:
+    provider: openai-compatible
+    model: deepseek/deepseek-reasoner
+    base_url: http://bifrost:8080/v1  # Docker network only
+    api_key_envs:
+      - BIFROST_API_KEY
+    aliases:
+      - bifrost-reasoner
+      - gateway-reasoner
+
+  bifrost_v4_flash:
+    provider: openai-compatible
+    model: deepseek/deepseek-v4-flash
+    base_url: http://bifrost:8080/v1  # Docker network only
+    api_key_envs:
+      - BIFROST_API_KEY
+    aliases:
+      - bifrost-flash
+      - bifrost_flash
+      - gateway-flash
+
+  bifrost_v4_flash_thinking:
+    provider: openai-compatible
+    model: deepseek/deepseek-v4-flash
+    base_url: http://bifrost:8080/v1  # Docker network only
+    api_key_envs:
+      - BIFROST_API_KEY
+    aliases:
+      - bifrost-flash-thinking
+      - bifrost_flash_thinking
+      - gateway-flash-thinking
+    extra_body:
+      thinking:
+        type: enabled
+
+  bifrost_v4_pro:
+    provider: openai-compatible
+    model: deepseek/deepseek-v4-pro
+    base_url: http://bifrost:8080/v1  # Docker network only
+    api_key_envs:
+      - BIFROST_API_KEY
+    aliases:
+      - bifrost-pro
+      - bifrost_pro
+      - gateway-pro
+    extra_body:
+      thinking:
+        type: enabled
 
   deepseek_v4_flash:
     provider: deepseek
@@ -33,6 +92,17 @@ profiles:
     aliases:
       - deepseek
       - deepseek-v4-flash
+
+  deepseek_v4_flash_thinking:
+    provider: deepseek
+    model: deepseek-v4-flash
+    base_url: https://api.deepseek.com
+    api_key_envs:
+      - DEEPSEEK_API_KEY
+      - LLM_API_KEY
+    aliases:
+      - deepseek-v4-flash-thinking
+      - deepseek_flash_thinking
     extra_body:
       thinking:
         type: enabled
@@ -46,6 +116,7 @@ profiles:
       - LLM_API_KEY
     aliases:
       - deepseek-v4-pro
+      - deepseek_pro
     extra_body:
       thinking:
         type: enabled
@@ -116,6 +187,17 @@ embeddings:
         - dashscope
         - aliyun
 
+    bifrost_embedding:
+      provider: openai-compatible
+      model: text-embedding-v4
+      base_url: http://bifrost:8080/v1  # Docker network only
+      dimensions: 768
+      api_key_envs:
+        - BIFROST_API_KEY
+      aliases:
+        - bifrost-embedding
+        - gateway-embedding
+
     openai_compatible:
       provider: openai-compatible
       model: text-embedding-3-small
@@ -128,3 +210,30 @@ embeddings:
         - openai
         - openai-compatible
         - external-api
+
+reranks:
+  default_profile: dashscope_rerank
+
+  profiles:
+    dashscope_rerank:
+      provider: dashscope
+      model: qwen3-rerank
+      base_url: https://dashscope.aliyuncs.com/compatible-api/v1
+      api_key_envs:
+        - DASHSCOPE_API_KEY
+      aliases:
+        - dashscope
+        - qwen3-rerank
+      score_kind: dashscope_rerank
+
+    bifrost_rerank:
+      provider: bifrost
+      model: qwen3-rerank
+      base_url: http://bifrost:8080/v1
+      api_key_envs:
+        - BIFROST_API_KEY
+      aliases:
+        - bifrost
+        - bifrost-rerank
+        - gateway-rerank
+      score_kind: bifrost_rerank

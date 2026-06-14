@@ -84,7 +84,10 @@ async def test_save_upload_file_writes_file_and_records_metadata_returns_record(
     saved_path = Path(result.file_path)
     assert saved_path.exists()
     assert saved_path.read_bytes() == content
-    assert saved_path.parent == storage_root / str(kb_id)
+    assert result.storage_key.startswith(
+        f"v1/knowledge/workspaces/{workspace_id}/kb/{kb_id}/files/"
+    )
+    assert saved_path == storage_root / result.storage_key
     assert result.filename == "demo.md"
     assert result.file_size == len(content)
     assert result.content_sha256 == hashlib.sha256(content).hexdigest()
@@ -231,3 +234,129 @@ async def test_get_or_create_default_kb_creates_missing_kb(
         description="系统自动创建的默认知识库",
         user_id=user_id,
     )
+
+
+async def test_list_files_by_kb_id_returns_files(
+    knowledge_service: tuple[KnowledgeService, SimpleNamespace, Path],
+) -> None:
+    service, repo, _ = knowledge_service
+    kb_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    files = [SimpleNamespace(id=uuid.uuid4(), filename="file1.md")]
+    repo.get_kb_for_user.return_value = SimpleNamespace(
+        id=kb_id, user_id=user_id, workspace_id=None
+    )
+    repo.list_files_by_kb = AsyncMock(return_value=files)
+
+    result = await service.list_files_by_kb_id(kb_id=kb_id, user_id=user_id)
+    assert result == files
+    repo.list_files_by_kb.assert_awaited_once_with(kb_id)
+
+
+async def test_remove_file_success(
+    knowledge_service: tuple[KnowledgeService, SimpleNamespace, Path],
+) -> None:
+    service, repo, _ = knowledge_service
+    file_id = uuid.uuid4()
+    kb_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    file_obj = SimpleNamespace(
+        id=file_id,
+        kb_id=kb_id,
+        filename="test.md",
+        file_path="mock_path",
+        file_size=10,
+        content_sha256="sha256",
+        storage_backend="local",
+        storage_bucket=None,
+        storage_key="test_key",
+    )
+    repo.get_file = AsyncMock(return_value=file_obj)
+    repo.get_kb_for_user.return_value = SimpleNamespace(
+        id=kb_id, user_id=user_id, workspace_id=None
+    )
+    repo.delete_chunks_for_file = AsyncMock()
+    repo.delete_file_record = AsyncMock()
+
+    service.storage.delete = AsyncMock()
+
+    await service.remove_file(file_id=file_id, user_id=user_id)
+
+    repo.get_file.assert_awaited_once_with(file_id)
+    service.storage.delete.assert_awaited_once()
+    repo.delete_chunks_for_file.assert_awaited_once_with(file_id)
+    repo.delete_file_record.assert_awaited_once_with(file_id)
+
+
+async def test_remove_file_deletes_legacy_local_file_without_storage_key(
+    knowledge_service: tuple[KnowledgeService, SimpleNamespace, Path],
+) -> None:
+    service, repo, _ = knowledge_service
+    file_id = uuid.uuid4()
+    kb_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    file_obj = SimpleNamespace(
+        id=file_id,
+        kb_id=kb_id,
+        filename="legacy.md",
+        file_path="/data/knowledge_files/legacy.md",
+        file_size=10,
+        content_sha256="sha256",
+        storage_backend="local",
+        storage_bucket=None,
+        storage_key=None,
+    )
+    repo.get_file = AsyncMock(return_value=file_obj)
+    repo.get_kb_for_user.return_value = SimpleNamespace(
+        id=kb_id, user_id=user_id, workspace_id=None
+    )
+    repo.delete_chunks_for_file = AsyncMock()
+    repo.delete_file_record = AsyncMock()
+    service.storage.delete = AsyncMock()
+
+    await service.remove_file(file_id=file_id, user_id=user_id)
+
+    stored_object = service.storage.delete.await_args.args[0]
+    assert stored_object.backend == "local"
+    assert stored_object.key == ""
+    assert stored_object.uri == "/data/knowledge_files/legacy.md"
+    repo.delete_chunks_for_file.assert_awaited_once_with(file_id)
+    repo.delete_file_record.assert_awaited_once_with(file_id)
+
+
+async def test_remove_file_deletes_legacy_s3_file_from_uri_without_storage_key(
+    knowledge_service: tuple[KnowledgeService, SimpleNamespace, Path],
+) -> None:
+    service, repo, _ = knowledge_service
+    file_id = uuid.uuid4()
+    kb_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    file_obj = SimpleNamespace(
+        id=file_id,
+        kb_id=kb_id,
+        filename="legacy.md",
+        file_path="s3://bucket-a/prefix/legacy.md",
+        file_size=10,
+        content_sha256="sha256",
+        storage_backend="s3",
+        storage_bucket=None,
+        storage_key=None,
+    )
+    repo.get_file = AsyncMock(return_value=file_obj)
+    repo.get_kb_for_user.return_value = SimpleNamespace(
+        id=kb_id, user_id=user_id, workspace_id=None
+    )
+    repo.delete_chunks_for_file = AsyncMock()
+    repo.delete_file_record = AsyncMock()
+    service.storage.delete = AsyncMock()
+
+    await service.remove_file(file_id=file_id, user_id=user_id)
+
+    stored_object = service.storage.delete.await_args.args[0]
+    assert stored_object.backend == "s3"
+    assert stored_object.bucket == "bucket-a"
+    assert stored_object.key == "prefix/legacy.md"
+    assert stored_object.uri == "s3://bucket-a/prefix/legacy.md"

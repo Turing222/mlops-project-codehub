@@ -1,0 +1,68 @@
+# Optional fallback for local rehearsal or low-cost self-hosted deployments.
+# Production EC2 should normally point POSTGRES_SERVER at RDS and skip this file.
+
+x-logging: &default-logging
+  driver: "awslogs"
+  options:
+    awslogs-group: ${DEPLOY_CW_LOG_GROUP:-/dewflow/prod}
+    awslogs-region: ${DEPLOY_AWS_REGION:-us-east-1}
+    awslogs-stream-prefix: ${DEPLOY_CW_LOG_STREAM_PREFIX:-dewflow}
+
+x-security: &default-security
+  security_opt:
+    - no-new-privileges:true
+
+x-deploy-env-file: &deploy-env-file
+  - ${DEPLOY_SERVICE_ENV_FILE:-./.env.ec2}
+
+services:
+  postgres:
+    <<: *default-security
+    image: pgvector/pgvector:0.8.2-pg17-bookworm
+    container_name: postgres
+    restart: unless-stopped
+    env_file: *deploy-env-file
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
+    secrets:
+      - POSTGRES_PASSWORD
+    volumes:
+      - pg_data_v17:/var/lib/postgresql/data
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+    command: >
+      postgres -c shared_buffers=256MB -c work_mem=32MB -c maintenance_work_mem=128MB -c effective_cache_size=768MB -c max_connections=200 -c logging_collector=off
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_net
+
+  api:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  db_migrator:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  task_worker:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  credit_scheduler:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg_data_v17:
+    name: prod_db_volume

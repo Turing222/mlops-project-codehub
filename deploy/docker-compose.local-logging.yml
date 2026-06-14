@@ -1,0 +1,36 @@
+# Local production rehearsal logging override.
+# Use with deploy/docker-compose.yml outside EC2 where awslogs is unavailable.
+
+x-local-logging: &local-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    logging: *local-logging
+
+  redis:
+    logging: *local-logging
+
+  api:
+    logging: *local-logging
+
+  api-nginx:
+    logging: *local-logging
+
+  frontend:
+    logging: *local-logging
+
+  bifrost:
+    logging: *local-logging
+
+  db_migrator:
+    logging: *local-logging
+
+  task_worker:
+    logging: *local-logging
+
+  credit_scheduler:
+    logging: *local-logging

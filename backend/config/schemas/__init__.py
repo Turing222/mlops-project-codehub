@@ -28,6 +28,10 @@ from backend.config.schemas.prompts import (
     PromptSource,
     PromptTemplateDefinition,
 )
+from backend.config.schemas.reranks import (
+    RerankModelProfile,
+    RerankModelsConfig,
+)
 
 __all__ = [
     "EmbeddingModelProfile",
@@ -44,5 +48,7 @@ __all__ = [
     "PromptSource",
     "PromptTemplateDefinition",
     "PromptsConfig",
+    "RerankModelProfile",
+    "RerankModelsConfig",
     "RoleDefinition",
 ]

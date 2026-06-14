@@ -27,8 +27,24 @@ class User(Base, BaseIdModel, AuditMixin):
     username: Mapped[str] = mapped_column(
         String(50), unique=True, index=True, nullable=False, comment="B端登录唯一标识"
     )
-    email: Mapped[str] = mapped_column(
-        String(255), unique=True, index=True, nullable=False
+    email: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True, nullable=True
+    )
+    phone: Mapped[str | None] = mapped_column(
+        String(20),
+        unique=True,
+        index=True,
+        nullable=True,
+        comment="手机号（短信登录标识）",
+    )
+    auth_provider: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        server_default=text("'local'"),
+        comment="注册渠道: local/phone/google",
+    )
+    google_sub: Mapped[str | None] = mapped_column(
+        String(255), unique=True, nullable=True, comment="Google OAuth sub 声明"
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean, server_default=text("true"), default=True
@@ -45,7 +61,8 @@ class User(Base, BaseIdModel, AuditMixin):
     )
 
     # 哈希密码只允许在鉴权链路使用，响应 schema 不暴露该字段。
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    # 手机号/Google 登录用户可能没有密码，因此 nullable。
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     sessions: Mapped[list[ChatSession]] = relationship(back_populates="user")
     knowledge_bases: Mapped[list[KnowledgeBase]] = relationship(back_populates="user")

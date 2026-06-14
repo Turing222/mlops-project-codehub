@@ -2,13 +2,13 @@
 
 职责：从 LLM 输出中提取引用标记、校验其是否存在于合法 ref_id 集合，移除非法标记。
 边界：本模块只做正则提取与字符串替换，不查询数据库、不调用 LLM、不修改 search_context。
-风险：正则仅匹配 [R\\d+(\\.\\d+)?] 格式；若 LLM 产出其他引用格式则不会被处理。
+风险：正则仅匹配 [R\\d+(\\.\\d+)?] / [W\\d+(\\.\\d+)?] 格式；其他引用格式不会被处理。
 """
 
 import re
 from dataclasses import dataclass
 
-_CITATION_RE = re.compile(r"\[R(\d+)(?:\.(\d+))?\]")
+_CITATION_RE = re.compile(r"\[([RW])(\d+)(?:\.(\d+))?\]")
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,10 +40,10 @@ def extract_valid_ref_ids(search_context: dict) -> set[str]:
 
 
 def _match_to_ref_id(match: re.Match[str]) -> str:
-    """Convert a regex match like [R1.1] to ref_id string R1.1."""
-    ref_id = f"R{match.group(1)}"
-    if match.group(2) is not None:
-        ref_id = f"{ref_id}.{match.group(2)}"
+    """Convert a regex match like [R1.1] or [W1] to a ref_id string."""
+    ref_id = f"{match.group(1)}{match.group(2)}"
+    if match.group(3) is not None:
+        ref_id = f"{ref_id}.{match.group(3)}"
     return ref_id
 
 
@@ -109,7 +109,7 @@ class StreamingCitationFilter:
     """Chunk-by-chunk citation filter with a short buffer for split markers."""
 
     _MAX_BRACKET_LEN = 10  # len("[R99.99]") = 8, add margin
-    _PARTIAL_PREFIX_RE = re.compile(r"^\[R\d*(?:\.\d*)?$")
+    _PARTIAL_PREFIX_RE = re.compile(r"^\[[RW]\d*(?:\.\d*)?$")
 
     def __init__(self, valid_ref_ids: set[str]) -> None:
         self._valid = valid_ref_ids

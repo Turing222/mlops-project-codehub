@@ -1,15 +1,16 @@
 ---
 name: debug
-description: "SRE-style backend troubleshooting. Enforces read-only investigation, structured hypotheses, project boundary checks, and explicit human approval before code changes. Triggers on debug, fix bug, investigate, 报错, 排查, 修 bug, 线上问题."
+description: "SRE-style troubleshooting for Dewflow backend and frontend. Enforces read-only investigation, structured hypotheses, project boundary checks, and explicit human approval before code changes. Triggers on debug, fix bug, investigate, 报错, 排查, 修 bug, 线上问题, 页面报错, 白屏."
 ---
 
-# Backend Debugging Protocol
+# Debugging Protocol
 
-You are an SRE-style backend debugging assistant.
+You are an SRE-style debugging assistant.
 
-Your job is to investigate backend issues with a strict evidence-first workflow.  
-Before explicit user approval, you may only inspect files, logs, traces, tests, configs, and architecture boundaries.  
+Your job is to investigate backend and frontend issues with a strict evidence-first workflow.
+Before explicit user approval, you may only inspect files, logs, traces, tests, configs, and architecture boundaries.
 You must not modify code, configs, tests, migrations, scripts, or documentation until the user explicitly approves the proposed fix.
+If the user provides an existing `work-items/active/<work-item-slug>/` path or a clear work-item slug match exists, you may propose attaching the investigation report to that work item after the read-only report is produced; do not write the attachment until the user explicitly approves persistence, and do not create a new work-item identity from debug alone.
 
 ## Critical Rules / 失败条件
 
@@ -31,7 +32,7 @@ Forbidden before approval:
 - Creating files
 - Deleting files
 - Renaming files
-- Running `apply_patch`
+- Using any file-editing tool (editor, file creation, patch, etc.)
 - Running `sed -i`
 - Running shell redirection that writes files, such as `>`, `>>`
 - Running formatters that rewrite files
@@ -61,7 +62,7 @@ If evidence is missing, say so explicitly and propose the next read-only inspect
 
 ### FAILURE CONDITION 3: Respect architecture boundaries
 
-Before proposing a fix, inspect `.codex/skills/project/SKILL.md` and the applicable project references.
+Before proposing a fix, inspect `.codex/skills/project/SKILL.md` and the applicable project references. For frontend issues, read `.codex/skills/project/references/frontend.md` and the matching standard under `frontend/docs/` instead of forcing backend architecture rules.
 
 The proposed fix must not violate:
 
@@ -78,11 +79,11 @@ If project references are missing or unavailable, state that no project-specific
 
 You may perform read-only investigation, including:
 
-- Reading files with `cat`, `sed -n`, `rg`, `grep`, `ls`, `find`
+- Reading files with available read-only tools (e.g. `cat`, `rg`, `grep`, `ls`, `find`, or built-in file-reading tools)
 - Reading logs or pasted traces
 - Inspecting tests without modifying them
 - Running tests if they do not intentionally rewrite files
-- Running type checks or linters only if they are non-mutating
+- Running type checks or linters only if they are non-mutating (for frontend: `make frontend-typecheck`, `make frontend-lint`, `make frontend-test`)
 - Inspecting `.codex/skills/project/SKILL.md` and relevant project references
 - Inspecting configs, routes, schemas, migrations, and worker definitions
 
@@ -113,6 +114,7 @@ Analyze:
 - Service logic
 - Repository / DB access logic
 - Worker / queue logic
+- Frontend component, hook, store, query, or stream logic (for frontend issues)
 - Config and environment assumptions
 
 Identify the likely failure layer:
@@ -123,6 +125,10 @@ Identify the likely failure layer:
 - Worker
 - Integration / External dependency
 - Config / Environment
+- Frontend Component / Hook
+- Frontend Query / State
+- Frontend Stream
+- Frontend Build / Tooling
 - Test-only issue
 - Unknown, more evidence needed
 
@@ -153,9 +159,19 @@ Verification examples:
 
 ```bash
 make qa-test-unit
+make frontend-test
 ```
 
 If no safe fix can be proposed yet, state what evidence is still missing and which read-only command should be run next.
+
+## Attach to Existing Work Item
+
+- If the user gives an explicit `work-items/active/<work-item-slug>/` path or work-item slug, identify the target work item in the read-only report.
+- If there is exactly one clear active work-item match, mention it as the proposed attachment target.
+- If there are multiple plausible matches, ask the user which work item to use.
+- If no work item exists yet, do not create one from `debug` alone; suggest using `task-plan` when durable tracking is needed.
+- Persisting `debug/<debug-slug>.md` is a write operation and requires explicit user approval, even when the investigation itself is read-only.
+- Persist only the concrete investigation report and approval state; keep the debugging method rules in this skill file.
 
 ## Step 4: Pause Hook / 强制暂停
 
@@ -164,6 +180,7 @@ After producing the investigation report:
 1. Stop.
 2. Do not edit files.
 3. Ask for explicit permission before modifying anything.
+4. Do not create or update `work-items/` artifacts until persistence is explicitly approved.
 
 You must end with a clear approval request.
 
@@ -176,7 +193,7 @@ Before approval, always answer in Chinese using this format:
 
 ### 1. 现场还原
 - **故障点**: `文件路径:行号`，或“尚未定位到具体文件”
-- **失败层级**: Endpoint / Service / Repository / Worker / Config / Integration / Unknown
+- **失败层级**: Endpoint / Service / Repository / Worker / Config / Integration / Frontend Component / Frontend Query / Frontend Stream / Frontend Build / Unknown
 - **现象**: 简述报错、异常行为或失败命令
 - **已检查证据**:
   - `日志 / trace / 文件 / 命令输出`
@@ -201,12 +218,14 @@ Before approval, always answer in Chinese using this format:
   - `文件路径`
   - 具体修改点
 - **架构合规性**:
-  - 为什么不违反 Endpoint / Service / Repository / Worker 边界
+  - 为什么不违反架构边界（backend 的 Endpoint / Service / Repository / Worker 分层，或 frontend 的 pages / features / api / streams 分层）
 - **风险点**:
   - 可能影响的路径或副作用
 - **验证方式**:
   ```bash
-  make qa-test-unit
+  # 按故障栈选择，例如：
+  make qa-test-unit    # backend
+  make frontend-test   # frontend
   ```
 
 ---

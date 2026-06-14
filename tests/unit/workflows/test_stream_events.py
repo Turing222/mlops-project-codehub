@@ -12,11 +12,13 @@ from backend.application.chat.stream_events import (
     encode_chunk_event,
     encode_done_event,
     encode_error_event,
+    encode_started_event,
     error_event,
     meta_event,
     stream_chunk_event,
     stream_done_event,
     stream_error_event,
+    stream_started_event,
 )
 
 
@@ -24,6 +26,7 @@ def test_stream_event_helpers_build_typed_payloads() -> None:
     assert stream_chunk_event("hello") == {"type": "chunk", "content": "hello"}
     assert stream_error_event("failed") == {"type": "error", "message": "failed"}
     assert stream_done_event() == {"type": "done"}
+    assert stream_started_event() == {"type": "started"}
 
 
 def test_stream_events_round_trip_structured_payloads() -> None:
@@ -36,6 +39,7 @@ def test_stream_events_round_trip_structured_payloads() -> None:
         "message": "failed",
     }
     assert decode_stream_event(encode_done_event()) == {"type": "done"}
+    assert decode_stream_event(encode_started_event()) == {"type": "started"}
 
 
 def test_stream_events_accept_legacy_payloads() -> None:

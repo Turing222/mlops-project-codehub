@@ -1,0 +1,90 @@
+# Local production rehearsal override.
+# Use with deploy/docker-compose.yml to emulate AWS S3 through MinIO.
+
+services:
+  postgres:
+    volumes:
+      - local_prod_pg_data:/var/lib/postgresql/data
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: local_prod_minio
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    secrets:
+      - S3_ACCESS_KEY_ID
+      - S3_SECRET_ACCESS_KEY
+    volumes:
+      - local_prod_minio_data:/data
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |
+        export MINIO_ROOT_USER="$$(cat /run/secrets/S3_ACCESS_KEY_ID)" &&
+        export MINIO_ROOT_PASSWORD="$$(cat /run/secrets/S3_SECRET_ACCESS_KEY)" &&
+        exec minio server /data --address ":9000" --console-address ":9001"
+    ports:
+      - "${LOCAL_PROD_MINIO_API_PORT:-19000}:9000"
+      - "${LOCAL_PROD_MINIO_CONSOLE_PORT:-19001}:9001"
+    networks:
+      - app_net
+
+  minio_init:
+    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
+    container_name: local_prod_minio_init
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file:
+      - ${DEPLOY_SERVICE_ENV_FILE:-./.env.ec2}
+    environment:
+      S3_BUCKET: ${S3_BUCKET:-dewflow-local-prod}
+    secrets:
+      - S3_ACCESS_KEY_ID
+      - S3_SECRET_ACCESS_KEY
+    entrypoint: >
+      /bin/sh -c ' until mc alias set local http://minio:9000 "$$(cat /run/secrets/S3_ACCESS_KEY_ID)" "$$(cat /run/secrets/S3_SECRET_ACCESS_KEY)"; do
+        sleep 2;
+      done; mc mb --ignore-existing local/"$${S3_BUCKET:-dewflow-local-prod}"; mc anonymous set none local/"$${S3_BUCKET:-dewflow-local-prod}"; '
+    depends_on:
+      minio:
+        condition: service_started
+    restart: "no"
+    networks:
+      - app_net
+
+  api:
+    environment:
+      STORAGE_BACKEND: s3
+      S3_BUCKET: ${S3_BUCKET:-dewflow-local-prod}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT_URL: http://minio:9000
+      RAG_RERANK_PROVIDER: ""
+
+  db_migrator:
+    environment:
+      STORAGE_BACKEND: s3
+      S3_BUCKET: ${S3_BUCKET:-dewflow-local-prod}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT_URL: http://minio:9000
+      RAG_RERANK_PROVIDER: ""
+
+  task_worker:
+    environment:
+      STORAGE_BACKEND: s3
+      S3_BUCKET: ${S3_BUCKET:-dewflow-local-prod}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT_URL: http://minio:9000
+      RAG_RERANK_PROVIDER: ""
+
+volumes:
+  local_prod_pg_data:
+    name: local_prod_db_volume
+  local_prod_minio_data:
+    name: local_prod_minio_data

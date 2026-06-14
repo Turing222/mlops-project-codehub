@@ -1,0 +1,67 @@
+name: Deploy Validate CI
+
+on:
+  pull_request:
+    paths:
+      - "deploy/**"
+      - "local/observability/**"
+      - "docker-compose.db.yml"
+      - ".github/workflows/deploy-validate-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate deploy assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      DOCKER_IMAGE_NAME_WEB: ci-validate-web:0
+      DOCKER_IMAGE_NAME_AI: ci-validate-ai:0
+      DOCKER_IMAGE_NAME_FRONTEND: ci-validate-frontend:0
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Prepare deploy env file from template
+        run: cp deploy/.env.ec2.template deploy/.env.ec2
+
+      - name: Validate production compose with external Postgres
+        run: docker compose --env-file deploy/.env.ec2 -f deploy/docker-compose.yml --profile bifrost --profile debug --profile frontend-fallback config -q
+
+      - name: Validate self-hosted Postgres override
+        run: docker compose --env-file deploy/.env.ec2 -f deploy/docker-compose.yml -f deploy/docker-compose.local-postgres.yml --profile bifrost --profile debug --profile frontend-fallback config -q
+
+      - name: Build worker image for scheduler smoke
+        run: docker build --target worker -t "${DOCKER_IMAGE_NAME_AI}" .
+
+      - name: Validate local production rehearsal overlays
+        run: docker compose --env-file deploy/.env.ec2 -f deploy/docker-compose.yml -f deploy/docker-compose.local-postgres.yml -f deploy/docker-compose.local-s3.yml -f deploy/docker-compose.local-logging.yml config -q
+
+      - name: Validate local observability compose
+        run: docker compose -f docker-compose.db.yml --profile observability config -q
+
+      - name: Validate api-nginx config
+        run: docker run --rm -v "$PWD/deploy/nginx/api.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.30.1-alpine nginx -t
+
+      - name: Validate k8s manifests
+        run: |
+          kubectl kustomize deploy/k8s > /dev/null
+          kubectl kustomize deploy/k8s/local-scaling > /dev/null
+
+      - name: Validate credit-scheduler entrypoint module loads
+        env:
+          TASKIQ_SCHEDULER_MODULES: backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks
+        run: |
+          docker run --rm --entrypoint python \
+            -e TASKIQ_SCHEDULER_MODULES \
+            "${DOCKER_IMAGE_NAME_AI}" \
+            -c "from backend.worker.scheduler_entrypoint import validate_scheduler_schedules; validate_scheduler_schedules()"

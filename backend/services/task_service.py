@@ -65,6 +65,28 @@ class TaskService(BaseService[AbstractUnitOfWork]):
             },
         )
 
+    async def create_repo_analysis_task(
+        self,
+        *,
+        run_id: uuid.UUID,
+        repo_url: str,
+        owner: str,
+        repo: str,
+        user_id: uuid.UUID,
+    ) -> TaskJob:
+        return await self.uow.task_repo.create(
+            action_type="REPO_ANALYSIS_README",
+            status=TaskStatus.PENDING,
+            progress=0,
+            payload={
+                "run_id": str(run_id),
+                "repo_url": repo_url,
+                "owner": owner,
+                "repo": repo,
+                "user_id": str(user_id),
+            },
+        )
+
     async def get_by_id(self, task_id: uuid.UUID) -> TaskJob | None:
         return await self.uow.task_repo.get(task_id)
 

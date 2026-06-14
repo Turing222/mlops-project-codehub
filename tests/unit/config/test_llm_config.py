@@ -42,6 +42,13 @@ def test_load_llm_model_config_resolves_aliases() -> None:
 
     assert config.resolve_profile("mock").provider == "mock"
     assert config.resolve_profile("openai-compatible").provider == "openai-compatible"
+    assert config.resolve_profile("bifrost").resolve_base_url() == (
+        "http://bifrost:8080/v1"
+    )
+    assert config.resolve_profile("bifrost").model == "deepseek/deepseek-chat"
+    assert config.resolve_profile("bifrost-reasoner").model == (
+        "deepseek/deepseek-reasoner"
+    )
     assert config.resolve_profile("gemini").model == "gemini-2.5-flash"
     assert [profile.model for profile in config.resolve_route("auto")] == [
         "deepseek-v4-flash",
@@ -56,6 +63,11 @@ def test_load_llm_model_config_resolves_aliases() -> None:
         "https://dashscope.aliyuncs.com/compatible-mode/v1"
     )
     assert qwen3_embedding.dimensions == 768
+
+    assert config.resolve_rerank_profile("dashscope").provider == "dashscope"
+    assert config.resolve_rerank_profile("dashscope").model == "qwen3-rerank"
+    assert config.resolve_rerank_profile("bifrost").provider == "bifrost"
+    assert config.resolve_rerank_profile("gateway-rerank").name == "bifrost_rerank"
 
 
 def test_embedding_profile_does_not_fallback_to_llm_base_url(
@@ -98,10 +110,15 @@ profiles:
         load_llm_model_config(config_dir=config_dir)
 
 
-def test_llm_profile_extra_body_accepts_thinking_mode() -> None:
+def test_llm_profile_extra_body_keeps_thinking_explicit() -> None:
     config = load_llm_model_config()
 
-    assert config.resolve_profile("deepseek-v4-flash").extra_body == {
+    assert config.resolve_profile("deepseek-v4-flash").extra_body is None
+    assert config.resolve_profile("deepseek-v4-flash-thinking").extra_body == {
+        "thinking": {"type": "enabled"}
+    }
+    assert config.resolve_profile("bifrost_flash").extra_body is None
+    assert config.resolve_profile("bifrost_flash_thinking").extra_body == {
         "thinking": {"type": "enabled"}
     }
 
@@ -127,6 +144,26 @@ def test_validate_llm_configs_accepts_provider_specific_key(
     monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
 
     validate_llm_configs()
+
+
+def test_validate_llm_configs_accepts_bifrost_gateway_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("backend.config.settings.settings.LLM_PROVIDER", "bifrost")
+    monkeypatch.setenv("BIFROST_API_KEY", "sk-bf-test")
+
+    validate_llm_configs()
+
+
+def test_validate_llm_configs_reports_missing_bifrost_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("backend.config.settings.settings.LLM_PROVIDER", "bifrost")
+    monkeypatch.setattr("backend.config.settings.settings.BIFROST_API_KEY", None)
+    monkeypatch.delenv("BIFROST_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="BIFROST_API_KEY"):
+        validate_llm_configs()
 
 
 def test_validate_llm_configs_reports_profile_key_envs(

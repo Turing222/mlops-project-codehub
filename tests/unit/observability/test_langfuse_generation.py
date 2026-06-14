@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from backend.observability import langfuse_utils
 from backend.observability.langfuse_utils import langfuse_generation
 
 
@@ -80,3 +81,16 @@ def test_langfuse_generation_record_noop():
     ):
         recorder.record()
     mock_generation.update.assert_not_called()
+
+
+def test_init_langfuse_client_can_retry_after_client_init_failure(monkeypatch):
+    class FailingLangfuse:
+        def __init__(self, **kwargs):
+            raise RuntimeError("missing key")
+
+    monkeypatch.setattr(langfuse_utils, "_langfuse_filter_installed", False)
+
+    with patch("langfuse.Langfuse", FailingLangfuse):
+        langfuse_utils.init_langfuse_client()
+
+    assert langfuse_utils._langfuse_filter_installed is False

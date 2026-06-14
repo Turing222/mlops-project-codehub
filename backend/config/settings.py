@@ -6,11 +6,13 @@
 """
 
 import logging
+import ssl
 from functools import lru_cache
 from pathlib import Path
+from typing import Self
 from urllib.parse import quote, urlsplit, urlunsplit
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from sqlalchemy.engine import URL, make_url
 
 from backend.config.ai_settings import BASE_DIR, AISettings, _config_dir
@@ -32,14 +34,10 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     """
 
     # ── App Metadata ──────────────────────────────────────────────
-    APP_ENV: str = Field(
-        default_factory=lambda: (
-            __import__("os").getenv("APP_ENV", "local").strip().lower() or "local"
-        )
-    )
     CONFIG_DIR: Path = Field(default_factory=_config_dir)
     BASE_DIR: Path = BASE_DIR
     LOG_DIR: Path = BASE_DIR / "logs/backend"
+    BACKEND_LOG_LEVEL: str = "info"
 
     # ── Database ──────────────────────────────────────────────────
     DATABASE_URL: str | None = None
@@ -52,6 +50,7 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     POSTGRES_POOL_SIZE: int = 10
     POSTGRES_MAX_OVERFLOW: int = 20
     POSTGRES_SSL_MODE: str | None = None
+    POSTGRES_SSL_ROOT_CERT_FILE: Path | None = None
     POSTGRES_CONNECT_TIMEOUT_SECONDS: int = Field(default=10, ge=1)
 
     BATCH_SIZE: int = 500
@@ -76,8 +75,19 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     # ── Observability ───────────────────────────────────────────────
     ENABLE_OTEL_METRICS: bool = True
     ENABLE_OTEL_TRACES: bool = False
-    OTEL_METRICS_ENDPOINT: str = "http://prometheus:9090/api/v1/otlp"
+    OTEL_METRICS_ENDPOINT: str = "http://prometheus:9090/api/v1/otlp/v1/metrics"
     OTEL_TRACES_ENDPOINT: str = "http://jaeger:4318/v1/traces"
+
+    # ── GrowthBook ──────────────────────────────────────────────────
+    GROWTHBOOK_API_HOST: str = "https://cdn.growthbook.io"
+    GROWTHBOOK_SDK_KEY: str = "sdk-dummy-key-for-development"
+    GROWTHBOOK_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5
+    GROWTHBOOK_CIRCUIT_BREAKER_COOLDOWN_SECONDS: int = 30
+    BETA_USER_EMAIL_WHITELIST: str = "tony@company.com,tester@dewflow.com"
+    BETA_USER_PHONE_WHITELIST: str = ""
+
+    # ── GitHub ─────────────────────────────────────────────────────
+    GITHUB_TOKEN: str | None = None
 
     # ── Properties ────────────────────────────────────────────────
 
@@ -99,7 +109,21 @@ class Settings(WebSettings, AISettings, WorkerSettings):
             connect_args["ssl"] = False
         elif ssl_mode == "require":
             connect_args["ssl"] = True
+        elif ssl_mode in {"verify-ca", "verify-full"}:
+            connect_args["ssl"] = self._postgres_ssl_context(
+                check_hostname=ssl_mode == "verify-full",
+            )
         return connect_args
+
+    def _postgres_ssl_context(self, *, check_hostname: bool) -> ssl.SSLContext:
+        cafile = (
+            str(self.POSTGRES_SSL_ROOT_CERT_FILE)
+            if self.POSTGRES_SSL_ROOT_CERT_FILE
+            else None
+        )
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=cafile)
+        context.check_hostname = check_hostname
+        return context
 
     @property
     def local_storage_root(self) -> Path:
@@ -178,9 +202,32 @@ class Settings(WebSettings, AISettings, WorkerSettings):
         if value is None or not value.strip():
             return None
         normalized = value.strip().lower()
-        if normalized not in {"disable", "require"}:
-            raise ValueError("POSTGRES_SSL_MODE must be one of: disable, require")
+        if normalized not in {"disable", "require", "verify-ca", "verify-full"}:
+            raise ValueError(
+                "POSTGRES_SSL_MODE must be one of: disable, require, verify-ca, verify-full"
+            )
         return normalized
+
+    @field_validator("POSTGRES_SSL_ROOT_CERT_FILE", mode="before")
+    @classmethod
+    def normalize_postgres_ssl_root_cert_file(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @model_validator(mode="after")
+    def validate_postgres_ssl_root_cert_file(self) -> Self:
+        ssl_mode = (self.POSTGRES_SSL_MODE or "").strip().lower()
+        if ssl_mode not in {"verify-ca", "verify-full"}:
+            return self
+        if self.POSTGRES_SSL_ROOT_CERT_FILE is None:
+            return self
+        cert_path = self.POSTGRES_SSL_ROOT_CERT_FILE
+        if not cert_path.is_file():
+            raise ValueError(
+                f"POSTGRES_SSL_ROOT_CERT_FILE 不存在或不是文件: {cert_path}"
+            )
+        return self
 
 
 @lru_cache

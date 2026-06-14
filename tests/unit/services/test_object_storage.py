@@ -15,6 +15,7 @@ from fastapi import UploadFile
 
 from backend.services.object_storage import (
     LocalObjectStorage,
+    ObjectKeyBuilder,
     S3ObjectStorage,
     UploadSizeLimitExceeded,
 )
@@ -61,18 +62,72 @@ class FailingUploadS3Client(FakeS3Client):
         raise RuntimeError("upload failed")
 
 
+class FailingUploadAndDeleteS3Client(FailingUploadS3Client):
+    def delete_object(self, *, Bucket: str, Key: str) -> None:
+        super().delete_object(Bucket=Bucket, Key=Key)
+        raise RuntimeError("delete failed")
+
+
+async def test_object_key_builder_builds_personal_knowledge_file_key() -> None:
+    kb_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    owner_id = uuid.UUID("00000000-0000-0000-0000-000000000002")
+    object_id = uuid.UUID("00000000-0000-0000-0000-000000000003")
+
+    key = ObjectKeyBuilder().knowledge_file_key(
+        kb_id=kb_id,
+        owner_id=owner_id,
+        workspace_id=None,
+        filename="../demo.md",
+        object_id=object_id,
+    )
+
+    assert key == (
+        "v1/knowledge/users/00000000-0000-0000-0000-000000000002/"
+        "kb/00000000-0000-0000-0000-000000000001/files/"
+        "00000000-0000-0000-0000-000000000003_demo.md"
+    )
+
+
+async def test_object_key_builder_builds_workspace_knowledge_file_key() -> None:
+    kb_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    owner_id = uuid.UUID("00000000-0000-0000-0000-000000000002")
+    workspace_id = uuid.UUID("00000000-0000-0000-0000-000000000004")
+    object_id = uuid.UUID("00000000-0000-0000-0000-000000000003")
+
+    key = ObjectKeyBuilder().knowledge_file_key(
+        kb_id=kb_id,
+        owner_id=owner_id,
+        workspace_id=workspace_id,
+        filename="demo.md",
+        object_id=object_id,
+    )
+
+    assert key == (
+        "v1/knowledge/workspaces/00000000-0000-0000-0000-000000000004/"
+        "kb/00000000-0000-0000-0000-000000000001/files/"
+        "00000000-0000-0000-0000-000000000003_demo.md"
+    )
+
+
 async def test_local_storage_saves_downloads_and_deletes_file(tmp_path: Path) -> None:
     storage = LocalObjectStorage(tmp_path)
+    owner_id = uuid.UUID("00000000-0000-0000-0000-000000000002")
     upload = make_upload_file("demo.txt", b"hello")
 
     stored = await storage.save_upload_stream(
         kb_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        owner_id=owner_id,
+        workspace_id=None,
         filename="demo.txt",
         upload_file=upload,
         max_size_bytes=1024,
     )
 
     assert stored.backend == "local"
+    assert stored.key.startswith(
+        "v1/knowledge/users/00000000-0000-0000-0000-000000000002/"
+        "kb/00000000-0000-0000-0000-000000000001/files/"
+    )
     assert stored.sha256 == hashlib.sha256(b"hello").hexdigest()
     assert Path(stored.uri).read_bytes() == b"hello"
     async with storage.download_to_temp(
@@ -91,6 +146,8 @@ async def test_local_storage_cleans_temp_file_on_size_limit(tmp_path: Path) -> N
     with pytest.raises(UploadSizeLimitExceeded):
         await storage.save_upload_stream(
             kb_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            owner_id=uuid.UUID("00000000-0000-0000-0000-000000000002"),
+            workspace_id=None,
             filename="large.txt",
             upload_file=upload,
             max_size_bytes=3,
@@ -102,10 +159,13 @@ async def test_local_storage_cleans_temp_file_on_size_limit(tmp_path: Path) -> N
 async def test_s3_storage_saves_downloads_and_cleans_temp_file() -> None:
     client = FakeS3Client()
     storage = S3ObjectStorage(bucket="bucket-a", prefix="prefix", client=client)
+    workspace_id = uuid.UUID("00000000-0000-0000-0000-000000000004")
     upload = make_upload_file("demo.txt", b"hello s3")
 
     stored = await storage.save_upload_stream(
         kb_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        owner_id=uuid.UUID("00000000-0000-0000-0000-000000000002"),
+        workspace_id=workspace_id,
         filename="demo.txt",
         upload_file=upload,
         max_size_bytes=1024,
@@ -113,7 +173,11 @@ async def test_s3_storage_saves_downloads_and_cleans_temp_file() -> None:
 
     assert stored.backend == "s3"
     assert stored.bucket == "bucket-a"
-    assert stored.key.startswith("prefix/")
+    assert stored.key.startswith(
+        "prefix/v1/knowledge/workspaces/"
+        "00000000-0000-0000-0000-000000000004/"
+        "kb/00000000-0000-0000-0000-000000000001/files/"
+    )
     assert stored.sha256 == hashlib.sha256(b"hello s3").hexdigest()
     assert client.objects[("bucket-a", stored.key)] == b"hello s3"
     assert client.metadata[("bucket-a", stored.key)] == {
@@ -147,6 +211,26 @@ async def test_s3_storage_deletes_object_on_upload_failure() -> None:
     with pytest.raises(RuntimeError, match="upload failed"):
         await storage.save_upload_stream(
             kb_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            owner_id=uuid.UUID("00000000-0000-0000-0000-000000000002"),
+            workspace_id=None,
+            filename="demo.txt",
+            upload_file=upload,
+            max_size_bytes=1024,
+        )
+
+    assert len(client.deleted) == 1
+
+
+async def test_s3_upload_failure_keeps_original_error_when_cleanup_fails() -> None:
+    client = FailingUploadAndDeleteS3Client()
+    storage = S3ObjectStorage(bucket="bucket-a", client=client)
+    upload = make_upload_file("demo.txt", b"hello s3")
+
+    with pytest.raises(RuntimeError, match="upload failed"):
+        await storage.save_upload_stream(
+            kb_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            owner_id=uuid.UUID("00000000-0000-0000-0000-000000000002"),
+            workspace_id=None,
             filename="demo.txt",
             upload_file=upload,
             max_size_bytes=1024,

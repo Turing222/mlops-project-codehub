@@ -8,6 +8,8 @@ import uuid
 
 from pydantic import BaseModel
 
+from backend.models.schemas.chat.context_routing import ContextMode
+
 
 class ChatQueryCommand(BaseModel):
     """用例入口：一次对话查询的完整意图。"""
@@ -17,4 +19,6 @@ class ChatQueryCommand(BaseModel):
     session_id: uuid.UUID | None = None
     kb_id: uuid.UUID | None = None
     client_request_id: str | None = None
+    enable_external_context: bool = False
+    context_mode: ContextMode | None = None
     extra_body: dict[str, object] | None = None

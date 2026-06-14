@@ -30,6 +30,14 @@ def make_query() -> LLMQueryDTO:
 
 
 class FailingLLMService(AbstractLLMService):
+    @property
+    def model_name(self) -> str:
+        return "failing-model"
+
+    @property
+    def provider_name(self) -> str:
+        return "failing-provider"
+
     async def stream_response(
         self,
         query: LLMQueryDTO,
@@ -42,6 +50,14 @@ class FailingLLMService(AbstractLLMService):
 
 
 class SuccessfulLLMService(AbstractLLMService):
+    @property
+    def model_name(self) -> str:
+        return "success-model"
+
+    @property
+    def provider_name(self) -> str:
+        return "success-provider"
+
     async def stream_response(
         self,
         query: LLMQueryDTO,

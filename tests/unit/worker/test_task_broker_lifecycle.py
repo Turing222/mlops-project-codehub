@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.requires_taskiq]
 
 
 async def test_shutdown_cleans_up_redis_on_container_error_and_reraises(

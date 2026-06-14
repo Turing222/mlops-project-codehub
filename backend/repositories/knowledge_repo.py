@@ -4,6 +4,7 @@
 边界：本模块不负责文件解析、向量化或对象存储读写。
 """
 
+import logging
 import uuid
 from collections.abc import Collection, Sequence
 from datetime import datetime
@@ -14,6 +15,8 @@ from sqlalchemy.orm import contains_eager
 
 from backend.models.orm.chunk import DocumentChunk
 from backend.models.orm.knowledge import File, FileStatus, FileVisibility, KnowledgeBase
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeRepository:
@@ -106,6 +109,14 @@ class KnowledgeRepository:
     async def get_file(self, file_id: uuid.UUID) -> File | None:
         return await self.session.get(File, file_id)
 
+    async def list_files_by_kb(
+        self,
+        kb_id: uuid.UUID,
+    ) -> Sequence[File]:
+        stmt = select(File).where(File.kb_id == kb_id).order_by(File.created_at.desc())
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
     async def get_file_by_hash_and_status(
         self,
         *,
@@ -180,6 +191,10 @@ class KnowledgeRepository:
         stmt = delete(DocumentChunk).where(DocumentChunk.file_id == file_id)
         await self.session.execute(stmt)
 
+    async def delete_file_record(self, file_id: uuid.UUID) -> None:
+        stmt = delete(File).where(File.id == file_id)
+        await self.session.execute(stmt)
+
     async def add_chunks(self, chunks_data: list[dict]) -> None:
         if not chunks_data:
             return
@@ -218,7 +233,25 @@ class KnowledgeRepository:
             .limit(limit)
         )
         result = await self.session.execute(stmt)
-        return [(row[0], float(row[1])) for row in result.all()]
+        rows = result.all()
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "RAG vector search hits",
+                extra={
+                    "rag_kb_id": str(kb_id),
+                    "rag_limit": limit,
+                    "rag_hit_count": len(rows),
+                    "rag_hits": [
+                        _chunk_hit_debug_record(
+                            chunk=row[0],
+                            score_name="distance",
+                            score_value=float(row[1]),
+                        )
+                        for row in rows
+                    ],
+                },
+            )
+        return [(row[0], float(row[1])) for row in rows]
 
     async def search_chunks_for_kb_fulltext(
         self,
@@ -243,7 +276,45 @@ class KnowledgeRepository:
             .limit(limit)
         )
         result = await self.session.execute(stmt)
-        return [
-            (row[0], float(row[1]) if row[1] is not None else 0.0)
-            for row in result.all()
-        ]
+        rows = result.all()
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "RAG fulltext search hits",
+                extra={
+                    "rag_kb_id": str(kb_id),
+                    "rag_limit": limit,
+                    "rag_normalized_query": normalized_query,
+                    "rag_hit_count": len(rows),
+                    "rag_hits": [
+                        _chunk_hit_debug_record(
+                            chunk=row[0],
+                            score_name="rank",
+                            score_value=float(row[1]) if row[1] is not None else 0.0,
+                        )
+                        for row in rows
+                    ],
+                },
+            )
+        return [(row[0], float(row[1]) if row[1] is not None else 0.0) for row in rows]
+
+
+def _chunk_hit_debug_record(
+    *,
+    chunk: DocumentChunk,
+    score_name: str,
+    score_value: float,
+) -> dict[str, object]:
+    file_obj = getattr(chunk, "file", None)
+    record: dict[str, object] = {
+        "chunk_id": str(chunk.id),
+        "source_type": str(chunk.source_type),
+        "file_id": str(chunk.file_id) if chunk.file_id else None,
+        "message_id": str(chunk.message_id) if chunk.message_id else None,
+        "chunk_index": chunk.chunk_index,
+        score_name: score_value,
+        "filename": getattr(file_obj, "filename", None),
+        "content_preview": chunk.content[:240],
+    }
+    if score_name == "distance":
+        record["score"] = max(0.0, 1.0 - score_value)
+    return record

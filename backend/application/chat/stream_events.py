@@ -12,7 +12,7 @@ from typing import Literal, TypedDict
 # Internal Redis channel event types (Worker → Web)
 # ---------------------------------------------------------------------------
 
-StreamEventType = Literal["chunk", "error", "done", "meta"]
+StreamEventType = Literal["chunk", "error", "done", "meta", "started"]
 
 
 class StreamEvent(TypedDict, total=False):
@@ -35,6 +35,10 @@ def stream_done_event() -> StreamEvent:
     return {"type": "done"}
 
 
+def stream_started_event() -> StreamEvent:
+    return {"type": "started"}
+
+
 def encode_chunk_event(content: str) -> str:
     return json.dumps(stream_chunk_event(content), ensure_ascii=False)
 
@@ -45,6 +49,10 @@ def encode_error_event(message: str) -> str:
 
 def encode_done_event() -> str:
     return json.dumps(stream_done_event(), ensure_ascii=False)
+
+
+def encode_started_event() -> str:
+    return json.dumps(stream_started_event(), ensure_ascii=False)
 
 
 def encode_meta_event(
@@ -78,6 +86,8 @@ def decode_stream_event(payload: str) -> StreamEvent:
         return stream_error_event(str(data.get("message") or ""))
     if event_type == "done":
         return stream_done_event()
+    if event_type == "started":
+        return stream_started_event()
     return _decode_legacy_payload(payload)
 
 

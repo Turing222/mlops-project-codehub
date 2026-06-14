@@ -1,0 +1,669 @@
+.trace-panel {
+    width: 340px;
+    height: 100vh;
+    background: var(--color-bg-container);
+    border-left: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+    transition: width 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.collapsed-trace-panel {
+    width: 56px !important;
+    align-items: center;
+    padding-top: 12px;
+    gap: 16px;
+}
+
+.toggle-btn {
+    color: var(--color-text-desc) !important;
+    padding: 4px !important;
+    border-radius: 8px !important;
+    transition: background 0.15s ease, color 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.toggle-btn:hover {
+    background: var(--color-bg-subtle) !important;
+    color: var(--color-text-main) !important;
+}
+
+.collapsed-icon-btn {
+    color: var(--color-text-desc);
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-bg-subtle);
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.collapsed-icon-btn:hover {
+    background: var(--color-bg-page);
+    color: var(--color-text-main);
+}
+
+.collapsed-vertical-title {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    color: var(--color-text-desc);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    user-select: none;
+    margin-top: 12px;
+    opacity: 0.8;
+    animation: traceStepFadeIn 0.35s ease-out both;
+}
+
+/* --- Header --- */
+
+.trace-panel-header {
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+}
+
+.trace-panel-title {
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--color-text-main);
+}
+
+/* --- Body --- */
+
+.trace-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+}
+
+.trace-panel-empty {
+    color: var(--color-text-desc);
+    font-size: 13px;
+    text-align: center;
+    padding: 32px 0;
+}
+
+/* --- Timeline --- */
+
+.trace-timeline {
+    display: flex;
+    flex-direction: column;
+}
+
+.trace-metrics-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.trace-metric-item {
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 8px;
+    background: var(--color-bg-subtle);
+    min-width: 0;
+}
+
+.trace-metric-label {
+    display: block;
+    color: var(--color-text-desc);
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.trace-metric-value {
+    display: block;
+    margin-top: 4px;
+    color: var(--color-text-main);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.trace-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 8px 0;
+    animation: traceStepFadeIn 0.35s ease-out both;
+}
+
+.trace-step-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    width: 20px;
+}
+
+.trace-step-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-border);
+    flex-shrink: 0;
+    transition: background 0.25s ease, box-shadow 0.25s ease;
+}
+
+.trace-step-line {
+    width: 2px;
+    flex: 1;
+    min-height: 20px;
+    background: var(--color-border);
+    transition: background 0.25s ease;
+}
+
+.trace-step-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.trace-step-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-desc);
+    transition: color 0.25s ease;
+}
+
+.trace-step-desc {
+    font-size: 12px;
+    color: var(--color-text-desc);
+    margin-top: 2px;
+}
+
+.trace-step-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin-top: 4px;
+    color: var(--color-text-desc);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.trace-step-duration {
+    flex-shrink: 0;
+    min-width: 48px;
+    margin-top: 1px;
+    color: var(--color-text-desc);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.trace-step-icon {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-desc);
+}
+
+/* --- Status: done --- */
+
+.trace-step-done .trace-step-dot {
+    background: var(--color-primary);
+}
+
+.trace-step-done .trace-step-title {
+    color: var(--color-text-main);
+}
+
+.trace-step-done .trace-step-icon {
+    color: var(--color-primary);
+}
+
+.trace-step-done .trace-step-line {
+    background: var(--color-primary);
+}
+
+/* --- Status: running --- */
+
+.trace-step-running .trace-step-dot {
+    border: 2px solid rgba(22, 119, 255, 0.15);
+    border-top: 2px solid var(--color-primary);
+    background: transparent !important;
+    animation: spin 0.8s linear infinite !important;
+    border-radius: 50%;
+    width: 12px;
+    height: 12px;
+    box-shadow: none !important;
+}
+
+.trace-step-running .trace-step-title {
+    color: var(--color-text-main);
+    font-weight: 600;
+}
+
+.trace-step-running .trace-step-icon {
+    color: var(--color-primary);
+}
+
+/* --- Status: error --- */
+
+.trace-step-error .trace-step-dot {
+    background: var(--color-error);
+    box-shadow: 0 0 0 3px var(--color-error-shadow);
+}
+
+.trace-step-error .trace-step-title {
+    color: var(--color-error);
+}
+
+.trace-step-error .trace-step-icon {
+    color: var(--color-error);
+}
+
+/* --- Status: skipped --- */
+
+.trace-step-skipped .trace-step-dot {
+    background: var(--color-border);
+    opacity: 0.5;
+}
+
+.trace-step-skipped .trace-step-title {
+    color: var(--color-text-desc);
+    opacity: 0.5;
+}
+
+/* --- Animations --- */
+
+@keyframes traceStepFadeIn {
+    from {
+        opacity: 0;
+        transform: translateX(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes pulseGlow {
+    0%,
+    100% {
+        box-shadow: 0 0 0 3px var(--color-primary-shadow);
+    }
+    50% {
+        box-shadow: 0 0 0 6px var(--color-primary-shadow);
+    }
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+.spin-slow {
+    animation: spin 3s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.rotated {
+    transform: rotate(180deg);
+    transition: transform 0.2s ease;
+}
+
+/* --- Citations Section --- */
+
+.trace-citations {
+    margin-top: 20px;
+    border-top: 1px solid var(--color-border);
+    padding-top: 16px;
+}
+
+.trace-citations-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-main);
+    cursor: pointer;
+    padding: 4px 0;
+    user-select: none;
+}
+
+.trace-citations-header:hover {
+    color: var(--color-primary);
+}
+
+.trace-citations-list {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.trace-citations-empty {
+    font-size: 12px;
+    color: var(--color-text-desc);
+    padding: 8px 0;
+}
+
+.citation-card {
+    background: var(--color-bg-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    animation: traceStepFadeIn 0.3s ease-out both;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.citation-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.citation-icon-web {
+    color: var(--color-primary);
+    flex-shrink: 0;
+}
+
+.citation-icon-db {
+    color: var(--color-success);
+    flex-shrink: 0;
+}
+
+.citation-card-name-container {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.citation-card-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
+
+.citation-web-link {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-primary) !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+}
+
+.citation-web-link:hover {
+    text-decoration: underline !important;
+}
+
+.citation-link-icon {
+    flex-shrink: 0;
+}
+
+.citation-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 4px;
+}
+
+.citation-meta-badge {
+    background: rgba(22, 119, 255, 0.08);
+    border: 1px solid rgba(22, 119, 255, 0.2);
+    color: var(--color-primary);
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.citation-meta-location {
+    color: var(--color-text-desc);
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.citation-meta-score {
+    color: var(--color-success);
+    background: var(--color-success-bg);
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: auto;
+}
+
+.citation-card-section-path {
+    font-size: 11px;
+    color: var(--color-text-desc);
+    background: var(--color-bg-container);
+    border: 1px solid var(--color-border);
+    padding: 4px 6px;
+    border-radius: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+}
+
+.citation-section-label {
+    font-weight: 600;
+    color: var(--color-text-main);
+    flex-shrink: 0;
+}
+
+.citation-section-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.citation-card-snippet {
+    font-size: 11px;
+    color: var(--color-text-main);
+    margin-top: 6px;
+    line-height: 1.5;
+    background: rgba(0, 0, 0, 0.015);
+    padding: 8px 10px;
+    border-radius: 6px;
+    border-left: 3px solid var(--color-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+:global([data-theme='dark']) .citation-card-snippet {
+    background: rgba(255, 255, 255, 0.015);
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 900px) {
+    .trace-panel {
+        display: none;
+    }
+}
+
+/* --- Tabs --- */
+
+.trace-tabs {
+    display: flex;
+    flex: 1;
+    background: var(--color-bg-subtle);
+    padding: 3px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    gap: 2px;
+    align-items: center;
+}
+
+.trace-tab-btn {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 5px 2px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-text-desc);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+    text-align: center;
+    outline: none;
+}
+
+.trace-tab-btn:hover {
+    color: var(--color-text-main);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.trace-tab-btn.active {
+    color: var(--color-text-main);
+    background: var(--color-bg-container);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* --- Citation Expand & Custom Styles --- */
+
+.clickable-header {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.clickable-header:hover {
+    opacity: 0.85;
+}
+
+.header-chevron-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-desc);
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.clickable-header:hover .header-chevron-container {
+    background: var(--color-bg-subtle);
+    color: var(--color-text-main);
+}
+
+.header-chevron {
+    transition: transform 0.2s ease;
+}
+
+.expand-btn-wrapper {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+}
+
+.citation-expand-btn {
+    font-size: 11px !important;
+    font-weight: 500 !important;
+    padding: 2px 4px !important;
+    height: auto !important;
+    color: var(--color-primary) !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    border-radius: 4px !important;
+    transition: all 0.2s ease !important;
+}
+
+.citation-expand-btn:hover {
+    background: rgba(22, 119, 255, 0.08) !important;
+    color: var(--color-primary-active) !important;
+}
+
+/* --- Gap: Route Reason (RAG Planner Thoughts) --- */
+.trace-step-reason-box {
+    margin-top: 6px;
+    background: var(--color-bg-subtle);
+    border: 1px dashed var(--color-primary-border, var(--color-border));
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 11px;
+    animation: traceStepFadeIn 0.3s ease-out both;
+}
+
+.trace-step-reason-header {
+    font-weight: 600;
+    color: var(--color-primary);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.trace-step-reason-content {
+    color: var(--color-text-main);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    opacity: 0.9;
+}
+
+.trace-confidence-badge {
+    font-size: 10px;
+    background: rgba(22, 119, 255, 0.08);
+    border: 1px solid rgba(22, 119, 255, 0.2);
+    color: var(--color-primary);
+    padding: 1px 4px;
+    border-radius: 4px;
+    margin-left: auto;
+    font-weight: 500;
+}
+
+.trace-refusal-alert {
+    margin-top: 6px;
+    padding: 4px 8px;
+    background: rgba(255, 77, 79, 0.08);
+    border: 1px solid rgba(255, 77, 79, 0.2);
+    border-radius: 4px;
+    color: var(--color-error, #ff4d4f);
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}

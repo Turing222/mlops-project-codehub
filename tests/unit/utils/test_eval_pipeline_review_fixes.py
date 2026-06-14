@@ -69,7 +69,7 @@ def test_score_plan_does_not_coerce_truthy_bool_values() -> None:
     assert scores["planner_match"] == 0.0
 
 
-def test_retrieval_build_rag_service_injects_llm_service(
+def test_retrieval_build_rag_service_injects_reranker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -81,19 +81,19 @@ def test_retrieval_build_rag_service_injects_llm_service(
     monkeypatch.setattr(
         "backend.services.rag_service.RAGService", FakeConstructedRAGService
     )
-    llm_service = object()
+    reranker = object()
 
     service = build_rag_service(
         embedder=object(),
         vector_index_service=object(),  # type: ignore[arg-type]
         top_k=4,
-        llm_service=llm_service,
+        reranker=reranker,
         rerank_candidate_count=20,
         rerank_top_k=4,
     )
 
     assert isinstance(service, FakeConstructedRAGService)
-    assert captured["llm_service"] is llm_service
+    assert captured["reranker"] is reranker
 
 
 @pytest.mark.asyncio

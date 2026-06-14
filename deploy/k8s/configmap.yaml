@@ -5,10 +5,9 @@ metadata:
   namespace: dewflow
 data:
   APP_ENV: "prod"
-  PROJECT_NAME: "Dewflow AI"
-  VERSION: "2.0.0"
-  API_ROOT_PATH: "/api"
-  API_V1_STR: "/v1"
+  # App metadata (PROJECT_NAME / VERSION / API_ROOT_PATH / API_V1_STR) is owned
+  # by configs/app/base.yaml, baked into the image. Do not duplicate it here:
+  # configMap envs override the image (env > YAML) and would silently drift.
   POSTGRES_DB: "dewflow"
   POSTGRES_SERVER: "postgres"
   POSTGRES_PORT: "5432"
@@ -19,10 +18,11 @@ data:
   REDIS_PORT: "6379"
   LLM_PROVIDER: "deepseek"
   RAG_EMBED_PROVIDER: "dashscope"
-  RAG_REFUSAL_ENABLED: "true"
   RAG_MIN_HIT_COUNT: "1"
   RAG_MIN_RELEVANCE_SCORE: "0.2"
   RAG_MIN_RERANK_SCORE: "4.0"
+  RAG_RERANK_PROVIDER: "bifrost"
+  RAG_RERANK_MODEL: "qwen3-rerank"
   RAG_REFUSAL_MESSAGE: "知识库中没有找到足够相关的信息，暂时无法基于资料回答。"
   STORAGE_BACKEND: "local"
   LOCAL_STORAGE_ROOT: "/data/knowledge_files"
@@ -32,6 +32,7 @@ data:
   S3_ENDPOINT_URL: "http://minio:9000"
   ENABLE_OTEL_METRICS: "false"
   ENABLE_OTEL_TRACES: "false"
-  OTEL_TRACES_ENDPOINT: "http://otel-collector:4318/v1/traces"
-  PROMETHEUS_OTLP_ENDPOINT: "http://otel-collector:4318/v1/metrics"
+  # Set OTEL_TRACES_ENDPOINT only after adding a trace backend/collector.
+  OTEL_METRICS_ENDPOINT: "http://prometheus:9090/api/v1/otlp/v1/metrics"
+  OTEL_SEMCONV_STABILITY_OPT_IN: "http"
   LANGFUSE_BASE_URL: "https://us.cloud.langfuse.com"
