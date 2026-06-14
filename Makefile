@@ -112,7 +112,7 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 	deploy-local-prod-secrets-prepare deploy-local-prod-check deploy-local-prod-up deploy-local-prod-wait deploy-local-prod-verify deploy-local-prod-logs deploy-local-prod-down \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-up-debug env-smoke-wait env-smoke-down env-smoke-logs \
 	set-llm seed-dev \
-	pr-report \
+	pr-report ci-bootstrap-github-gate \
 	verify-smoke verify-pages \
 	flow-static flow-runtime flow-dev-check \
 	flow-fast flow-local flow-local-log flow-local-full flow-ci \
@@ -186,6 +186,7 @@ help:
 		'  set-llm              Advanced: configure smoke LLM secrets/env' \
 		'  seed-dev             Seed fixed local data for admin/permission testing' \
 		'  pr-report            Generate a local PR readiness Markdown report' \
+		'  ci-bootstrap-github-gate  Bootstrap GitHub secrets/vars and optional branch protection (needs gh)' \
 		'  verify-smoke         Run smoke HTTP checks against the running stack' \
 		'  verify-pages         Run Cloudflare Pages release checks against public origins' \
 		'  env-smoke-down       Stop the smoke environment' \
@@ -435,6 +436,9 @@ seed-dev:
 
 pr-report:
 	uv run python scripts/qa/pr_report.py $(ARGS)
+
+ci-bootstrap-github-gate:
+	bash scripts/ci/bootstrap_github_gate.sh $(ARGS)
 
 env-smoke-down:
 	bash scripts/smoke/down.sh

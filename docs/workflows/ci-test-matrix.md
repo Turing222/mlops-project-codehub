@@ -121,11 +121,19 @@ Cloudflare Pages **不等待** GitHub CI；合并到 `main` 时的 required chec
 
 ### 5.3 配置与审计同源
 
-以下三处应维护**同一份** required 清单（改一处、同步两处）：
+以下应维护**同一份** required 清单：
 
 1. GitHub Settings → Branch protection → Required status checks
-2. `.github/workflows/guard-branch-protection.yml` 内 `expected=`
+2. [scripts/ci/required_status_checks.txt](../../scripts/ci/required_status_checks.txt)（`guard-branch-protection` 与 bootstrap 脚本读取）
 3. [deploy-ec2.md](../platform/deploy-ec2.md) 部署 gate 章节
+
+一键配置（P0 secrets + 可选 P1 branch protection）：
+
+```bash
+bash scripts/ci/bootstrap_github_gate.sh --dry-run   # 预览
+bash scripts/ci/bootstrap_github_gate.sh           # 写入 E2E secrets
+APPLY_BRANCH_PROTECTION=true bash scripts/ci/bootstrap_github_gate.sh
+```
 
 ---
 
@@ -185,8 +193,8 @@ CI 的 L1/L2 使用内联 test env 或 mock provider，**不**挂载开发者本
 
 | 阶段 | 内容 | 交付物 | 阻塞发布？ |
 |------|------|--------|------------|
-| **P0 配置** | 配 `E2E_SMOKE_*`、`DEPLOY_*` Variables、`BRANCH_PROTECTION_READ_TOKEN` | Settings 截图 / checklist 打勾 | 间接（secrets 缺失则 e2e job 失败或 skip） |
-| **P1 门禁对齐** | branch protection + `guard-branch-protection` 加入 L2/L1 check 名 | 更新 workflow `expected` + deploy-ec2 文档 | **是**（合并） |
+| **P0 配置** | 配 `E2E_SMOKE_*`、`DEPLOY_*` Variables、`BRANCH_PROTECTION_READ_TOKEN` | `scripts/ci/bootstrap_github_gate.sh` + Settings 手动 PAT | 间接 |
+| **P1 门禁对齐** | branch protection + `required_status_checks.txt` | 已落地仓库侧；GitHub Settings 待执行 bootstrap | **是**（合并） |
 | **P2 smoke 加深** | `smoke-ci` 增加 `seed-dev` + `run_with_smoke_env.sh pytest`（与 flow-local 同 marker） | smoke-ci.yml 变更 | **是**（main） |
 | **P3 准生产 CI** | 新 workflow：`deploy-local-prod-up` → `wait` → `verify`；触发：deploy path PR + weekly cron | `deploy-local-prod-rehearsal-ci.yml`（名待定） | **否**（告警即可） |
 | **P4 可选** | split-origin 线上 Playwright；EC2 verify 接入 release workflow | fixture + 新 workflow | 发布流水线 |
@@ -264,4 +272,4 @@ steps（示意）:
 
 | 日期 | 说明 |
 |------|------|
-| 2026-06-14 | 初版：分层矩阵、等价表、门禁终态、P0–P4 路线图（设计认可，待分期实施） |
+| 2026-06-14 | P0/P1 仓库侧：`required_status_checks.txt`、`bootstrap_github_gate.sh`、`guard-branch-protection` 读文件 |

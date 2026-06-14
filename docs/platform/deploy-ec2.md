@@ -84,8 +84,24 @@ Environment (Preview): VITE_API_BASE_URL=<可用的 API origin；缺失时 CF_PA
 Pages GitHub 集成在 push 到 production branch 时**立即**构建部署，与 GitHub CI 并行——CI 失败不会阻止 Pages 发布。因此部署 gate 必须前移到合并时：
 
 1. GitHub → Settings → Branches → 为 `main` 添加 branch protection rule（或 ruleset）。
-2. 勾选 "Require status checks to pass"，required checks 至少包含：`Backend static`、`Frontend static`、`PR gate`。
+2. 勾选 "Require status checks to pass"，required checks 至少包含（与 [scripts/ci/required_status_checks.txt](../../scripts/ci/required_status_checks.txt) 同源）：
+   - `Backend static`
+   - `Frontend static`
+   - `PR gate`
+   - `Frontend e2e smoke (real backend)`
+   - `Docker smoke`
 3. 勾选 "Require a pull request before merging"，禁止直接 push `main`。
+
+可用脚本一次性写入 secrets 并（可选）应用 branch protection：
+
+```bash
+# 需已安装并登录 gh；Pages 变量在知道公网域名后再传：
+# BOOTSTRAP_DEPLOY_FRONTEND_BASE_URL=... BOOTSTRAP_DEPLOY_BASE_URL=... \
+bash scripts/ci/bootstrap_github_gate.sh
+APPLY_BRANCH_PROTECTION=true bash scripts/ci/bootstrap_github_gate.sh
+```
+
+另需在仓库 Secrets 手动配置 `BRANCH_PROTECTION_READ_TOKEN`（fine-grained PAT，Administration:Read），供 `guard-branch-protection` 每周审计。详见 [ci-test-matrix.md](../workflows/ci-test-matrix.md) §6。
 
 未配置以上规则时，任何直接 push 到 `main` 的代码都会在 CI 结果出来之前发布到生产 Pages。
 
