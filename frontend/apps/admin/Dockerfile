@@ -1,6 +1,6 @@
 # Build via: make frontend-image-build (tags via immutable IMAGE_TAG / git describe)
 
-FROM node:22-bookworm-slim AS builder
+FROM node:26-bookworm-slim AS builder
 
 RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
 
