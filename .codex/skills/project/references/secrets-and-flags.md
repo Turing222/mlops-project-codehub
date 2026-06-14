@@ -34,7 +34,7 @@ For a new flag:
 - Create the boolean feature in GrowthBook using a stable `kebab-case` key.
 - Register the key in `FeatureFlagService` with explicit scope and fallback.
 - Use `/api/v1/auth/config` for anonymous/system flags.
-- Use `/api/v1/users/me.features` for logged-in user flags.
+- Use the `features` field from the `/api/v1/users/me` response for logged-in user flags.
 - Consume frontend flags only through `useFeatureFlag()` or `FeatureGate`.
 - Add `tests/unit/services/test_feature_flag_service.py` coverage for missing-key fallback and SDK evaluation when the key exists.
 

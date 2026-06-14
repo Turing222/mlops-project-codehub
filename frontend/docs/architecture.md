@@ -118,42 +118,41 @@ export type LoginResponse = z.infer<typeof loginResponseSchema>
 
 ```text
 src/
-  app/
-    router/
-    providers/
+  api/
+    auth.ts
+    users.ts
+    chat.ts
+  assets/
+  components/
+  context/
+  features/
+    auth/
+    admin/
+    chat/
   lib/
     http/
       client.ts
       errors.ts
-      interceptors.ts
-      trace.ts
       idempotency.ts
-    dayjs/
-      index.ts
+      trace.ts
+  pages/
+    ...
+  query/
+    hooks/
+    keys/
+    query-client.ts
   schemas/
     auth.ts
     user.ts
     chat.ts
   stores/
     auth-store.ts
-    ui-store.ts
-  queries/
-    query-client.ts
-    auth.ts
-    users.ts
-    chat.ts
-  api/
-    auth.ts
-    users.ts
-    chat.ts
+    theme-store.ts
   streams/
     chat-stream.ts
-  features/
-    auth/
-    admin/
-    chat/
-  pages/
-    ...
+  test/
+  types/
+  utils/
 ```
 
 目录职责：
@@ -161,7 +160,7 @@ src/
 - `schemas/`: Zod schema 与 `z.infer`
 - `lib/http/`: 请求基建与公共网络规则
 - `stores/`: 客户端状态
-- `queries/`: Query key、query function、mutation function、轮询策略
+- `query/`: Query key、query function、mutation function、轮询策略
 - `api/`: 薄封装 endpoint，不做页面逻辑
 - `streams/`: SSE/流式请求
 - `features/`: 业务能力组合

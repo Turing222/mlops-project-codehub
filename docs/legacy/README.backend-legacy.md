@@ -156,6 +156,19 @@ Provider 密钥：`OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `DEEP
 | `RAG_TOP_K` | `4` |
 | `KNOWLEDGE_CHUNK_SIZE` | `800` |
 | `KNOWLEDGE_MAX_UPLOAD_SIZE_MB` | `20` |
+| `RAG_RERANK_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5` |
+| `RAG_RERANK_CIRCUIT_BREAKER_COOLDOWN_SECONDS` | `30` |
+| `EXTERNAL_CONTEXT_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5` |
+| `EXTERNAL_CONTEXT_CIRCUIT_BREAKER_COOLDOWN_SECONDS` | `30` |
+
+**Feature Flag / GrowthBook**：
+
+| 变量 | 默认值 |
+|------|--------|
+| `GROWTHBOOK_API_HOST` | `https://cdn.growthbook.io` |
+| `GROWTHBOOK_SDK_KEY` | `sdk-dummy-key-for-development` |
+| `GROWTHBOOK_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5` |
+| `GROWTHBOOK_CIRCUIT_BREAKER_COOLDOWN_SECONDS` | `30` |
 
 **存储**：
 
@@ -350,7 +363,7 @@ docker compose -f deploy/docker-compose.yml up -d
   - OpenTelemetry OTLP 导出（DB SQL tracing 需配置 `ENABLE_OTEL_TRACES=true`）
   - Langfuse 自动关联 LLM 调用、RAG 检索、知识库入库等业务 span
 - **限流**：Redis + Lua 滑动窗口，按客户端 IP + 请求路径计数
-- **断路器**：LLM 调用连续失败 ≥ 阈值自动熔断（默认 5 次），30 秒后半开探测恢复
+- **断路器**：LLM / Rerank / Tavily 外部检索 / GrowthBook CDN 四处接入 `CircuitBreaker`（默认连续失败 ≥ 5 次熔断，30s 冷却后半开探测；HALF_OPEN 仅放行 1 路探测）。熔断与降级叠加：Rerank→原始排序、Tavily→空结果、GrowthBook→本地缓存；LLM 单 provider 熔断仍向上抛错（路由模式可 fallback）
 - **幂等**：`idempotency:chat:{user_id}:{client_request_id}` Redis key，处理中返回提示、已完成返回结果 ID
 - **并发**：进程内 asyncio.Semaphore 控制 LLM 与 DB 并发上限，防止单 worker 资源耗尽
 

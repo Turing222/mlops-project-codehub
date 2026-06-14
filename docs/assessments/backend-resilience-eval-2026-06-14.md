@@ -191,3 +191,36 @@
 - 并发：`backend/core/concurrency.py`
 - 超时：`backend/application/chat/web_stream_workflow.py`、`backend/config/ai_settings.py`
 - 配置：`backend/config/ai_settings.py`、`web_settings.py`、`worker_settings.py`、`settings.py`
+
+---
+
+## 8. 修复记录（2026-06-14 后续落地）
+
+> 本节记录评估结论（§6.2 / §6.3）在代码中的落实情况；正文 §1–§7 保留为**修复前**只读快照，便于对照。
+
+### 8.1 已落实项
+
+| 评估建议 | 落实 | 测试证据 |
+|----------|------|----------|
+| §6.3.1 半开限流探测 | `CircuitBreaker.half_open_max_calls`（默认 1）；过期探测 `on_success` 在 OPEN 态忽略 | `tests/unit/core/test_circuit_breaker.py` |
+| §6.3.2 流式 `on_success` 时机 | 移到 `async for` 迭代结束后 | `test_stream_midfailure_marks_circuit_failure_not_success` |
+| §6.3.3 扩大熔断覆盖 | Rerank（bifrost/dashscope）、Tavily、GrowthBook | 各 provider/service 单测 + `test_retrieve_with_rerank_degrades_when_circuit_breaker_open` |
+| §6.1.1 状态机单测缺口 | 新增 `tests/unit/core/test_circuit_breaker.py` | 11 用例（含并发半开探测） |
+
+### 8.2 接入点（修复后）
+
+| 服务名 | 实现位置 | 熔断打开时行为 |
+|--------|----------|----------------|
+| `llm:*` | `pydantic_ai_service.py` | 向上抛 `CIRCUIT_BREAKER_OPEN`（路由层 fallback） |
+| `rerank:bifrost` / `rerank:dashscope` | `bifrost_rerank.py` / `dashscope_rerank.py` | `rag_service` 降级为候选原始排序 |
+| `external_context:tavily` | `external_context_service.py` | 降级为空结果 |
+| `growthbook` | `feature_flag_service.py` | 沿用本地缓存 / 代码默认 |
+
+配置项：`LLM_CIRCUIT_*`、`RAG_RERANK_CIRCUIT_*`、`EXTERNAL_CONTEXT_CIRCUIT_*`（`ai_settings.py`）、`GROWTHBOOK_CIRCUIT_*`（`settings.py`）。
+
+### 8.3 仍未纳入本次范围
+
+- §6.3.4 Redis 集群级熔断（可选）
+- §6.3.5 统一退避（可选）
+- DB / Embedding 熔断（见 `docs/platform/api-keys-and-degradation.md` §7 #2）
+- 进程内不跨 worker（已知权衡，未改）

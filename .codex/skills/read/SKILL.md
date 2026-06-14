@@ -11,9 +11,9 @@ Use this skill to gather evidence and answer without changing files.
 
 1. Confirm the request is read-only. If the user asks to implement, create, modify, or add tests, switch to the matching skill.
 2. Read `.codex/skills/project/SKILL.md` first when architecture, test, command, or editing rules matter.
-3. Use `rg`, `rg --files`, `sed -n`, `ls`, and existing docs to build the smallest useful context.
+3. Use available read-only tools (e.g. `rg`, `sed -n`, `ls`, file-reading tools) and existing docs to build the smallest useful context.
 4. Ground conclusions in file paths, line numbers, command output, or user-provided evidence.
-5. Stop before edits. Do not create files, run formatters, update snapshots, or use `apply_patch`.
+5. Stop before edits. Do not create files, run formatters, update snapshots, or use any file-editing tool.
 
 ## Progressive Disclosure
 

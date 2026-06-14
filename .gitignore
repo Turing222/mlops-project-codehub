@@ -8,6 +8,7 @@ venv/
 
 # 编辑器/IDE 忽略项
 .vscode/
+.cursor/
 
 # Docker 忽略项
 *.o

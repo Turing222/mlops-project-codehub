@@ -113,10 +113,9 @@
 范围：
 
 - 安装 `@tanstack/react-query`
-- 新增 `src/queries/query-client.ts`
-- 新增 `src/queries/auth.ts`
-- 新增 `src/queries/users.ts`
-- 新增 `src/queries/chat.ts`
+- 新增 `src/query/query-client.ts`
+- 新增 `src/query/hooks/{auth,users,chat}.ts`
+- 新增 `src/query/keys/{auth,users,chat}.ts`
 
 优先接入：
 

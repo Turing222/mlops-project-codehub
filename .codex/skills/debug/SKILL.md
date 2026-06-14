@@ -32,7 +32,7 @@ Forbidden before approval:
 - Creating files
 - Deleting files
 - Renaming files
-- Using any file-editing tool (`apply_patch`, `Edit`, `Write`, ...)
+- Using any file-editing tool (editor, file creation, patch, etc.)
 - Running `sed -i`
 - Running shell redirection that writes files, such as `>`, `>>`
 - Running formatters that rewrite files
@@ -79,7 +79,7 @@ If project references are missing or unavailable, state that no project-specific
 
 You may perform read-only investigation, including:
 
-- Reading files with `cat`, `sed -n`, `rg`, `grep`, `ls`, `find`
+- Reading files with available read-only tools (e.g. `cat`, `rg`, `grep`, `ls`, `find`, or built-in file-reading tools)
 - Reading logs or pasted traces
 - Inspecting tests without modifying them
 - Running tests if they do not intentionally rewrite files

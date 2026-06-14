@@ -23,6 +23,16 @@ Prefer the least invasive mode that satisfies the latest user request. If implem
 - After `task-plan`, switch to the mode skill that owns the next executable step.
 - After `write` or `edit`, consider `add-tests` when coverage gaps exist or behavior changed.
 
-## agents/openai.yaml
+## `agents/openai.yaml` Role
 
-Each skill may include `agents/openai.yaml` with `display_name`, `short_description`, and `default_prompt`. Keep these files as generated UI metadata for Codex/OpenAI agent skill lists and chips; they are not runtime backend code.
+The `agents/openai.yaml` file in each skill directory only provides UI metadata (`display_name`, `short_description`, `default_prompt`) for Codex/OpenAI agent lists; it is not a runtime constraint. Claude Code does not read these files. Runtime behavior is governed by the `SKILL.md` frontmatter and body.
+
+## Serena Security Layers
+
+- **Source of Truth**: The `fixed_tools` in `.serena/project.yml` is the server-side hard constraint, exposing only 5 read-only tools.
+- **Client Auto-Approve**: The `enabled_tools` in `.codex/config.toml` and `allow` in `.claude/settings.json` mirror this list solely to bypass confirmation dialogs.
+- **Defensive Fallback**: The `deny` list in `.claude/settings.json` explicitly blocks 9 write-oriented tools. Since `fixed_tools` already prevents their exposure, this deny list has no actual trigger scenario and is kept purely as a defensive measure—in case `fixed_tools` is accidentally removed.
+
+## Serena Fallback Strategy
+
+On the Codex side, Serena is configured with `required = false` and silently falls back if startup times out after 60 seconds. This is intentional: in WSL or cold-start environments where Serena might start slowly, it shouldn't block the agent's main workflow. After fallback, the agent automatically reverts to plain text search (like `rg`/`grep`). Semantic navigation becomes unavailable, but core workflows are unaffected.

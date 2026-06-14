@@ -1,4 +1,6 @@
 [mcp_servers.serena]
+# Serena tool allowlist mirrors .serena/project.yml fixed_tools (source of truth).
+# This list only controls Codex auto-approve; server-side enforcement is in project.yml.
 enabled = true
 required = false
 startup_timeout_sec = 60

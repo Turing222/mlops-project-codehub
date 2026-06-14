@@ -125,14 +125,14 @@ Secret 文件位于 [secrets/ec2/](../../secrets/ec2)（EC2）或 [secrets/local
 | **LLM（单 provider）** | 真实 provider 挂 | ❌ **无 fallback**：熔断器开 → 对话报错给用户 | [circuit_breaker.py](../../backend/core/circuit_breaker.py) |
 | LLM（`resilient` 路由） | 首选挂 | ✅ 故障转移到下一 profile（deepseek→gemini）；流式仅在首 chunk 前可切 | [routing_service.py:52-112](../../backend/ai/providers/llm/routing_service.py#L52-L112) |
 | RAG 检索（query embedding） | embedding 调用失败 | ✅ orchestrator 兜底捕获 → 退回**普通对话**（无 KB 上下文） | [worker_rag_orchestrator.py:388-392](../../backend/application/chat/worker_rag_orchestrator.py#L388-L392) |
-| RAG rerank（运行期调用） | DashScope 挂/超时/429/key 失效 | ✅ 退回候选原始顺序（不 rerank） | [rag_service.py:137-138](../../backend/services/rag_service.py#L137-L138)、[:227-229](../../backend/services/rag_service.py#L227-L229)、[orchestrator:471-479](../../backend/application/chat/worker_rag_orchestrator.py#L471-L479) |
+| RAG rerank（运行期调用） | DashScope/Bifrost 挂/超时/429/key 失效 / **熔断打开** | ✅ 退回候选原始顺序（不 rerank）；熔断时快速失败，不再等待下游超时 | [rag_service.py:132-135](../../backend/services/rag_service.py#L132-L135)、[bifrost_rerank.py](../../backend/ai/providers/rerank/bifrost_rerank.py)、[dashscope_rerank.py](../../backend/ai/providers/rerank/dashscope_rerank.py) |
 | **RAG rerank（构造期）** | `RAG_RERANK_PROVIDER` 非空但 key **为空/无效** | ✅ **已修复（#4）**：worker `get_rerank_service` 加 try/except → warning（`event=worker_rerank_init_degraded`）+ 退回无 rerank，不再崩任务 | [worker/dependencies.py:95-123](../../backend/worker/dependencies.py#L95-L123) |
 | RAG planner | 规划失败/超时 | ✅ 退回默认计划 | [worker_rag_orchestrator.py:313-315](../../backend/application/chat/worker_rag_orchestrator.py#L313-L315) |
-| 联网检索（Tavily） | key 缺失 / 运行期失败 | ✅ 静默跳过 / 退回空，仅用 KB | [orchestrator:370-372](../../backend/application/chat/worker_rag_orchestrator.py#L370-L372) |
+| 联网检索（Tavily） | key 缺失 / 运行期失败 / **熔断打开** | ✅ 静默跳过 / 退回空，仅用 KB | [external_context_service.py](../../backend/services/external_context_service.py)、[orchestrator:370-372](../../backend/application/chat/worker_rag_orchestrator.py#L370-L372) |
 | **知识入库（doc embedding）** | embedding 调用失败 | ⚠️ 文件标记 `FAILED` + 清理半成品，**但无自动重试**，需手动重传 | [ingestion_workflow.py:154-179](../../backend/application/knowledge/ingestion_workflow.py#L154-L179)、[knowledge_tasks.py:168](../../backend/worker/tasks/knowledge_tasks.py#L168) |
 | Langfuse | key 缺失 / 初始化失败 | ✅ 静默 no-op + warning | [langfuse_utils.py:156-162](../../backend/observability/langfuse_utils.py#L156-L162) |
 | GitHub repo 分析 | token 缺失 | ✅ 降级匿名调用 | [github.py:80](../../backend/application/repo_analysis/github.py#L80) |
-| GrowthBook | key dummy/缺失 / CDN 失败 | ✅ 退回代码默认 flag | [feature_flag_service.py:66-85](../../backend/services/feature_flag_service.py#L66-L85) |
+| GrowthBook | key dummy/缺失 / CDN 失败 / **熔断打开** | ✅ 退回本地缓存 / 代码默认 flag | [feature_flag_service.py](../../backend/services/feature_flag_service.py) |
 | S3 存储 | bucket 缺失 | ❌ 构造存储时 ValueError | [object_storage.py:354-355](../../backend/services/object_storage.py#L354-L355) |
 | S3 存储 | 凭证不可解析 | ⚠️ 构造不报错，首次 S3 操作时 boto3 报错 | [object_storage.py:328-347](../../backend/services/object_storage.py#L328-L347) |
 
@@ -150,18 +150,18 @@ Secret 文件位于 [secrets/ec2/](../../secrets/ec2)（EC2）或 [secrets/local
 | **LLM 路由** `LLMRoutingService` | 用各候选自己的 breaker | 候选间 fallback（非 retry） | — | ✅ 全挂 → `LLM_ROUTING_FAILED` |
 | **Bifrost 网关**（启用时） | ❌ app 侧无 | ✅ 网关 `max_retries:1`/provider | ✅ provider 级（deepseek 120s） | key 级负载 / 双 key |
 | **Embedding（入库/检索）** | ❌ **无** | ❌ **无** | httpx client timeout | 检索侧→普通对话；**入库侧无降级 → FAILED** |
-| **Rerank** | ❌ 无 | ❌ 无 | ✅ `RAG_RERANK_TIMEOUT`(15s) | ✅ 运行期失败→原始顺序；构造失败→None（#4 已修） |
-| **Tavily 外部上下文** | ❌ 无 | ❌ 无 | ✅ `EXTERNAL_CONTEXT_TIMEOUT`(6s) | ✅ 失败→空结果（静默） |
-| **GrowthBook** | ❌ 无 | ❌ 无 | httpx + 30s 缓存 TTL | ✅ 失败→缓存 / 代码默认 |
+| **Rerank** | ✅ `CircuitBreaker`（进程内，5 次/30s，`RAG_RERANK_CIRCUIT_*`） | ❌ 无 | ✅ `RAG_RERANK_TIMEOUT`(15s) | ✅ 运行期失败/熔断→原始顺序；构造失败→None（#4 已修） |
+| **Tavily 外部上下文** | ✅ `CircuitBreaker`（进程内，5 次/30s，`EXTERNAL_CONTEXT_CIRCUIT_*`） | ❌ 无 | ✅ `EXTERNAL_CONTEXT_TIMEOUT`(6s) | ✅ 失败/熔断→空结果（静默） |
+| **GrowthBook** | ✅ `CircuitBreaker`（进程内，5 次/30s，`GROWTHBOOK_CIRCUIT_*`） | ❌ 无 | httpx + 30s 缓存 TTL | ✅ 失败/熔断→缓存 / 代码默认 |
 | **GitHub repo 分析** | ❌ 无 | ❌ 无 | httpx timeout | token 缺失→匿名；HTTPError 抛出 |
 | **Taskiq 任务（入库等）** | ❌ 无 | ❌ **无中间件** | wait-tasks-timeout 105s | mark FAILED，不重投 |
 | **DB / Redis** | ❌ 无 app 级 | 连接池底层 | connect 10s | compose healthcheck |
 
 **三条要点**：
 
-1. **熔断全工程只有 LLM 一处**。`CircuitBreaker`（[core/circuit_breaker.py](../../backend/core/circuit_breaker.py)，自带 CLOSED/OPEN/HALF_OPEN + 半开探测）是通用类，但只接进了 [pydantic_ai_service.py](../../backend/ai/providers/llm/pydantic_ai_service.py)；embedding / rerank / tavily / 外部 HTTP 全裸奔。
+1. **熔断已覆盖 LLM / Rerank / Tavily / GrowthBook 四处**（[circuit_breaker.py](../../backend/core/circuit_breaker.py) 通用实现 + `half_open_max_calls` 半开限流）。**Embedding / DB / 外部 HTTP 仍无 app 级熔断**；breaker 状态**进程内、不跨 worker 共享**（`--workers 2` → 各进程独立计数，集群阈值按 worker 数放大）。
 2. **重试极少**：仅 LLM 经 OpenAI SDK `max_retries`（路由内禁用、交给 fallback）+ Bifrost 网关 `max_retries:1`。应用层无 tenacity / 退避 / taskiq-retry。
-3. **多数靠"降级"而非"熔断/重试"**——对只读、无状态的 chat 检索链路是对的；**入库链路是例外**（熔断/重试/降级三者全无，一次失败即 FAILED 终态）。注意 breaker 状态**进程内、不跨 worker 共享**（`--workers 2` → 各进程一个 breaker）。
+3. **读链路靠「熔断快速失败 + 降级兜底」**：Rerank / Tavily / GrowthBook 熔断打开时分别降级为原始排序、空结果、本地缓存；**入库链路仍是例外**（熔断/重试/降级三者全无，一次失败即 FAILED 终态）。
 
 ---
 
