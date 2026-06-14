@@ -531,7 +531,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'web'", specifier = "~=0.28.0" },
     { name = "jieba", specifier = "~=0.42.1" },
     { name = "jinja2", marker = "extra == 'ai'", specifier = "~=3.1.0" },
-    { name = "langfuse", specifier = "~=3.14.0" },
+    { name = "langfuse", specifier = "~=4.7.1" },
     { name = "openai", marker = "extra == 'ai'", specifier = "~=2.21.0" },
     { name = "openpyxl", specifier = "~=3.1.0" },
     { name = "opentelemetry-api", specifier = "~=1.40.0" },
@@ -1250,23 +1250,21 @@ wheels = [
 
 [[package]]
 name = "langfuse"
-version = "3.14.5"
+version = "4.7.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backoff" },
     { name = "httpx" },
-    { name = "openai" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
     { name = "packaging" },
     { name = "pydantic" },
-    { name = "requests" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ec/6b/7a945e8bc56cbf343b6f6171fd45870b0ea80ea38463b2db8dd5a9dc04a2/langfuse-3.14.5.tar.gz", hash = "sha256:2f543ec1540053d39b08a50ed5992caf1cd54d472a55cb8e5dcf6d4fcb7ff631", size = 235474, upload-time = "2026-02-23T10:42:47.721Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/74/a6f1a99893ee6d1a69439ae7eb92f8fe8806103492dc26531d5942dbd3bf/langfuse-4.7.1.tar.gz", hash = "sha256:f9e262eceedb353b191c1da1f8452d1e8ebf52297ca20e160cda0206608e3a40", size = 320620, upload-time = "2026-05-29T18:06:22.435Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/a1/10f04224542d6a57073c4f339b6763836a0899c98966f1d4ffcf56d2cf61/langfuse-3.14.5-py3-none-any.whl", hash = "sha256:5054b1c705ec69bce2d7077ce7419727ac629159428da013790979ca9cae77d5", size = 421240, upload-time = "2026-02-23T10:42:46.085Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/9a/bd3368f46b6c72ee2068b80536826b02ae86df53eff1c79941344503098f/langfuse-4.7.1-py3-none-any.whl", hash = "sha256:a4e59c81ad5e5b16a65d3849f4923ebc3ad6e67ec803ada83d50c0cb66149490", size = 562571, upload-time = "2026-05-29T18:06:20.517Z" },
 ]
 
 [[package]]
