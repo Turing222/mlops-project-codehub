@@ -14,7 +14,9 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from backend.config.ai_settings import ai_settings
 from backend.contracts.interfaces import AbstractRerankService
+from backend.core.circuit_breaker import CircuitBreaker
 from backend.core.exceptions import app_service_error
 from backend.observability.trace_utils import (
     build_llm_span_attributes,
@@ -35,11 +37,24 @@ class BifrostRerankService(AbstractRerankService):
         api_key: str,
         model_name: str,
         timeout_seconds: int = 15,
+        circuit_breaker_failure_threshold: int | None = None,
+        circuit_breaker_cooldown_seconds: int | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model_name = model_name
         self.timeout_seconds = timeout_seconds
+        self._circuit = CircuitBreaker(
+            name="rerank:bifrost",
+            failure_threshold=(
+                circuit_breaker_failure_threshold
+                or ai_settings.RAG_RERANK_CIRCUIT_BREAKER_FAILURE_THRESHOLD
+            ),
+            cooldown_seconds=(
+                circuit_breaker_cooldown_seconds
+                or ai_settings.RAG_RERANK_CIRCUIT_BREAKER_COOLDOWN_SECONDS
+            ),
+        )
 
     async def rerank(
         self,
@@ -57,39 +72,49 @@ class BifrostRerankService(AbstractRerankService):
                 code="BIFROST_RERANK_EMPTY_DOCUMENT",
             )
 
-        with trace_span(
-            "rerank.bifrost",
-            {
-                **build_llm_span_attributes(
-                    provider="bifrost",
-                    model=self.model_name,
-                    operation="rerank",
-                ),
-                "rerank.input.count": len(payloads),
-                "rerank.top_k": top_k,
-            },
-        ) as span:
-            response = await asyncio.to_thread(
-                self._post_rerank,
+        # 校验之外的外部调用才受断路器保护：断路器打开时快速失败抛
+        # CIRCUIT_BREAKER_OPEN，由 rag_service 降级为候选原始排序。
+        await self._circuit.acquire()
+        try:
+            with trace_span(
+                "rerank.bifrost",
                 {
-                    "model": self.model_name,
-                    "query": query_text,
-                    "top_n": top_k,
-                    "documents": [
-                        {"id": str(index), "text": document}
-                        for index, document in enumerate(payloads)
-                    ],
+                    **build_llm_span_attributes(
+                        provider="bifrost",
+                        model=self.model_name,
+                        operation="rerank",
+                    ),
+                    "rerank.input.count": len(payloads),
+                    "rerank.top_k": top_k,
                 },
-            )
-            rankings = self._parse_rankings(response)
-            set_span_attributes(
-                span,
-                {
-                    "rerank.output.count": len(rankings),
-                    "rerank.provider": response.get("extra_fields", {}).get("provider"),
-                },
-            )
-            return rankings
+            ) as span:
+                response = await asyncio.to_thread(
+                    self._post_rerank,
+                    {
+                        "model": self.model_name,
+                        "query": query_text,
+                        "top_n": top_k,
+                        "documents": [
+                            {"id": str(index), "text": document}
+                            for index, document in enumerate(payloads)
+                        ],
+                    },
+                )
+                rankings = self._parse_rankings(response)
+                set_span_attributes(
+                    span,
+                    {
+                        "rerank.output.count": len(rankings),
+                        "rerank.provider": response.get("extra_fields", {}).get(
+                            "provider"
+                        ),
+                    },
+                )
+        except Exception:
+            await self._circuit.on_failure()
+            raise
+        await self._circuit.on_success()
+        return rankings
 
     def _post_rerank(self, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self.base_url}/rerank"

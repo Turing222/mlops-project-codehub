@@ -12,7 +12,7 @@ import urllib.error
 import pytest
 
 from backend.ai.providers.rerank.bifrost_rerank import BifrostRerankService
-from backend.core.exceptions import AppException
+from backend.core.exceptions import AppException, app_service_error
 
 
 def _real_service() -> BifrostRerankService:
@@ -187,3 +187,65 @@ def test_parse_rankings_raises_missing_results() -> None:
         BifrostRerankService._parse_rankings({"no_results_key": []})
 
     assert exc_info.value.code == "BIFROST_RERANK_MISSING_RESULTS"
+
+
+# ── 断路器（与 rag_service 降级叠加：熔断快速失败 + 降级兜底） ──────────
+
+
+class FailingBifrostRerankService(BifrostRerankService):
+    """每次 _post_rerank 都抛下游错误，用于驱动断路器。"""
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(
+            base_url="http://bifrost:8080/v1",
+            api_key="sk-bf-test",
+            model_name="qwen3-rerank",
+            **kwargs,
+        )
+        self.calls = 0
+
+    def _post_rerank(self, payload: dict) -> dict:
+        self.calls += 1
+        raise app_service_error(
+            "Bifrost rerank API 调用失败",
+            code="BIFROST_RERANK_HTTP_ERROR",
+            details={"status_code": 502},
+        )
+
+
+async def test_rerank_circuit_breaker_opens_after_threshold_failures() -> None:
+    service = FailingBifrostRerankService(
+        circuit_breaker_failure_threshold=2,
+        circuit_breaker_cooldown_seconds=60,
+    )
+
+    for _ in range(2):
+        with pytest.raises(AppException) as exc_info:
+            await service.rerank(query_text="q", documents=["doc"], top_k=1)
+        assert exc_info.value.code == "BIFROST_RERANK_HTTP_ERROR"
+
+    assert service.calls == 2
+
+    # 达到阈值后断路器打开：快速失败且不再触达下游
+    with pytest.raises(AppException) as exc_info:
+        await service.rerank(query_text="q", documents=["doc"], top_k=1)
+    assert exc_info.value.code == "CIRCUIT_BREAKER_OPEN"
+    assert service.calls == 2
+
+
+async def test_rerank_circuit_breaker_ignores_validation_errors() -> None:
+    service = FailingBifrostRerankService(
+        circuit_breaker_failure_threshold=2,
+        circuit_breaker_cooldown_seconds=60,
+    )
+
+    # 校验错误（空文档）发生在断路器之外，多次也不应累计失败
+    for _ in range(5):
+        with pytest.raises(AppException, match="文档不能为空"):
+            await service.rerank(query_text="q", documents=["   "], top_k=1)
+
+    # 断路器仍闭合：放行到下游（此处下游返回 HTTP 错误，证明 acquire 未拦截）
+    with pytest.raises(AppException) as exc_info:
+        await service.rerank(query_text="q", documents=["doc"], top_k=1)
+    assert exc_info.value.code == "BIFROST_RERANK_HTTP_ERROR"
+    assert service.calls == 1

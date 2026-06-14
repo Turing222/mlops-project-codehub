@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from backend.core.exceptions import app_service_error
 from backend.services.rag_service import RAGService, select_rerank_fallback_candidates
 
 pytestmark = pytest.mark.asyncio
@@ -214,6 +215,30 @@ async def test_retrieve_with_rerank_degrades_to_candidate_order_when_reranker_th
         kb_id=uuid.uuid4(),
     )
 
+    assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
+
+
+async def test_retrieve_with_rerank_degrades_when_circuit_breaker_open() -> None:
+    reranker = SimpleNamespace(
+        rerank=AsyncMock(
+            side_effect=app_service_error(
+                "服务 rerank:bifrost 暂时不可用，已熔断保护",
+                code="CIRCUIT_BREAKER_OPEN",
+            )
+        )
+    )
+    service = _build_service(reranker=reranker)
+    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+    service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
+        return_value=[(chunk, 0.1) for chunk in candidates]
+    )
+
+    result = await service.retrieve_with_rerank(
+        query_text="query",
+        kb_id=uuid.uuid4(),
+    )
+
+    # 熔断快速失败被降级为候选原始排序，不向上抛
     assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
 
 

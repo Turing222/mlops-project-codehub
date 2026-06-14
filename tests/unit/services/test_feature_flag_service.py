@@ -1,6 +1,8 @@
 import uuid
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 from backend.models.orm.user import User
@@ -143,3 +145,91 @@ def test_eval_flag_existing_key_uses_growthbook_sdk() -> None:
         is False
     )
     assert FeatureFlagService._eval_flag(gb, "enable-credits", features, False) is True
+
+
+# ── 断路器（CDN 持续故障时熔断，跳过拉取沿用本地缓存） ────────────────
+
+
+class _FakeFailingGrowthBookClient:
+    """模拟 GrowthBook CDN 客户端持续失败。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def get(self, url: str, timeout: float | None = None) -> object:
+        self.calls += 1
+        raise httpx.ConnectError("cdn down")
+
+    async def aclose(self) -> None:
+        pass
+
+
+def _live_service() -> FeatureFlagService:
+    # 非 dummy key 才会真正触发 CDN 拉取
+    return FeatureFlagService(
+        growthbook_api_host="https://cdn.growthbook.io",
+        growthbook_sdk_key="sdk-live-key",
+        app_env="test",
+        beta_user_email_whitelist=set(),
+        beta_user_phone_whitelist=set(),
+        circuit_breaker_failure_threshold=2,
+        circuit_breaker_cooldown_seconds=60,
+    )
+
+
+@pytest.mark.asyncio
+async def test_growthbook_circuit_breaker_opens_after_failures() -> None:
+    service = _live_service()
+    fake = _FakeFailingGrowthBookClient()
+    service._http_client = fake  # type: ignore[assignment]
+
+    # 缓存为空时每次都尝试拉取，连续失败累加计数
+    for _ in range(2):
+        assert await service._ensure_features_loaded() == {}
+    assert fake.calls == 2
+
+    # 阈值后断路器打开：跳过 CDN 拉取，直接沿用本地缓存
+    assert await service._ensure_features_loaded() == {}
+    assert fake.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_growthbook_circuit_breaker_recovers_after_cooldown() -> None:
+    service = FeatureFlagService(
+        growthbook_api_host="https://cdn.growthbook.io",
+        growthbook_sdk_key="sdk-live-key",
+        app_env="test",
+        beta_user_email_whitelist=set(),
+        beta_user_phone_whitelist=set(),
+        circuit_breaker_failure_threshold=2,
+        circuit_breaker_cooldown_seconds=0,
+    )
+
+    class _FlakyClient:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.fail = True
+
+        async def get(self, url: str, timeout: float | None = None) -> object:
+            self.calls += 1
+            if self.fail:
+                raise httpx.ConnectError("cdn down")
+            return SimpleNamespace(
+                status_code=200,
+                json=lambda: {
+                    "features": {"enable-rag-rerank": {"defaultValue": True}}
+                },
+            )
+
+    flaky = _FlakyClient()
+    service._http_client = flaky  # type: ignore[assignment]
+
+    for _ in range(2):
+        await service._ensure_features_loaded()
+    assert service._circuit._state.value == "open"
+
+    # cooldown=0：下次进入半开放行探测，探测成功即恢复闭合
+    flaky.fail = False
+    features = await service._ensure_features_loaded()
+    assert "enable-rag-rerank" in features
+    assert service._circuit._state.value == "closed"

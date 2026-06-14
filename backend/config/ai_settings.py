@@ -124,6 +124,8 @@ class AISettings(BaseSettings):
     RAG_RERANK_TIMEOUT_SECONDS: int = Field(default=15, ge=1, le=60)
     RAG_RERANK_CANDIDATE_COUNT: int = Field(default=20, ge=8, le=50)
     RAG_RERANK_TOP_K: int = Field(default=4, ge=1, le=10)
+    RAG_RERANK_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5
+    RAG_RERANK_CIRCUIT_BREAKER_COOLDOWN_SECONDS: int = 30
     RAG_PLANNER_PROVIDER: str | None = None
     RAG_PLANNER_TIMEOUT_SECONDS: int = Field(default=8, ge=1, le=60)
     RAG_PLANNER_THINKING_ENABLED: bool = False
@@ -141,6 +143,8 @@ class AISettings(BaseSettings):
     EXTERNAL_CONTEXT_PROVIDER: str = "tavily"
     EXTERNAL_CONTEXT_TOP_K: int = Field(default=4, ge=1, le=10)
     EXTERNAL_CONTEXT_TIMEOUT_SECONDS: int = Field(default=6, ge=1, le=30)
+    EXTERNAL_CONTEXT_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5
+    EXTERNAL_CONTEXT_CIRCUIT_BREAKER_COOLDOWN_SECONDS: int = 30
     TAVILY_API_KEY: str | None = None
     TAVILY_BASE_URL: str = "https://api.tavily.com"
 

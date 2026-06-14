@@ -131,4 +131,10 @@ def get_feature_flag_service() -> FeatureFlagService:
             for p in settings.BETA_USER_PHONE_WHITELIST.split(",")
             if p.strip()
         },
+        circuit_breaker_failure_threshold=(
+            settings.GROWTHBOOK_CIRCUIT_BREAKER_FAILURE_THRESHOLD
+        ),
+        circuit_breaker_cooldown_seconds=(
+            settings.GROWTHBOOK_CIRCUIT_BREAKER_COOLDOWN_SECONDS
+        ),
     )

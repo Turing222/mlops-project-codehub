@@ -5,6 +5,9 @@
 
 from unittest.mock import patch
 
+import httpx
+import pytest
+
 from backend.services.external_context_service import (
     TavilyExternalContextProvider,
     create_external_context_provider,
@@ -73,3 +76,59 @@ def test_create_external_context_provider_returns_provider_when_configured() -> 
     ):
         provider = create_external_context_provider()
         assert provider is not None
+
+
+# ── 断路器（与既有「降级为空结果」叠加：熔断快速失败 + 降级兜底） ──────
+
+
+class _FakeFailingClient:
+    """模拟 Tavily HTTP 客户端持续失败。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def post(self, *args: object, **kwargs: object) -> object:
+        self.calls += 1
+        raise httpx.ConnectError("tavily down")
+
+    async def aclose(self) -> None:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_tavily_circuit_breaker_opens_after_threshold_failures() -> None:
+    provider = TavilyExternalContextProvider(
+        api_key="key",
+        circuit_breaker_failure_threshold=2,
+        circuit_breaker_cooldown_seconds=60,
+    )
+    fake = _FakeFailingClient()
+    provider._client = fake  # type: ignore[assignment]
+
+    for _ in range(2):
+        assert await provider.search(query_text="q", top_k=3) == []
+    assert fake.calls == 2
+
+    # 阈值后断路器打开：快速失败降级为空，且不再发起 HTTP 调用
+    assert await provider.search(query_text="q", top_k=3) == []
+    assert fake.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_tavily_circuit_breaker_ignores_validation_errors() -> None:
+    provider = TavilyExternalContextProvider(
+        api_key="key",
+        circuit_breaker_failure_threshold=2,
+        circuit_breaker_cooldown_seconds=60,
+    )
+    fake = _FakeFailingClient()
+    provider._client = fake  # type: ignore[assignment]
+
+    # 空查询在断路器之外早返回，多次也不应累计失败
+    for _ in range(5):
+        assert await provider.search(query_text="   ", top_k=3) == []
+    assert fake.calls == 0
+
+    # 断路器仍闭合：真实查询会放行到下游（此处下游失败，证明 acquire 未拦截）
+    assert await provider.search(query_text="q", top_k=3) == []
+    assert fake.calls == 1

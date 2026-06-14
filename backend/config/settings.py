@@ -78,6 +78,8 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     # ── GrowthBook ──────────────────────────────────────────────────
     GROWTHBOOK_API_HOST: str = "https://cdn.growthbook.io"
     GROWTHBOOK_SDK_KEY: str = "sdk-dummy-key-for-development"
+    GROWTHBOOK_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5
+    GROWTHBOOK_CIRCUIT_BREAKER_COOLDOWN_SECONDS: int = 30
     BETA_USER_EMAIL_WHITELIST: str = "tony@company.com,tester@dewflow.com"
     BETA_USER_PHONE_WHITELIST: str = ""
 

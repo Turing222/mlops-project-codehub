@@ -194,6 +194,94 @@ async def test_generate_response_marks_circuit_failure(monkeypatch) -> None:
     assert calls["failure"] == 1
 
 
+@pytest.mark.asyncio
+async def test_stream_midfailure_marks_circuit_failure_not_success(monkeypatch) -> None:
+    """流式中途失败时应只记 failure，不得先记 success（缺陷 2 的回归）。"""
+    service = PydanticAILLMService(
+        api_key="test-key", model_name="gemini-test", provider_name="gemini"
+    )
+    events: list[str] = []
+
+    class FakeCircuit:
+        async def acquire(self):
+            return None
+
+        async def on_success(self):
+            events.append("success")
+
+        async def on_failure(self):
+            events.append("failure")
+
+    class FakeStreamResult:
+        async def stream_text(self, *, delta: bool = False):
+            yield "partial"
+            raise RuntimeError("stream broke mid-way")
+
+    class FakeStreamContext:
+        async def __aenter__(self):
+            return FakeStreamResult()
+
+        async def __aexit__(self, *_):
+            return None
+
+    class FakeAgent:
+        def run_stream(self, prompt: str, **kwargs):
+            return FakeStreamContext()
+
+    service._circuit = FakeCircuit()
+    monkeypatch.setattr(service, "_create_agent", lambda instructions: FakeAgent())
+
+    with pytest.raises(AppException):
+        async for _ in service.stream_response(make_query()):
+            pass
+
+    assert events == ["failure"]
+
+
+@pytest.mark.asyncio
+async def test_stream_success_marks_circuit_success_after_iteration(
+    monkeypatch,
+) -> None:
+    """流式正常读完后才标记成功。"""
+    service = PydanticAILLMService(
+        api_key="test-key", model_name="gemini-test", provider_name="gemini"
+    )
+    events: list[str] = []
+
+    class FakeCircuit:
+        async def acquire(self):
+            return None
+
+        async def on_success(self):
+            events.append("success")
+
+        async def on_failure(self):
+            events.append("failure")
+
+    class FakeStreamResult:
+        async def stream_text(self, *, delta: bool = False):
+            yield "ok"
+
+    class FakeStreamContext:
+        async def __aenter__(self):
+            return FakeStreamResult()
+
+        async def __aexit__(self, *_):
+            return None
+
+    class FakeAgent:
+        def run_stream(self, prompt: str, **kwargs):
+            return FakeStreamContext()
+
+    service._circuit = FakeCircuit()
+    monkeypatch.setattr(service, "_create_agent", lambda instructions: FakeAgent())
+
+    chunks = [chunk async for chunk in service.stream_response(make_query())]
+
+    assert chunks == ["ok"]
+    assert events == ["success"]
+
+
 def test_create_agent_requires_gemini_api_key() -> None:
     service = PydanticAILLMService(api_key="", model_name="gemini-test")
 

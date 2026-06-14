@@ -134,12 +134,14 @@ class PydanticAILLMService(AbstractLLMService):
                         _merge_extra_body(self._extra_body, query.extra_body)
                     ),
                 ) as result:
-                    await self._circuit.on_success()
                     async for delta in result.stream_text(delta=True):
                         if delta:
                             chunk_count += 1
                             char_count += len(delta)
                             yield delta
+                # 流正常迭代结束后才标记成功：避免连接建立但流式中途失败时
+                # 先被记为成功（计数清零）再记失败，削弱熔断灵敏度。
+                await self._circuit.on_success()
                 set_span_attributes(
                     span,
                     {

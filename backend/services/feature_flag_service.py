@@ -11,6 +11,8 @@ from typing import Any
 import httpx
 from growthbook import GrowthBook
 
+from backend.core.circuit_breaker import CircuitBreaker
+from backend.core.exceptions import AppException
 from backend.models.orm.user import User
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,8 @@ class FeatureFlagService:
         app_env: str,
         beta_user_email_whitelist: set[str],
         beta_user_phone_whitelist: set[str],
+        circuit_breaker_failure_threshold: int = 5,
+        circuit_breaker_cooldown_seconds: int = 30,
     ) -> None:
         self._growthbook_api_host = growthbook_api_host
         self._growthbook_sdk_key = growthbook_sdk_key
@@ -45,6 +49,11 @@ class FeatureFlagService:
         self._last_fetch_time: float = 0.0
         self._ttl_seconds: float = 30.0
         self._http_client: httpx.AsyncClient | None = None
+        self._circuit = CircuitBreaker(
+            name="growthbook",
+            failure_threshold=circuit_breaker_failure_threshold,
+            cooldown_seconds=circuit_breaker_cooldown_seconds,
+        )
 
     def _get_http_client(self) -> httpx.AsyncClient:
         if self._http_client is None:
@@ -66,6 +75,13 @@ class FeatureFlagService:
             if self._growthbook_sdk_key == "sdk-dummy-key-for-development":
                 return self._features_cache
 
+            # 断路器打开时跳过 CDN 拉取（省去超时等待），直接沿用本地缓存。
+            try:
+                await self._circuit.acquire()
+            except AppException:
+                logger.warning("GrowthBook CDN 熔断保护中，沿用本地缓存特征开关")
+                return self._features_cache
+
             url = f"{self._growthbook_api_host}/api/features/{self._growthbook_sdk_key}"
             try:
                 client = self._get_http_client()
@@ -73,15 +89,18 @@ class FeatureFlagService:
                 if response.status_code == 200:
                     self._features_cache = response.json().get("features", {})
                     self._last_fetch_time = current_time
+                    await self._circuit.on_success()
                     logger.info(
                         "Successfully synchronized Feature Flags from GrowthBook Cloud CDN."
                     )
                 else:
+                    await self._circuit.on_failure()
                     logger.warning(
                         "GrowthBook API returned non-200 status: %s",
                         response.status_code,
                     )
             except Exception as e:
+                await self._circuit.on_failure()
                 logger.error("Error syncing with GrowthBook Cloud CDN: %s", e)
         return self._features_cache
 

@@ -9,7 +9,7 @@ import urllib.error
 import pytest
 
 from backend.ai.providers.rerank.dashscope_rerank import DashScopeRerankService
-from backend.core.exceptions import AppException
+from backend.core.exceptions import AppException, app_service_error
 
 
 def _real_service() -> DashScopeRerankService:
@@ -193,3 +193,45 @@ def test_parse_rankings_raises_empty_results() -> None:
         )
 
     assert exc_info.value.code == "DASHSCOPE_RERANK_EMPTY_RESULTS"
+
+
+# ── 断路器（确认 rerank 熔断模板在第二个 provider 同样生效） ──────────
+
+
+class FailingDashScopeRerankService(DashScopeRerankService):
+    """每次 _post_rerank 都抛下游错误，用于驱动断路器。"""
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(
+            base_url="https://dashscope.aliyuncs.com/compatible-api/v1",
+            api_key="sk-dashscope-test",
+            model_name="qwen3-rerank",
+            **kwargs,
+        )
+        self.calls = 0
+
+    def _post_rerank(self, payload: dict) -> dict:
+        self.calls += 1
+        raise app_service_error(
+            "DashScope rerank API 网络错误",
+            code="DASHSCOPE_RERANK_NETWORK_ERROR",
+        )
+
+
+async def test_rerank_circuit_breaker_opens_after_threshold_failures() -> None:
+    service = FailingDashScopeRerankService(
+        circuit_breaker_failure_threshold=2,
+        circuit_breaker_cooldown_seconds=60,
+    )
+
+    for _ in range(2):
+        with pytest.raises(AppException) as exc_info:
+            await service.rerank(query_text="q", documents=["doc"], top_k=1)
+        assert exc_info.value.code == "DASHSCOPE_RERANK_NETWORK_ERROR"
+
+    assert service.calls == 2
+
+    with pytest.raises(AppException) as exc_info:
+        await service.rerank(query_text="q", documents=["doc"], top_k=1)
+    assert exc_info.value.code == "CIRCUIT_BREAKER_OPEN"
+    assert service.calls == 2

@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 
 from backend.config.ai_settings import ai_settings
 from backend.contracts.interfaces import AbstractExternalContextProvider
+from backend.core.circuit_breaker import CircuitBreaker
+from backend.core.exceptions import AppException
 from backend.observability.trace_utils import set_span_attributes, trace_span
 
 logger = logging.getLogger(__name__)
@@ -62,6 +64,8 @@ class TavilyExternalContextProvider(AbstractExternalContextProvider):
         api_key: str | None = None,
         base_url: str | None = None,
         timeout_seconds: int | None = None,
+        circuit_breaker_failure_threshold: int | None = None,
+        circuit_breaker_cooldown_seconds: int | None = None,
     ) -> None:
         self._api_key = api_key or ai_settings.TAVILY_API_KEY
         self._base_url = (base_url or ai_settings.TAVILY_BASE_URL).rstrip("/")
@@ -69,6 +73,17 @@ class TavilyExternalContextProvider(AbstractExternalContextProvider):
             timeout_seconds or ai_settings.EXTERNAL_CONTEXT_TIMEOUT_SECONDS
         )
         self._client: httpx.AsyncClient | None = None
+        self._circuit = CircuitBreaker(
+            name="external_context:tavily",
+            failure_threshold=(
+                circuit_breaker_failure_threshold
+                or ai_settings.EXTERNAL_CONTEXT_CIRCUIT_BREAKER_FAILURE_THRESHOLD
+            ),
+            cooldown_seconds=(
+                circuit_breaker_cooldown_seconds
+                or ai_settings.EXTERNAL_CONTEXT_CIRCUIT_BREAKER_COOLDOWN_SECONDS
+            ),
+        )
 
     @property
     def provider_name(self) -> str:
@@ -81,6 +96,13 @@ class TavilyExternalContextProvider(AbstractExternalContextProvider):
 
     async def search(self, *, query_text: str, top_k: int) -> list[Any]:
         if not self._api_key or not query_text.strip() or top_k <= 0:
+            return []
+
+        # 断路器打开时快速失败：跳过外部调用，直接降级为空结果。
+        try:
+            await self._circuit.acquire()
+        except AppException as exc:
+            logger.warning("Tavily 外部上下文检索熔断中，降级为空结果: %s", exc)
             return []
 
         try:
@@ -107,10 +129,12 @@ class TavilyExternalContextProvider(AbstractExternalContextProvider):
                 response.raise_for_status()
                 chunks = self._parse_response(response.json(), top_k=top_k)
                 set_span_attributes(span, {"external_context.hit_count": len(chunks)})
-                return chunks
         except Exception as exc:
+            await self._circuit.on_failure()
             logger.warning("Tavily 外部上下文检索失败，降级为空结果: %s", exc)
             return []
+        await self._circuit.on_success()
+        return chunks
 
     def _parse_response(
         self,
