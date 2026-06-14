@@ -102,9 +102,31 @@ jobs:
       - name: Unit tests
         run: make frontend-test
 
+      # Coverage is report-only for now: v8 instrumentation surfaces a pre-existing
+      # late react-dom scheduler teardown error (plain `make frontend-test` is clean).
+      # Thresholds (floors) are configured in vitest.config.ts; drop continue-on-error
+      # to enforce them once that teardown race is resolved. See assessment doc §9.
+      - name: Coverage (report-only)
+        continue-on-error: true
+        run: make frontend-test-coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontend-coverage
+          path: frontend/apps/admin/coverage/**
+          if-no-files-found: ignore
+
       - name: Build
         run: make frontend-build
 
       # Mock e2e runs in PR Gate CI only; merges are gated by branch protection.
       - name: Bundle size check
         run: make frontend-bundle-check
+
+      # Exercises the Cloudflare Pages production build form (CF_PAGES=1 +
+      # VITE_API_BASE_URL) and asserts dist/_headers carries a real CSP report-only.
+      # Runs last because it overwrites dist/ with the prod-form output.
+      - name: Pages production build check
+        run: make frontend-build-pages-check

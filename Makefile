@@ -105,7 +105,7 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 
 .PHONY: help \
 	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-skill-check qa-standards-fast qa-claude-fast qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
-	frontend-lint frontend-typecheck frontend-test frontend-build frontend-bundle-check frontend-e2e-mock frontend-e2e-smoke frontend-check \
+	frontend-lint frontend-typecheck frontend-test frontend-test-coverage frontend-build frontend-bundle-check frontend-build-pages-check frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all release-check-clean image-build-release frontend-image-build-release image-build-all-release release-image-env release-tag \
 	docker-prune-stale-infra \
 		deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down deploy-cloudwatch-setup \
@@ -151,8 +151,10 @@ help:
 		'  frontend-lint        Run frontend ESLint checks' \
 		'  frontend-typecheck   Run frontend TypeScript checks' \
 		'  frontend-test        Run the frontend unit/smoke tests' \
+		'  frontend-test-coverage  Run frontend unit tests with v8 coverage report' \
 		'  frontend-build       Build the frontend app bundle' \
 		'  frontend-bundle-check  Check gzip bundle size against bundle-baseline.json' \
+		'  frontend-build-pages-check  Build in Pages prod form and verify dist/_headers CSP' \
 		'  frontend-e2e-mock    Run frontend Playwright tests with mocked API routes' \
 		'  frontend-e2e-smoke   Run frontend Playwright smoke tests against a real backend' \
 		'  frontend-check        Run frontend lint, typecheck, tests, and build' \
@@ -286,11 +288,26 @@ frontend-typecheck:
 frontend-test:
 	pnpm --dir "$(FRONTEND_DIR)" --filter "$(FRONTEND_APP)" test
 
+frontend-test-coverage:
+	pnpm --dir "$(FRONTEND_DIR)" --filter "$(FRONTEND_APP)" test:coverage
+
 frontend-build:
 	pnpm --dir "$(FRONTEND_DIR)" --filter "$(FRONTEND_APP)" build
 
 frontend-bundle-check:
 	pnpm --dir "$(FRONTEND_DIR)" --filter "$(FRONTEND_APP)" bundle:check
+
+# Exercises the Cloudflare Pages production build form (CF_PAGES=1 + VITE_API_BASE_URL),
+# which plain frontend-build never does, then asserts dist/_headers carries a real
+# CSP report-only with a concrete report-uri and no placeholder tokens.
+frontend-build-pages-check:
+	VITE_API_BASE_URL=https://api.example.com CF_PAGES=1 \
+		pnpm --dir "$(FRONTEND_DIR)" --filter "$(FRONTEND_APP)" build
+	@headers="$(FRONTEND_DIR)/apps/$(FRONTEND_APP)/dist/_headers"; \
+		grep -q 'Content-Security-Policy-Report-Only:' "$$headers" || { echo "FAIL: dist/_headers missing CSP report-only"; exit 1; }; \
+		grep -q 'report-uri https://api.example.com/api/v1/csp/reports' "$$headers" || { echo "FAIL: dist/_headers missing concrete report-uri"; exit 1; }; \
+		! grep -q '<domain>' "$$headers" || { echo "FAIL: dist/_headers contains placeholder token"; exit 1; }; \
+		echo "OK: production-form dist/_headers verified"
 
 frontend-e2e-mock:
 	pnpm --dir "$(FRONTEND_DIR)" --filter "$(FRONTEND_APP)" test:e2e:mock
