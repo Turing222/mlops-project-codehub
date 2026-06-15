@@ -53,11 +53,13 @@ fi
 REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 log_section "Bootstrapping GitHub gate settings for $REPO (P0 + P1)"
 
-log_section "P0 — repository secrets"
+log_section "P0 — repository secrets (Actions + Dependabot)"
 log_info "Setting E2E_SMOKE_USER (default: seed_admin; override with BOOTSTRAP_E2E_SMOKE_USER)"
 run_gh secret set E2E_SMOKE_USER --body "$E2E_SMOKE_USER_VALUE"
+run_gh secret set E2E_SMOKE_USER --app dependabot --body "$E2E_SMOKE_USER_VALUE"
 log_info "Setting E2E_SMOKE_PASS (must stay in sync with scripts/seed/dev_seed.py SEED_PASSWORD)"
 run_gh secret set E2E_SMOKE_PASS --body "$E2E_SMOKE_PASS_VALUE"
+run_gh secret set E2E_SMOKE_PASS --app dependabot --body "$E2E_SMOKE_PASS_VALUE"
 
 log_warn "BRANCH_PROTECTION_READ_TOKEN must be created manually in GitHub UI:"
 log_warn "  Settings → Secrets → Actions → New repository secret"
