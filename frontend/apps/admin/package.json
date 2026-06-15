@@ -24,8 +24,8 @@
     "axios": "^1.17.0",
     "i18next": "^24.2.2",
     "lucide-react": "^0.563.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "react-i18next": "^15.4.0",
     "react-router-dom": "^7.17.0",
     "web-vitals": "^5.3.0",
@@ -33,16 +33,16 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.1",
+    "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.60.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@types/node": "^24.10.1",
-    "@types/react": "^19.2.5",
+    "@types/node": "^24.10.15",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.1",
-    "@vitest/coverage-v8": "4.1.4",
+    "@vitejs/plugin-react": "^5.1.4",
+    "@vitest/coverage-v8": "4.1.9",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
@@ -54,6 +54,6 @@
     "typescript-eslint": "^8.46.4",
     "typescript-language-server": "^5.3.0",
     "vite": "^7.2.4",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.9"
   }
 }
