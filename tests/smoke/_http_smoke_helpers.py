@@ -4,6 +4,8 @@
 边界：只使用 SMOKE_* 指向的运行中环境，不读取 L1 的 TEST_* 配置。
 """
 
+# ci: trigger docker smoke for PR gate
+
 from __future__ import annotations
 
 import asyncio
