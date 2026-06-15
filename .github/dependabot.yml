@@ -11,6 +11,11 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "docker"
     directory: "/"
@@ -23,6 +28,11 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "npm"
     directory: "/frontend"
@@ -35,6 +45,11 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "docker"
     directory: "/frontend/apps/admin"
@@ -47,6 +62,11 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -59,3 +79,8 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
