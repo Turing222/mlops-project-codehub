@@ -8,11 +8,19 @@ import {
     smsLoginRequestSchema,
     smsSendRequestSchema,
     smsSendResponseSchema,
+    systemAuthConfigSchema,
 } from '../schemas/auth';
 import { parseWithSchema } from '../schemas/parse';
 import { userRegistrationPayloadSchema, userSchema } from '../schemas/user';
 import type { LoginCredentials, UserRegistrationPayload } from '../types/user';
 import { API_URLS } from './urls';
+
+export const getAuthConfigAPI = () =>
+    request
+        .get<unknown, unknown>(API_URLS.AUTH.CONFIG)
+        .then((response) =>
+            parseWithSchema(systemAuthConfigSchema, response, '系统认证配置响应格式无效'),
+        );
 
 export const loginAPI = (data: LoginCredentials) => {
     const payload = loginCredentialsSchema.parse(data);

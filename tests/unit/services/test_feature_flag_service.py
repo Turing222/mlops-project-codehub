@@ -28,6 +28,7 @@ async def test_get_system_features_default(
     features = await feature_flag_service.get_system_features()
     assert features["enable-public-registration"] is True
     assert features["enable-closed-beta-login"] is False
+    assert features["enable-password-login"] is False
 
 
 @pytest.mark.asyncio

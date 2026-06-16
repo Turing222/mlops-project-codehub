@@ -118,6 +118,9 @@ class FeatureFlagService:
             "enable-closed-beta-login": self._eval_flag(
                 gb, "enable-closed-beta-login", features_dict, False
             ),
+            "enable-password-login": self._eval_flag(
+                gb, "enable-password-login", features_dict, False
+            ),
         }
 
         for key, default in _AI_SYSTEM_FLAG_DEFAULTS.items():

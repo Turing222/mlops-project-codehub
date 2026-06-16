@@ -111,7 +111,7 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 		deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down deploy-cloudwatch-setup \
 	deploy-local-prod-secrets-prepare deploy-local-prod-check deploy-local-prod-up deploy-local-prod-wait deploy-local-prod-verify deploy-local-prod-logs deploy-local-prod-down \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-up-debug env-smoke-wait env-smoke-down env-smoke-logs \
-	set-llm seed-dev \
+	set-llm seed-dev seed-prod-bootstrap \
 	pr-report ci-bootstrap-github-gate \
 	verify-smoke verify-pages \
 	security-scan-deps security-scan-images security-scan-fast security-scan-full \
@@ -186,6 +186,7 @@ help:
 		'  env-smoke-wait       Wait until the smoke environment is reachable' \
 		'  set-llm              Advanced: configure smoke LLM secrets/env' \
 		'  seed-dev             Seed fixed local data for admin/permission testing' \
+		'  seed-prod-bootstrap  Bootstrap one manual-test user for deployed environments' \
 		'  pr-report            Generate a local PR readiness Markdown report' \
 		'  ci-bootstrap-github-gate  Bootstrap GitHub secrets/vars and optional branch protection (needs gh)' \
 		'  verify-smoke         Run smoke HTTP checks against the running stack' \
@@ -439,6 +440,9 @@ set-llm:
 
 seed-dev:
 	uv run python scripts/seed/dev_seed.py $(ARGS)
+
+seed-prod-bootstrap:
+	uv run python scripts/seed/prod_bootstrap_user.py $(ARGS)
 
 pr-report:
 	uv run python scripts/qa/pr_report.py $(ARGS)

@@ -3,6 +3,24 @@ import { mockAuthResponse, mockUser } from './api-mocks';
 
 const AUTH_STORAGE_KEY = 'auth-storage';
 
+export async function mockAuthConfigRoute(
+  page: Page,
+  overrides: Record<string, boolean> = {},
+) {
+  await page.route('**/api/v1/auth/config', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        'enable-public-registration': true,
+        'enable-closed-beta-login': false,
+        'enable-password-login': false,
+        ...overrides,
+      }),
+    });
+  });
+}
+
 export async function mockLoginRoute(
   page: Page,
   userOverrides: Record<string, unknown> = {},
@@ -75,4 +93,16 @@ export async function performLogin(
   await page.locator('.auth-modal').locator('input#phone-login_phone').fill(phone);
   await page.locator('.auth-modal').locator('input[maxlength="6"]').fill(code);
   await page.locator('.auth-modal').locator('button[type="submit"]').click();
+}
+
+export async function performPasswordLogin(
+  page: Page,
+  username = 'staff_user',
+  password = 'password123',
+) {
+  await page.getByTestId('user-menu-btn').click();
+  await page.getByTestId('password-login-username').waitFor({ state: 'visible' });
+  await page.getByTestId('password-login-username').fill(username);
+  await page.getByTestId('password-login-password').fill(password);
+  await page.getByTestId('password-login-submit').click();
 }

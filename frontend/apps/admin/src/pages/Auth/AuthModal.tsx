@@ -2,12 +2,15 @@ import React from 'react';
 import { Modal, Divider } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/useAuth';
+import { usePasswordLoginEnabled } from '../../query/hooks/system-auth-config';
+import PasswordLoginForm from '../../features/auth/PasswordLoginForm';
 import PhoneLoginForm from './PhoneLoginForm';
 import GoogleLoginButton from './GoogleLoginButton';
 
 const AuthModal: React.FC = () => {
     const { showAuthModal, setShowAuthModal } = useAuth();
     const { t } = useTranslation();
+    const passwordLoginEnabled = usePasswordLoginEnabled();
 
     const handleClose = () => {
         setShowAuthModal(false);
@@ -48,6 +51,18 @@ const AuthModal: React.FC = () => {
                 </div>
                 <div style={{ color: '#999', fontSize: 14 }}>{t('auth.subtitle')}</div>
             </div>
+
+            {passwordLoginEnabled ? (
+                <>
+                    <div style={{ marginBottom: 8, fontSize: 13, color: '#999', textAlign: 'center' }}>
+                        {t('auth.staff_login_hint')}
+                    </div>
+                    <PasswordLoginForm />
+                    <Divider style={{ margin: '20px 0', fontSize: 13, color: '#999' }}>
+                        {t('auth.or')}
+                    </Divider>
+                </>
+            ) : null}
 
             <PhoneLoginForm />
 

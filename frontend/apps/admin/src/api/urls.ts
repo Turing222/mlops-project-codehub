@@ -20,6 +20,7 @@ export const resolveApiUrl = (path: string): string => {
 
 export const API_URLS = {
     AUTH: {
+        CONFIG: `${API_PREFIX}/auth/config`,
         LOGIN: `${API_PREFIX}/auth/login`,
         REGISTER: `${API_PREFIX}/auth/register`,
         REFRESH_TOKEN: `${API_PREFIX}/auth/refresh`,

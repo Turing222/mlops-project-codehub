@@ -34,6 +34,8 @@ export const googleCallbackRequestSchema = z.object({
     redirect_uri: z.string().min(1),
 });
 
+export const systemAuthConfigSchema = z.record(z.string(), z.boolean());
+
 export type LoginCredentials = z.infer<typeof loginCredentialsSchema>;
 export type AuthResponse = z.infer<typeof authResponseSchema>;
 export type SMSSendRequest = z.infer<typeof smsSendRequestSchema>;
