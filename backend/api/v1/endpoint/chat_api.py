@@ -122,6 +122,7 @@ async def query_stream(
 
     事件格式:
     - data: {"type":"meta","session_id":"...","session_title":"...","message_id":"..."}
+    - data: {"type":"step","step":"...","status":"running|done|skipped","metrics":{...}}
     - data: {"type":"chunk","content":"..."}
     - data: {"type":"error","message":"..."}
     - data: [DONE]

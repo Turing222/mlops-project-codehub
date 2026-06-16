@@ -225,7 +225,7 @@ describe('useChatController', () => {
         }
     });
 
-    it('advances trace steps on onMeta', async () => {
+    it('advances trace steps from worker step events', async () => {
         let capturedCallbacks: Partial<StreamCallbacks> = {};
 
         mockStreamChatQuery.mockImplementation((_options: StreamOptions, callbacks: StreamCallbacks) => {
@@ -246,10 +246,26 @@ describe('useChatController', () => {
         });
 
         act(() => {
+            capturedCallbacks.onStarted?.({ type: 'started' });
             capturedCallbacks.onMeta!({ type: 'meta', session_id: 's1', session_title: 'Test', message_id: 'm1' });
+            capturedCallbacks.onStep?.({
+                type: 'step',
+                step: 'router-judge',
+                status: 'running',
+            });
+            capturedCallbacks.onStep?.({
+                type: 'step',
+                step: 'router-judge',
+                status: 'done',
+                metrics: { planner_ms: 5 },
+            });
+            capturedCallbacks.onStep?.({
+                type: 'step',
+                step: 'kb-search',
+                status: 'running',
+            });
         });
 
-        // Steps 0-1 should be done, step 2 (kb-search) running, others skipped
         expect(result.current.traceSteps[0].status).toBe('done');
         expect(result.current.traceSteps[1].status).toBe('done');
         expect(result.current.traceSteps[2].status).toBe('running');
@@ -258,7 +274,7 @@ describe('useChatController', () => {
         expect(result.current.traceSteps[4].status).toBe('skipped');
     });
 
-    it('advances trace steps on first onChunk', async () => {
+    it('advances trace steps on generate-answer step event', async () => {
         let capturedCallbacks: Partial<StreamCallbacks> = {};
 
         mockStreamChatQuery.mockImplementation((_options: StreamOptions, callbacks: StreamCallbacks) => {
@@ -280,10 +296,11 @@ describe('useChatController', () => {
 
         act(() => {
             capturedCallbacks.onMeta!({ type: 'meta', session_id: 's1', session_title: 'Test', message_id: 'm1' });
-        });
-
-        act(() => {
-            capturedCallbacks.onChunk!({ type: 'chunk', content: 'Hello' });
+            capturedCallbacks.onStep?.({
+                type: 'step',
+                step: 'generate-answer',
+                status: 'running',
+            });
         });
 
         expect(result.current.traceSteps[6].status).toBe('running');
@@ -350,6 +367,11 @@ describe('useChatController', () => {
 
         act(() => {
             capturedCallbacks.onMeta!({ type: 'meta', session_id: 's1', session_title: 'Test', message_id: 'm1' });
+            capturedCallbacks.onStep?.({
+                type: 'step',
+                step: 'kb-search',
+                status: 'running',
+            });
         });
 
         // Step 2 (kb-search) is running at this point

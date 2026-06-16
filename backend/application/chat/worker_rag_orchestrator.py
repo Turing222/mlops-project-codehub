@@ -5,8 +5,11 @@
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
+
+from backend.application.chat.stream_events import StepStatus
 
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.application.chat.timing import elapsed_ms, merge_metrics, perf_start
@@ -34,6 +37,22 @@ from backend.services.rag_planning_service import (
 from backend.services.rag_service import select_rerank_fallback_candidates
 
 logger = logging.getLogger(__name__)
+
+StepCallback = Callable[
+    [str, StepStatus, dict[str, object] | None],
+    Awaitable[None],
+]
+
+
+async def _emit_step(
+    on_step: StepCallback | None,
+    step: str,
+    status: StepStatus,
+    metrics: dict[str, object] | None = None,
+) -> None:
+    if on_step is not None:
+        await on_step(step, status, metrics)
+
 
 _FLAGS_ATTRS: dict[str, str] = {
     "enable_external_context": "feature_flags.enable_external_context",
@@ -78,6 +97,7 @@ class WorkerRAGOrchestrator:
     async def prepare_context(
         self,
         payload: GenerationPayload,
+        on_step: StepCallback | None = None,
     ) -> PreparedGenerationContext:
         with trace_span(
             "taskiq.llm_stream.prepare_context",
@@ -87,6 +107,7 @@ class WorkerRAGOrchestrator:
             },
         ) as span:
             metrics: dict[str, object] = {}
+            await _emit_step(on_step, "router-judge", "running")
             planner_started = perf_start()
             rag_plan, planner_used = await self.build_rag_plan(payload)
             self._debug_log_rag_plan(
@@ -108,6 +129,16 @@ class WorkerRAGOrchestrator:
             metrics["model_route_confidence"] = rag_plan.model_route_confidence
             metrics["model_route_reason"] = rag_plan.model_route_reason
             metrics["external_context_planned"] = rag_plan.should_use_external_context
+            await _emit_step(
+                on_step,
+                "router-judge",
+                "done",
+                {
+                    "planner_ms": metrics["planner_ms"],
+                    "planner_used": planner_used,
+                    "route_reason": metrics.get("route_reason"),
+                },
+            )
 
             preflight_refusal = self._build_planner_preflight_refusal(
                 payload=payload,
@@ -140,11 +171,15 @@ class WorkerRAGOrchestrator:
                     model_route_reason=rag_plan.model_route_reason,
                 )
 
+            if rag_plan.should_use_rag:
+                await _emit_step(on_step, "kb-search", "running")
             retrieve_started = perf_start()
             rag_candidates = await self.retrieve_rag_candidates(payload, rag_plan)
             metrics["retrieve_ms"] = elapsed_ms(retrieve_started)
             metrics["rag_candidate_count"] = len(rag_candidates)
 
+            if rag_plan.should_use_external_context:
+                await _emit_step(on_step, "web-search", "running")
             external_started = perf_start()
             external_candidates = await self.retrieve_external_context_candidates(
                 payload,
@@ -157,6 +192,19 @@ class WorkerRAGOrchestrator:
             metrics["external_context_provider"] = (
                 provider.provider_name if provider and external_candidates else None
             )
+            if rag_plan.should_use_external_context:
+                await _emit_step(
+                    on_step,
+                    "web-search",
+                    "done",
+                    {
+                        "external_context_ms": metrics["external_context_ms"],
+                        "external_context_hit_count": metrics[
+                            "external_context_hit_count"
+                        ],
+                        "external_context_used": metrics["external_context_used"],
+                    },
+                )
 
             candidates = [*rag_candidates, *external_candidates]
             metrics["candidate_count"] = len(candidates)
@@ -169,6 +217,18 @@ class WorkerRAGOrchestrator:
             )
             metrics["rerank_ms"] = elapsed_ms(rerank_started)
             metrics["hit_count"] = len(reranked_chunks)
+            if rag_plan.should_use_rag:
+                await _emit_step(
+                    on_step,
+                    "kb-search",
+                    "done",
+                    {
+                        "retrieve_ms": metrics["retrieve_ms"],
+                        "rerank_ms": metrics["rerank_ms"],
+                        "hit_count": metrics["hit_count"],
+                        "rag_candidate_count": metrics["rag_candidate_count"],
+                    },
+                )
             self._debug_log_final_chunks(
                 payload=payload,
                 chunks=reranked_chunks,

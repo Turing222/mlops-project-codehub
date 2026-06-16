@@ -15,11 +15,13 @@ import redis.asyncio as redis
 from backend.application.chat.session_orchestrator import ChatSessionOrchestrator
 from backend.application.chat.stream_events import (
     SSEEvent,
+    StreamEvent,
     chunk_event,
     decode_stream_event,
     done_event,
     error_event,
     meta_event,
+    step_event,
 )
 from backend.application.chat.timing import elapsed_ms, merge_metrics, perf_start
 from backend.config.settings import settings
@@ -205,6 +207,18 @@ class ChatWorkflow:
                 return data
             return None
 
+        def _yield_worker_event(event: StreamEvent) -> SSEEvent | None:
+            event_type = event.get("type")
+            if event_type == "step":
+                return step_event(
+                    step=str(event.get("step") or ""),
+                    status=event.get("status") or "running",
+                    metrics=event.get("metrics"),
+                )
+            if event_type == "chunk":
+                return chunk_event(str(event.get("content") or ""))
+            return None
+
         try:
             with trace_span(
                 "chat.stream.consume_worker_stream",
@@ -247,12 +261,25 @@ class ChatWorkflow:
                             f"Taskiq 队列执行 LLM 错误: {event.get('message', '')}",
                             code="LLM_TASK_FAILED",
                         )
-                    else:
+                    elif event_type == "step":
+                        sse_step = _yield_worker_event(event)
+                        if sse_step is not None:
+                            yield sse_step
+                        continue
+                    elif event_type == "chunk":
                         content = event.get("content", "")
                         e2e_first_token_ms = elapsed_ms(request_started)
                         accumulated_content.append(content)
                         yield chunk_event(content)
-                    break
+                        break
+                    else:
+                        content = event.get("content", "")
+                        if content:
+                            e2e_first_token_ms = elapsed_ms(request_started)
+                            accumulated_content.append(content)
+                            yield chunk_event(content)
+                            break
+                        continue
                 else:
                     raise app_service_error(
                         "LLM 响应超时，请稍后重试", code="LLM_TIMEOUT"
@@ -292,11 +319,24 @@ class ChatWorkflow:
                                 f"Taskiq 队列执行 LLM 错误: {event.get('message', '')}",
                                 code="LLM_TASK_FAILED",
                             )
+                        if event_type == "step":
+                            sse_step = _yield_worker_event(event)
+                            if sse_step is not None:
+                                yield sse_step
+                            continue
+                        if event_type == "chunk":
+                            content = event.get("content", "")
+                            if e2e_first_token_ms is None:
+                                e2e_first_token_ms = elapsed_ms(request_started)
+                            accumulated_content.append(content)
+                            yield chunk_event(content)
+                            continue
                         content = event.get("content", "")
-                        if e2e_first_token_ms is None:
-                            e2e_first_token_ms = elapsed_ms(request_started)
-                        accumulated_content.append(content)
-                        yield chunk_event(content)
+                        if content:
+                            if e2e_first_token_ms is None:
+                                e2e_first_token_ms = elapsed_ms(request_started)
+                            accumulated_content.append(content)
+                            yield chunk_event(content)
 
                 if not done_received:
                     raise app_service_error(

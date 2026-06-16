@@ -35,6 +35,17 @@ describe('schema layer', () => {
         expect(result.success).toBe(true);
     });
 
+    it('parses chat stream step events from the backend', () => {
+        const result = chatStreamEventSchema.safeParse({
+            type: 'step',
+            step: 'kb-search',
+            status: 'done',
+            metrics: { hit_count: 3, retrieve_ms: 12 },
+        });
+
+        expect(result.success).toBe(true);
+    });
+
     it('successfully parses chatSessionSchema when kb_id is null', () => {
         const result = chatSessionSchema.safeParse({
             id: 's1',

@@ -12,7 +12,9 @@ from typing import Literal, TypedDict
 # Internal Redis channel event types (Worker → Web)
 # ---------------------------------------------------------------------------
 
-StreamEventType = Literal["chunk", "error", "done", "meta", "started"]
+StreamEventType = Literal["chunk", "error", "done", "meta", "started", "step"]
+
+StepStatus = Literal["running", "done", "skipped"]
 
 
 class StreamEvent(TypedDict, total=False):
@@ -21,6 +23,9 @@ class StreamEvent(TypedDict, total=False):
     type: StreamEventType
     content: str
     message: str
+    step: str
+    status: StepStatus
+    metrics: dict[str, object]
 
 
 def stream_chunk_event(content: str) -> StreamEvent:
@@ -39,6 +44,17 @@ def stream_started_event() -> StreamEvent:
     return {"type": "started"}
 
 
+def stream_step_event(
+    step: str,
+    status: StepStatus,
+    metrics: dict[str, object] | None = None,
+) -> StreamEvent:
+    event: StreamEvent = {"type": "step", "step": step, "status": status}
+    if metrics:
+        event["metrics"] = metrics
+    return event
+
+
 def encode_chunk_event(content: str) -> str:
     return json.dumps(stream_chunk_event(content), ensure_ascii=False)
 
@@ -53,6 +69,18 @@ def encode_done_event() -> str:
 
 def encode_started_event() -> str:
     return json.dumps(stream_started_event(), ensure_ascii=False)
+
+
+def encode_step_event(
+    *,
+    step: str,
+    status: StepStatus,
+    metrics: dict[str, object] | None = None,
+) -> str:
+    return json.dumps(
+        stream_step_event(step, status, metrics),
+        ensure_ascii=False,
+    )
 
 
 def encode_meta_event(
@@ -88,6 +116,16 @@ def decode_stream_event(payload: str) -> StreamEvent:
         return stream_done_event()
     if event_type == "started":
         return stream_started_event()
+    if event_type == "step":
+        status = data.get("status")
+        if status not in {"running", "done", "skipped"}:
+            status = "running"
+        metrics = data.get("metrics")
+        return stream_step_event(
+            str(data.get("step") or ""),
+            status,
+            metrics if isinstance(metrics, dict) else None,
+        )
     return _decode_legacy_payload(payload)
 
 
@@ -133,7 +171,16 @@ class DoneEvent(TypedDict):
     type: Literal["done"]
 
 
-SSEEvent = MetaEvent | ChunkEvent | ErrorEvent | DoneEvent
+class StepEvent(TypedDict, total=False):
+    """Agent trace step progress event."""
+
+    type: Literal["step"]
+    step: str
+    status: StepStatus
+    metrics: dict[str, object]
+
+
+SSEEvent = MetaEvent | ChunkEvent | ErrorEvent | DoneEvent | StepEvent
 
 
 def meta_event(
@@ -160,3 +207,15 @@ def error_event(message: str) -> ErrorEvent:
 
 def done_event() -> DoneEvent:
     return {"type": "done"}
+
+
+def step_event(
+    *,
+    step: str,
+    status: StepStatus,
+    metrics: dict[str, object] | None = None,
+) -> StepEvent:
+    event: StepEvent = {"type": "step", "step": step, "status": status}
+    if metrics:
+        event["metrics"] = metrics
+    return event

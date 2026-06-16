@@ -10,6 +10,7 @@ import { streamChatQuery } from '../../streams/chat-stream';
 import { getDefaultKBAPI, uploadKBFileAPI, getKBTaskStatusAPI } from '../../api/knowledge';
 import { submitRepoReadmeCheckAPI } from '../../api/repo-analysis';
 import type { ChatMessage, ChatSession } from '../../types/chat';
+import type { ChatStreamStepEvent } from '../../schemas/chat';
 import {
     applyTraceMetricsToSteps,
     createInitialTraceSteps,
@@ -196,6 +197,56 @@ export function useChatController(): UseChatControllerReturn {
         });
     }, []);
 
+    const handleStreamStep = useCallback((event: ChatStreamStepEvent) => {
+        const now = Date.now();
+        const targetIdx = TRACE_STEP_DEFS.findIndex((def) => def.id === event.step);
+        if (targetIdx === -1) return;
+
+        setTraceSteps((prev) =>
+            prev.map((step, idx) => {
+                if (step.id === event.step) {
+                    if (event.status === 'running') {
+                        return {
+                            ...step,
+                            status: 'running' as const,
+                            startedAt: step.startedAt ?? now,
+                        };
+                    }
+                    if (event.status === 'skipped') {
+                        return {
+                            ...step,
+                            status: 'skipped' as const,
+                            finishedAt: now,
+                        };
+                    }
+                    const durationMs =
+                        step.startedAt !== null ? now - step.startedAt : step.durationMs;
+                    return {
+                        ...step,
+                        status: 'done' as const,
+                        finishedAt: now,
+                        durationMs,
+                        metricDetails: event.metrics,
+                    };
+                }
+                if (
+                    event.status === 'running' &&
+                    idx < targetIdx &&
+                    step.status !== 'done' &&
+                    step.status !== 'error' &&
+                    step.status !== 'skipped'
+                ) {
+                    return { ...step, status: 'done' as const, finishedAt: now };
+                }
+                return step;
+            }),
+        );
+
+        if (event.status === 'running') {
+            advanceToStep(event.step);
+        }
+    }, [advanceToStep]);
+
     const sendQuery = useCallback(async (text: string, options?: SendMessageOptions) => {
         const normalizedText = text.trim();
         if (!normalizedText) return;
@@ -315,7 +366,6 @@ export function useChatController(): UseChatControllerReturn {
 
         let runtimeSessionId: string | null = activeSessionId;
         let metaReceived = false;
-        let firstChunkReceived = false;
         let messageId = '';
         let accumulatedContent = '';
 
@@ -360,14 +410,14 @@ export function useChatController(): UseChatControllerReturn {
 
                     setTraceSteps((prev) => {
                         return prev.map((step) => {
-                            if (step.id === 'receive-query' || step.id === 'router-judge') {
+                            if (step.id === 'receive-query') {
                                 return { ...step, status: 'done' as const, finishedAt: now };
                             }
                             if (step.id === 'kb-search') {
                                 if (currentMode === 'normal') {
                                     return { ...step, status: 'skipped' as const, finishedAt: now };
                                 }
-                                return { ...step, status: 'running' as const, startedAt: now };
+                                return step;
                             }
                             if (step.id === 'local-search') {
                                 return { ...step, status: 'skipped' as const, finishedAt: now };
@@ -376,62 +426,11 @@ export function useChatController(): UseChatControllerReturn {
                                 if (currentMode === 'normal' || currentMode === 'rag') {
                                     return { ...step, status: 'skipped' as const, finishedAt: now };
                                 }
-                                return step; // Remain idle for sequential simulation
+                                return step;
                             }
                             return step;
                         });
                     });
-
-                    if (currentMode === 'normal') {
-                        advanceToStep('model-thinking');
-                    } else if (currentMode === 'rag') {
-                        // Simulate sequential delay for kb-search -> model-thinking
-                        tabSwitchTimerRef.current = setTimeout(() => {
-                            setTraceSteps((prev) => {
-                                if (firstChunkReceived) return prev;
-                                return prev.map((step) => {
-                                    if (step.id === 'kb-search' && step.status === 'running') {
-                                        return { ...step, status: 'done' as const, finishedAt: Date.now() };
-                                    }
-                                    if (step.id === 'model-thinking' && step.status === 'idle') {
-                                        return { ...step, status: 'running' as const, startedAt: Date.now() };
-                                    }
-                                    return step;
-                                });
-                            });
-                        }, 600);
-                    } else if (currentMode === 'web_rag') {
-                        // Simulate a sequential delay for kb-search -> web-search -> model-thinking
-                        tabSwitchTimerRef.current = setTimeout(() => {
-                            setTraceSteps((prev) => {
-                                if (firstChunkReceived) return prev;
-                                return prev.map((step) => {
-                                    if (step.id === 'kb-search' && step.status === 'running') {
-                                        return { ...step, status: 'done' as const, finishedAt: Date.now() };
-                                    }
-                                    if (step.id === 'web-search' && step.status === 'idle') {
-                                        return { ...step, status: 'running' as const, startedAt: Date.now() };
-                                    }
-                                    return step;
-                                });
-                            });
-
-                            tabSwitchTimerRef.current = setTimeout(() => {
-                                setTraceSteps((prev) => {
-                                    if (firstChunkReceived) return prev;
-                                    return prev.map((step) => {
-                                        if (step.id === 'web-search' && step.status === 'running') {
-                                            return { ...step, status: 'done' as const, finishedAt: Date.now() };
-                                        }
-                                        if (step.id === 'model-thinking' && step.status === 'idle') {
-                                            return { ...step, status: 'running' as const, startedAt: Date.now() };
-                                        }
-                                        return step;
-                                    });
-                                });
-                            }, 800);
-                        }, 600);
-                    }
 
                     if (!activeSessionId) {
                         setActiveSessionId(event.session_id);
@@ -447,27 +446,12 @@ export function useChatController(): UseChatControllerReturn {
                         queryClient.invalidateQueries({ queryKey: chatKeys.sessions() });
                     }
                 },
+                onStep(event) {
+                    if (newController.signal.aborted) return;
+                    handleStreamStep(event);
+                },
                 onChunk(event) {
                     if (newController.signal.aborted) return;
-                    if (!firstChunkReceived) {
-                        firstChunkReceived = true;
-                        if (tabSwitchTimerRef.current) {
-                            clearTimeout(tabSwitchTimerRef.current);
-                        }
-                        setTraceSteps((prev) => {
-                            const now = Date.now();
-                            return prev.map((step) => {
-                                if (
-                                    (step.id === 'kb-search' || step.id === 'web-search' || step.id === 'model-thinking') &&
-                                    (step.status === 'running' || step.status === 'idle')
-                                ) {
-                                    return { ...step, status: 'done' as const, finishedAt: now };
-                                }
-                                return step;
-                            });
-                        });
-                        advanceToStep('generate-answer');
-                    }
                     accumulatedContent += event.content;
                     setStreamingText((prev) => prev + event.content);
                 },
@@ -581,7 +565,7 @@ export function useChatController(): UseChatControllerReturn {
                 },
             },
         );
-    }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient, chatMode, fetchDefaultKbId, advanceToStep]);
+    }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient, chatMode, fetchDefaultKbId, handleStreamStep]);
 
     const retryFailedMessage = useCallback((messageId: string) => {
         if (import.meta.env.DEV) console.log('[retry] 点击重试, messageId=', messageId, 'isStreaming=', isStreaming);

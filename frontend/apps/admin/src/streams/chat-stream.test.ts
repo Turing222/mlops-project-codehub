@@ -37,6 +37,7 @@ function createFakeSSEResponse(chunks: string[]): Response {
 
 type MockCallbacks = StreamCallbacks & {
     onMeta: Mock<StreamCallbacks['onMeta']>;
+    onStep: Mock<NonNullable<StreamCallbacks['onStep']>>;
     onChunk: Mock<StreamCallbacks['onChunk']>;
     onDone: Mock<StreamCallbacks['onDone']>;
     onError: Mock<StreamCallbacks['onError']>;
@@ -46,6 +47,7 @@ type MockCallbacks = StreamCallbacks & {
 function createCallbacks(): MockCallbacks {
     return {
         onMeta: vi.fn(),
+        onStep: vi.fn(),
         onChunk: vi.fn(),
         onDone: vi.fn(),
         onError: vi.fn(),
@@ -86,6 +88,27 @@ describe('streamChatQuery', () => {
         });
         expect(callbacks.onChunk).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'chunk', content: 'hello' }),
+        );
+    });
+
+    it('invokes onStep for step event', async () => {
+        const sseData =
+            'data: {"type":"step","step":"router-judge","status":"done","metrics":{"planner_ms":12}}\n\n';
+        mockSendQueryStreamAPI.mockResolvedValue(createFakeSSEResponse([sseData]));
+        const callbacks = createCallbacks();
+
+        streamChatQuery({ query: 'test' }, callbacks);
+
+        await vi.waitFor(() => {
+            expect(callbacks.onStep).toHaveBeenCalledOnce();
+        });
+        expect(callbacks.onStep).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'step',
+                step: 'router-judge',
+                status: 'done',
+                metrics: { planner_ms: 12 },
+            }),
         );
     });
 

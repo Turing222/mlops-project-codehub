@@ -7,10 +7,12 @@ import type { ChatStreamEvent } from '../schemas/chat';
 type StartedEvent = Extract<ChatStreamEvent, { type: 'started' }>;
 type MetaEvent = Extract<ChatStreamEvent, { type: 'meta' }>;
 type ChunkEvent = Extract<ChatStreamEvent, { type: 'chunk' }>;
+type StepEvent = Extract<ChatStreamEvent, { type: 'step' }>;
 
 export type StreamCallbacks = {
     onStarted?: (event: StartedEvent) => void;
     onMeta: (event: MetaEvent) => void;
+    onStep?: (event: StepEvent) => void;
     onChunk: (event: ChunkEvent) => void;
     onDone: () => void;
     onError: (error: Error) => void;
@@ -125,6 +127,8 @@ export function streamChatQuery(
                             callbacks.onStarted?.(parsed);
                         } else if (parsed.type === 'meta') {
                             callbacks.onMeta(parsed);
+                        } else if (parsed.type === 'step') {
+                            callbacks.onStep?.(parsed);
                         } else if (parsed.type === 'chunk') {
                             callbacks.onChunk(parsed);
                         } else if (parsed.type === 'error') {

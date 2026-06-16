@@ -22,6 +22,7 @@ from backend.application.chat.worker_guardrail_handler import WorkerGuardrailHan
 from backend.application.chat.worker_persistence_handler import WorkerPersistenceHandler
 from backend.application.chat.worker_rag_orchestrator import (
     PreparedGenerationContext,
+    StepCallback,
     WorkerRAGOrchestrator,
 )
 from backend.application.chat.worker_stream_publisher import WorkerStreamPublisher
@@ -71,6 +72,24 @@ from backend.services.rag_planning_service import (
 from backend.utils.token_estimation import estimate_tokens
 
 logger = logging.getLogger(__name__)
+
+
+def _step_metrics_from_search_context(
+    search_context: dict | None,
+    **extra: object,
+) -> dict[str, object]:
+    """Build SSE step metrics, reading RAG timings from nested search_context.metrics."""
+    metrics: dict[str, object] = {}
+    if search_context is not None:
+        nested = search_context.get("metrics")
+        if isinstance(nested, dict):
+            context_build_ms = nested.get("context_build_ms")
+            if context_build_ms is not None:
+                metrics["context_build_ms"] = context_build_ms
+    for key, value in extra.items():
+        if value is not None:
+            metrics[key] = value
+    return metrics
 
 
 def _provider_for_model_tier(tier: str) -> str:
@@ -169,13 +188,19 @@ class LLMGenerationWorkerWorkflow:
     async def _prepare_generation(
         self,
         payload: GenerationPayload,
+        *,
+        on_step: StepCallback | None = None,
     ) -> _PreparedGeneration:
         """RAG context -> selected LLM + query + tokens + search context.
 
         Raises _RAGRefusalSignal when RAG refuses to answer.
         Raises RuntimeError when assembled prompt is missing.
         """
-        prepared_context = await self.rag_orchestrator.prepare_context(payload)
+        prepared_context = (
+            await self.rag_orchestrator.prepare_context(payload, on_step=on_step)
+            if on_step is not None
+            else await self.rag_orchestrator.prepare_context(payload)
+        )
         if prepared_context.refusal_decision is not None:
             raise _RAGRefusalSignal(search_context=prepared_context.search_context)
         assembled = prepared_context.assembled_prompt
@@ -478,8 +503,20 @@ class LLMGenerationWorkerWorkflow:
                     },
                 )
             try:
+                async def on_step(
+                    step: str,
+                    status: str,
+                    metrics: dict[str, object] | None = None,
+                ) -> None:
+                    await self.stream_publisher.publish_step(
+                        channel,
+                        step,
+                        status,  # type: ignore[arg-type]
+                        metrics,
+                    )
+
                 prepared = self._coerce_prepared_generation(
-                    await self._prepare_generation(payload)
+                    await self._prepare_generation(payload, on_step=on_step)
                 )
             except _RAGRefusalSignal as sig:
                 planner_refusal = bool(
@@ -545,13 +582,20 @@ class LLMGenerationWorkerWorkflow:
                 thinking_duration_ms = None
                 answer_started_time = None
                 answer_duration_ms = None
+                thinking_step_running = False
+                thinking_step_done = False
+                generate_answer_running = False
 
                 async def publish_user_chunk(content: str) -> None:
                     nonlocal first_token_latency_ms
                     nonlocal first_published_from_llm_ms
+                    nonlocal generate_answer_running
                     if first_token_latency_ms is None:
                         first_token_latency_ms = elapsed_ms(worker_started)
                         first_published_from_llm_ms = elapsed_ms(llm_started)
+                    if not generate_answer_running:
+                        generate_answer_running = True
+                        await on_step("generate-answer", "running")
                     await self.stream_publisher.publish_chunk(channel, content)
 
                 async with llm_concurrency_slot(
@@ -577,12 +621,22 @@ class LLMGenerationWorkerWorkflow:
                             if "<think>" in full_so_far:
                                 in_thinking = True
                                 thinking_started_time = perf_start()
+                                if not thinking_step_running:
+                                    thinking_step_running = True
+                                    await on_step("model-thinking", "running")
                             elif answer_started_time is None:
                                 answer_started_time = perf_start()
                         elif in_thinking and "</think>" in full_so_far:
                             in_thinking = False
                             thinking_duration_ms = elapsed_ms(thinking_started_time)
                             answer_started_time = perf_start()
+                            if thinking_step_running and not thinking_step_done:
+                                thinking_step_done = True
+                                await on_step(
+                                    "model-thinking",
+                                    "done",
+                                    {"thinking_duration_ms": thinking_duration_ms},
+                                )
 
                         if citation_filter is not None:
                             cleaned = citation_filter.push(chunk)
@@ -619,6 +673,30 @@ class LLMGenerationWorkerWorkflow:
                             else 0
                         )
 
+                if thinking_step_running and not thinking_step_done:
+                    if thinking_duration_ms is None:
+                        thinking_duration_ms = (
+                            elapsed_ms(thinking_started_time)
+                            if thinking_started_time is not None
+                            else 0
+                        )
+                    thinking_step_done = True
+                    await on_step(
+                        "model-thinking",
+                        "done",
+                        {"thinking_duration_ms": thinking_duration_ms},
+                    )
+
+                if generate_answer_running:
+                    await on_step(
+                        "generate-answer",
+                        "done",
+                        {
+                            "answer_duration_ms": answer_duration_ms,
+                            "llm_generate_ms": llm_generate_ms,
+                        },
+                    )
+
                 full_content = "".join(accumulated_content)
                 if output_blocked:
                     if output_decision is None:
@@ -635,19 +713,34 @@ class LLMGenerationWorkerWorkflow:
                 ):
                     valid_ref_ids = extract_valid_ref_ids(search_context)
                     if valid_ref_ids:
+                        await on_step("organize-citations", "running")
                         citation_validate_started = perf_start()
                         citation_result = validate_citations(
                             content_to_persist, valid_ref_ids
                         )
+                        citation_validate_ms = elapsed_ms(citation_validate_started)
                         search_context = merge_metrics(
                             search_context,
-                            {
-                                "citation_validate_ms": elapsed_ms(
-                                    citation_validate_started
-                                )
-                            },
+                            {"citation_validate_ms": citation_validate_ms},
+                        )
+                        await on_step(
+                            "organize-citations",
+                            "done",
+                            _step_metrics_from_search_context(
+                                search_context,
+                                citation_validate_ms=citation_validate_ms,
+                                citation_total=citation_result.total_citations,
+                                citation_removed=citation_result.removed_count,
+                            ),
                         )
                         content_to_persist = citation_result.cleaned_content
+                elif search_context is not None and not output_blocked:
+                    await on_step("organize-citations", "running")
+                    await on_step(
+                        "organize-citations",
+                        "done",
+                        _step_metrics_from_search_context(search_context),
+                    )
                 tokens_output = self._count_output_tokens(content_to_persist)
                 worker_total_latency_ms = elapsed_ms(worker_started)
                 await self._persist_success_and_idempotency(

@@ -140,11 +140,19 @@ export const chatStreamStartedEventSchema = z.object({
     type: z.literal('started'),
 });
 
+export const chatStreamStepEventSchema = z.object({
+    type: z.literal('step'),
+    step: z.string(),
+    status: z.enum(['running', 'done', 'skipped']),
+    metrics: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])).optional(),
+});
+
 export const chatStreamEventSchema = z.discriminatedUnion('type', [
     chatStreamStartedEventSchema,
     chatStreamMetaEventSchema,
     chatStreamChunkEventSchema,
     chatStreamErrorEventSchema,
+    chatStreamStepEventSchema,
 ]);
 
 export type ChatSession = z.infer<typeof chatSessionSchema>;
@@ -154,6 +162,7 @@ export type ChatQueryResponse = z.infer<typeof chatQueryResponseSchema>;
 export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionDetailResponse = z.infer<typeof sessionDetailResponseSchema>;
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+export type ChatStreamStepEvent = z.infer<typeof chatStreamStepEventSchema>;
 export type ChatMessageMetrics = z.infer<typeof chatMessageMetricsSchema>;
 export type RagMetrics = z.infer<typeof ragMetricsSchema>;
 

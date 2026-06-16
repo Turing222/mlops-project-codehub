@@ -13,12 +13,15 @@ from backend.application.chat.stream_events import (
     encode_done_event,
     encode_error_event,
     encode_started_event,
+    encode_step_event,
     error_event,
     meta_event,
+    step_event,
     stream_chunk_event,
     stream_done_event,
     stream_error_event,
     stream_started_event,
+    stream_step_event,
 )
 
 
@@ -40,6 +43,18 @@ def test_stream_events_round_trip_structured_payloads() -> None:
     }
     assert decode_stream_event(encode_done_event()) == {"type": "done"}
     assert decode_stream_event(encode_started_event()) == {"type": "started"}
+    assert decode_stream_event(
+        encode_step_event(
+            step="kb-search",
+            status="done",
+            metrics={"hit_count": 3},
+        )
+    ) == {
+        "type": "step",
+        "step": "kb-search",
+        "status": "done",
+        "metrics": {"hit_count": 3},
+    }
 
 
 def test_stream_events_accept_legacy_payloads() -> None:
@@ -86,3 +101,6 @@ def test_http_sse_events_keep_existing_wire_format() -> None:
         'data: {"type": "chunk", "content": "hello"}\n\n'
     )
     assert encode_sse_event(done_event()) == "data: [DONE]\n\n"
+    assert encode_sse_event(
+        step_event(step="router-judge", status="running")
+    ) == 'data: {"type": "step", "step": "router-judge", "status": "running"}\n\n'

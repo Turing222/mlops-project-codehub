@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from backend.application.chat.stream_events import (
+    decode_stream_event,
     encode_chunk_event,
     encode_done_event,
     encode_error_event,
@@ -162,8 +163,21 @@ class StaticRAGOrchestrator:
     async def prepare_context(
         self,
         payload: GenerationPayload,
+        *,
+        on_step=None,
     ) -> PreparedGenerationContext:
         return self.prepared_context
+
+
+def without_step_events(
+    published: list[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """Drop trace step events when asserting chunk/done Redis publish order."""
+    return [
+        item
+        for item in published
+        if decode_stream_event(item[1]).get("type") != "step"
+    ]
 
 
 def make_rerank_impl(
@@ -220,7 +234,7 @@ async def test_worker_generation_persists_success_and_publishes_done(
         idempotency_lock_key="idempotency:test",
     )
 
-    assert redis.published == [
+    assert without_step_events(redis.published) == [
         ("stream:test", encode_started_event()),
         ("stream:test", encode_chunk_event("hello")),
         ("stream:test", encode_chunk_event(" world")),
@@ -270,7 +284,7 @@ async def test_worker_generation_fetches_current_redis_connection(monkeypatch) -
     )
 
     assert old_redis.published == [("stream:test", encode_started_event())]
-    assert current_redis.published == [
+    assert without_step_events(current_redis.published) == [
         ("stream:test", encode_chunk_event("hello")),
         ("stream:test", encode_done_event()),
     ]
@@ -525,7 +539,7 @@ async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch) -
         idempotency_lock_key="idempotency:test",
     )
 
-    assert redis.published == [
+    assert without_step_events(redis.published) == [
         ("stream:test", encode_started_event()),
         ("stream:test", encode_error_event("provider failed")),
         ("stream:test", encode_done_event()),
@@ -565,7 +579,7 @@ async def test_worker_stream_system_error_returns_generic_message(monkeypatch) -
 
     assert result.success is False
     assert result.error == "服务暂时不可用，请稍后重试"
-    assert redis.published == [
+    assert without_step_events(redis.published) == [
         ("stream:test", encode_started_event()),
         ("stream:test", encode_error_event("服务暂时不可用，请稍后重试")),
         ("stream:test", encode_done_event()),
@@ -885,7 +899,7 @@ async def test_worker_stream_output_guardrail_blocks_chunk_before_publish(
     )
 
     refusal = "抱歉，这个请求涉及安全或权限风险，暂时无法回答。"
-    assert redis.published == [
+    assert without_step_events(redis.published) == [
         ("stream:test", encode_started_event()),
         ("stream:test", encode_chunk_event(refusal)),
         ("stream:test", encode_done_event()),
@@ -1017,7 +1031,7 @@ async def test_worker_stream_refuses_when_rag_has_no_hits(monkeypatch) -> None:
     )
 
     refusal = "知识库中没有找到足够相关的信息，暂时无法基于资料回答。"
-    assert redis.published == [
+    assert without_step_events(redis.published) == [
         ("stream:test", encode_started_event()),
         ("stream:test", encode_chunk_event(refusal)),
         ("stream:test", encode_done_event()),
@@ -1129,7 +1143,7 @@ async def test_worker_stream_planner_preflight_refusal_skips_llm(
         assistant_message_id=uuid.uuid4(),
     )
 
-    assert redis.published == [
+    assert without_step_events(redis.published) == [
         ("stream:test", encode_started_event()),
         ("stream:test", encode_chunk_event("当前请求暂时无法可靠回答。")),
         ("stream:test", encode_done_event()),
@@ -1749,7 +1763,7 @@ async def test_worker_nonstream_citation_removes_invalid_markers(monkeypatch) ->
     )
     search_context = _make_search_context_with_refs()
 
-    async def fake_prepare(self, payload):
+    async def fake_prepare(self, payload, *, on_step=None):
         from backend.models.schemas.chat.dto import LLMQueryDTO
 
         dto = LLMQueryDTO(
@@ -1806,7 +1820,7 @@ async def test_worker_stream_citation_removes_invalid_markers(monkeypatch) -> No
     llm_service = StreamingLLM(["text [R1.1] ", "more [R9.1] end"])
     search_context = _make_search_context_with_refs()
 
-    async def fake_prepare(self, payload):
+    async def fake_prepare(self, payload, *, on_step=None):
         from backend.models.schemas.chat.dto import LLMQueryDTO
 
         dto = LLMQueryDTO(
@@ -1915,7 +1929,7 @@ async def test_worker_citation_skips_when_guardrail_blocked(monkeypatch) -> None
     llm_service = NonStreamingLLM(LLMResultDTO(content=unsafe_output))
     search_context = _make_search_context_with_refs()
 
-    async def fake_prepare(self, payload):
+    async def fake_prepare(self, payload, *, on_step=None):
         from backend.models.schemas.chat.dto import LLMQueryDTO
 
         dto = LLMQueryDTO(
@@ -1971,7 +1985,7 @@ async def test_worker_citation_records_zero_when_no_markers_in_output(
     )
     search_context = _make_search_context_with_refs()
 
-    async def fake_prepare(self, payload):
+    async def fake_prepare(self, payload, *, on_step=None):
         from backend.models.schemas.chat.dto import LLMQueryDTO
 
         dto = LLMQueryDTO(
