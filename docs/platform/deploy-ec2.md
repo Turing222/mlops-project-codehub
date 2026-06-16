@@ -718,6 +718,7 @@ make deploy-local-prod-verify
 
 这套命令会：
 
+- 使用 `deploy/.env.local-prod.template` 作为 env 入口（内含 `POSTGRES_SERVER=postgres`、MinIO bucket 等本地值；**不要**复用 `deploy/.env.ec2.template`，否则容器会通过 `env_file` 读到 RDS 占位符）。
 - 使用 `deploy/docker-compose.yml` 作为主体。
 - 叠加 `deploy/docker-compose.local-postgres.yml`，在本机提供 PostgreSQL fallback。
 - 叠加 `deploy/docker-compose.local-s3.yml`，额外加入 MinIO 模拟 S3。

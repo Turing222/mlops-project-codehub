@@ -44,7 +44,7 @@ jobs:
         run: docker build --target worker -t "${DOCKER_IMAGE_NAME_AI}" .
 
       - name: Validate local production rehearsal overlays
-        run: docker compose --env-file deploy/.env.ec2 -f deploy/docker-compose.yml -f deploy/docker-compose.local-postgres.yml -f deploy/docker-compose.local-s3.yml -f deploy/docker-compose.local-logging.yml config -q
+        run: DEPLOY_SERVICE_ENV_FILE="${GITHUB_WORKSPACE}/deploy/.env.local-prod.template" docker compose --env-file deploy/.env.local-prod.template -f deploy/docker-compose.yml -f deploy/docker-compose.local-postgres.yml -f deploy/docker-compose.local-s3.yml -f deploy/docker-compose.local-logging.yml --profile frontend-fallback --profile bifrost config -q
 
       - name: Validate local observability compose
         run: docker compose -f docker-compose.db.yml --profile observability config -q

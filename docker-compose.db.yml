@@ -268,7 +268,7 @@ services:
     ports:
       - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:${BIFROST_PORT:-18080}:8080"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- --header=\"x-bf-vk: $$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" http://localhost:8080/v1/models >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- --header=\"x-bf-vk: $$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" http://127.0.0.1:8080/v1/models >/dev/null || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10
