@@ -11,6 +11,7 @@ This file is the lightweight routing index for Codex. Dewflow is a monorepo: Fas
 - Backend: preserve the 3-tier call chain (endpoint -> service -> repository -> ORM); use `uv run` for Python commands.
 - Frontend: validate through `make frontend-*` targets; manage packages with pnpm only.
 - Cap noisy output with `| head -200`. Do not browse localhost; use `curl` for local health checks.
+- Before suggesting deletion of configs, databases, backups, logs, chat/session history, credentials, or app state directories, warn about data loss and recommend a backup or non-destructive check first.
 - If files were modified, append the Change Summary block defined in `.codex/skills/project/references/handoff.md`.
 
 ## Local Skills

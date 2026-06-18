@@ -46,7 +46,9 @@ For secret or smoke config changes:
 
 ```bash
 bash -n scripts/lib/common.sh
-docker compose --env-file .env.smoke -f docker-compose.db.yml config --quiet
+DOCKER_IMAGE_NAME_WEB=dewflow-backend:local-web \
+  DOCKER_IMAGE_NAME_AI=dewflow-backend:local-ai \
+  docker compose --env-file .env.smoke -f docker-compose.db.yml config --quiet
 uv run pytest tests/unit/core/test_config.py -q
 ```
 
