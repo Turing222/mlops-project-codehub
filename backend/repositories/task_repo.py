@@ -6,7 +6,7 @@
 
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pydantic import BaseModel
 from sqlalchemy import select, update
@@ -32,13 +32,18 @@ class TaskRepository:
         payload: dict,
         status: TaskStatus = TaskStatus.PENDING,
         progress: int = 0,
+        user_id: uuid.UUID | None = None,
+        finished_at: datetime | None = None,
     ) -> TaskJob:
         data = {
             "action_type": action_type,
             "status": status,
             "progress": progress,
             "payload": payload,
+            "user_id": user_id,
         }
+        if finished_at is not None:
+            data["finished_at"] = finished_at
         return await self.crud.create(obj_in=data)
 
     async def update_status(
@@ -47,16 +52,22 @@ class TaskRepository:
         status: TaskStatus,
         progress: int | None = None,
         error_log: str | None = None,
+        started_at: datetime | None = None,
+        finished_at: datetime | None = None,
     ) -> TaskJob | None:
         task = await self.get(task_id)
         if not task:
             return None
 
-        update_data = {"status": status}
+        update_data: dict[str, object] = {"status": status}
         if progress is not None:
             update_data["progress"] = progress
         if error_log is not None:
             update_data["error_log"] = error_log
+        if started_at is not None:
+            update_data["started_at"] = started_at
+        if finished_at is not None:
+            update_data["finished_at"] = finished_at
 
         return await self.crud.update(db_obj=task, obj_in=update_data)
 
@@ -84,7 +95,7 @@ class TaskRepository:
     ) -> Sequence[TaskJob]:
         stmt = (
             select(TaskJob)
-            .where(TaskJob.payload["user_id"].astext == str(user_id))
+            .where(TaskJob.user_id == user_id)
             .order_by(TaskJob.created_at.desc())
             .offset(skip)
             .limit(limit)
@@ -101,6 +112,7 @@ class TaskRepository:
             task_id=task_id,
             status=TaskStatus.COMPLETED,
             progress=progress,
+            finished_at=datetime.now(UTC),
         )
 
     async def mark_failed(
@@ -113,6 +125,7 @@ class TaskRepository:
             status=TaskStatus.FAILED,
             progress=0,
             error_log=error_log,
+            finished_at=datetime.now(UTC),
         )
 
     async def mark_processing(
@@ -124,6 +137,7 @@ class TaskRepository:
             task_id=task_id,
             status=TaskStatus.PROCESSING,
             progress=progress,
+            started_at=datetime.now(UTC),
         )
 
     async def mark_stale_kb_ingestion_tasks_failed(
@@ -141,6 +155,7 @@ class TaskRepository:
                 status=TaskStatus.FAILED,
                 progress=0,
                 error_log=error_log[:5000],
+                finished_at=datetime.now(UTC),
             )
         )
         result = await self.session.execute(stmt)

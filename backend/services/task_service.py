@@ -2,10 +2,11 @@
 
 职责：创建知识库入库任务并维护任务状态。
 边界：本模块只写 TaskJob 记录，不投递 TaskIQ 消息。
-风险：任务访问校验基于 payload.user_id，任务创建方必须写入该字段。
+风险：任务访问校验基于 user_id 列，任务创建方必须写入该字段。
 """
 
 import uuid
+from datetime import UTC, datetime
 
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import app_not_found
@@ -39,6 +40,7 @@ class TaskService(BaseService[AbstractUnitOfWork]):
                 "filename": filename,
                 "user_id": str(user_id),
             },
+            user_id=user_id,
         )
 
     async def create_completed_kb_ingestion_task(
@@ -63,6 +65,8 @@ class TaskService(BaseService[AbstractUnitOfWork]):
                 "user_id": str(user_id),
                 "deduplicated": deduplicated,
             },
+            user_id=user_id,
+            finished_at=datetime.now(UTC),
         )
 
     async def create_repo_analysis_task(
@@ -85,6 +89,7 @@ class TaskService(BaseService[AbstractUnitOfWork]):
                 "repo": repo,
                 "user_id": str(user_id),
             },
+            user_id=user_id,
         )
 
     async def get_by_id(self, task_id: uuid.UUID) -> TaskJob | None:
@@ -122,9 +127,7 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         )
 
     async def ensure_user_access(self, *, task: TaskJob, user_id: uuid.UUID) -> None:
-        payload = task.payload or {}
-        payload_user_id = payload.get("user_id")
-        if payload_user_id is None:
+        if task.user_id is None:
             raise app_not_found("任务关联用户不存在", code="TASK_USER_NOT_FOUND")
-        if str(user_id) != str(payload_user_id):
+        if task.user_id != user_id:
             raise app_not_found("任务不存在或无访问权限", code="TASK_NOT_FOUND")

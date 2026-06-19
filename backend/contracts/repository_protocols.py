@@ -270,6 +270,8 @@ class TaskRepositoryProtocol(Protocol):
         payload: dict,
         status: TaskStatus = TaskStatus.PENDING,
         progress: int = 0,
+        user_id: uuid.UUID | None = None,
+        finished_at: datetime.datetime | None = None,
     ) -> TaskJob: ...
 
     async def update_status(
@@ -278,6 +280,8 @@ class TaskRepositoryProtocol(Protocol):
         status: TaskStatus,
         progress: int | None = None,
         error_log: str | None = None,
+        started_at: datetime.datetime | None = None,
+        finished_at: datetime.datetime | None = None,
     ) -> TaskJob | None: ...
 
     async def get_by_status(

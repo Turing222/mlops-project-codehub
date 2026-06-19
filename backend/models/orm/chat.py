@@ -60,6 +60,8 @@ class ChatSession(Base, BaseIdModel, AuditMixin, SoftDeleteMixin):
         cascade="all, delete-orphan",
     )
 
+    __table_args__ = (Index("ix_chat_sessions_user_updated", "user_id", "updated_at"),)
+
 
 class ChatMessage(Base, BaseIdModel, AuditMixin):
     """单条对话消息。"""

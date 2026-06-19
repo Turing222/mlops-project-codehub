@@ -37,9 +37,7 @@ class Workspace(Base, BaseIdModel, AuditMixin, SoftDeleteMixin):
     __tablename__ = "workspaces"
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    slug: Mapped[str] = mapped_column(
-        String(120), unique=True, index=True, nullable=False
-    )
+    slug: Mapped[str] = mapped_column(String(120), nullable=False)
     owner_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         index=True,
@@ -61,6 +59,16 @@ class Workspace(Base, BaseIdModel, AuditMixin, SoftDeleteMixin):
     files: Mapped[list[File]] = relationship(back_populates="workspace")
     chat_sessions: Mapped[list[ChatSession]] = relationship(back_populates="workspace")
     audit_events: Mapped[list[AuditEvent]] = relationship(back_populates="workspace")
+
+    # slug 仅在未软删的工作区间唯一，软删后允许复用同名 slug。
+    __table_args__ = (
+        Index(
+            "uq_workspaces_slug_active",
+            "slug",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
 
 
 class UserWorkspaceRole(Base, BaseIdModel, AuditMixin):
