@@ -46,7 +46,7 @@
 - 文件顶部优先写模块职责 header，说明职责、边界和副作用。
 - 先覆盖行为边界，再统一格式；至少考虑成功、拒绝/失败、边界值、跳过/旁路、依赖异常或空结果。
 - 测试名使用 `test_<行为>_<预期结果>`，避免只写 `test_success`、`test_error`。
-- async 文件可以使用文件级 `pytestmark = pytest.mark.asyncio`，不要在每个函数重复标记。
+- `asyncio_mode = "auto"`（见 `pyproject.toml`）下，async 测试直接写 `async def` 即可，不要再加 `pytest.mark.asyncio`（逐函数或文件级 `pytestmark` 都不需要）；多余的 asyncio 标记会误标同文件的同步测试并触发警告。
 - fixture 名称表达被测上下文或能力，例如 `payload_client`、`fake_user_repo`；避免泛泛的 `client`、`mock`。
 - fixture 和测试函数补返回类型；异步生成器 fixture 使用 `AsyncIterator[...]`。
 - mock 只断言关键协作参数，不把无关调用顺序和内部实现全部钉死。
@@ -89,8 +89,6 @@ from collections.abc import AsyncIterator
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture
 async def payload_client() -> AsyncIterator[AsyncClient]:
@@ -132,7 +130,7 @@ import redis.asyncio as redis
 
 from tests.helpers.env import require_env
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.integration, pytest.mark.requires_redis]
+pytestmark = [pytest.mark.integration, pytest.mark.requires_redis]
 
 
 async def test_cache_roundtrip_with_real_redis():
@@ -179,7 +177,7 @@ def test_ci_contract_is_enabled():
 ## Async 规则
 
 - 只有测试体内需要 `await` 时才使用 async test。
-- async 测试使用 `pytest.mark.asyncio`，或在文件级 `pytestmark` 中统一声明。
+- `asyncio_mode = "auto"` 自动识别 async 测试，无需 `pytest.mark.asyncio`；组合 marker（如 `integration`、`requires_redis`）按需保留，但不要再带 asyncio。
 - 同步 blocking I/O 不应直接放进 async 测试；必要时通过被测代码的异步封装进入。
 
 ## 外部依赖规则

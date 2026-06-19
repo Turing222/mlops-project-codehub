@@ -6,6 +6,8 @@ Distilled, always-on editing rules. Full rationale in
 ## Before editing
 
 - Read the target file and nearby tests first.
+- When the target is a backend test, follow `tests/CONVENTIONS.md` (load the
+  `add-tests` skill for non-trivial test work).
 - `git status --short` so user edits are not overwritten.
 
 ## Smallest coherent patch
