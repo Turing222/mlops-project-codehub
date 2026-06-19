@@ -11,8 +11,6 @@ import pytest
 from backend.core.exceptions import AppException
 from backend.services.google_oauth_service import GoogleOAuthService
 
-pytestmark = pytest.mark.asyncio
-
 
 def _make_service(
     *,

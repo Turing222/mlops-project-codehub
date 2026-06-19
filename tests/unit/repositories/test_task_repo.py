@@ -12,8 +12,6 @@ import pytest
 
 from backend.repositories.task_repo import TaskRepository
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture
 def repo_ctx() -> tuple[TaskRepository, AsyncMock]:

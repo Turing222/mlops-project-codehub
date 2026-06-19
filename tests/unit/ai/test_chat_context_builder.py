@@ -20,7 +20,6 @@ from backend.core.exceptions import AppException
 from backend.models.schemas.chat.context_state import ContextState
 
 
-@pytest.mark.asyncio
 async def test_build_uses_rag_prompt_and_search_context_when_chunks_found() -> None:
     kb_id = uuid.uuid4()
     chunk_id = uuid.uuid4()
@@ -117,7 +116,6 @@ async def test_build_uses_rag_prompt_and_search_context_when_chunks_found() -> N
     assert result.search_context["chunks"][0]["chunk_index"] == 3
 
 
-@pytest.mark.asyncio
 async def test_build_falls_back_to_plain_prompt_without_rag_chunks() -> None:
     kb_id = uuid.uuid4()
     rag_service = SimpleNamespace(retrieve=AsyncMock(return_value=[]))
@@ -138,7 +136,6 @@ async def test_build_falls_back_to_plain_prompt_without_rag_chunks() -> None:
     assert result.search_context is None
 
 
-@pytest.mark.asyncio
 async def test_build_falls_back_to_plain_prompt_when_rag_errors() -> None:
     rag_service = SimpleNamespace(
         retrieve=AsyncMock(side_effect=RuntimeError("vector db down"))
@@ -155,7 +152,6 @@ async def test_build_falls_back_to_plain_prompt_when_rag_errors() -> None:
     assert "--- 参考资料 ---" not in result.assembled_prompt.messages[0]["content"]
 
 
-@pytest.mark.asyncio
 async def test_build_uses_rerank_when_enabled(monkeypatch) -> None:
     kb_id = uuid.uuid4()
     rag_service = SimpleNamespace(
@@ -434,7 +430,7 @@ def test_build_from_chunks_raises_when_final_context_exceeds_budget() -> None:
     assert exc_info.value.status_code == 413
 
 
-# ── _format_context_chunk injection warning ─────────────────────────
+# _format_context_chunk injection warning
 
 
 class TestFormatContextChunkWarning:

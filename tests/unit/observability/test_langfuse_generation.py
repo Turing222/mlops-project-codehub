@@ -1,4 +1,7 @@
-"""Tests for langfuse_generation context manager and _LangfuseGenerationRecorder."""
+"""Langfuse generation unit tests.
+
+职责：验证 langfuse_generation 上下文管理器与 recorder；边界：mock Langfuse client；副作用：无。
+"""
 
 from unittest.mock import MagicMock, patch
 

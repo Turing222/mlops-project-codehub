@@ -10,14 +10,10 @@ from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any
 
-import pytest
-
 from backend.api.v1.endpoint import chat_api
 from backend.models.enums import MessageStatus
 from backend.models.schemas.chat.api import MessageResponse
 from backend.services.audit_service import AuditService
-
-pytestmark = pytest.mark.asyncio
 
 
 class CapturingSession:

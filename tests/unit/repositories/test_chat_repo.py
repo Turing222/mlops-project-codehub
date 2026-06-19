@@ -15,8 +15,6 @@ from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat.context_state import ContextState
 from backend.repositories.chat_repo import ChatRepository
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture
 def mock_async_session() -> AsyncMock:

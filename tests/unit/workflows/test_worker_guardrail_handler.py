@@ -7,8 +7,6 @@ Redis 发布、持久化调用和幂等锁写入；边界：不启动 HTTP stack
 import uuid
 from unittest.mock import AsyncMock
 
-import pytest
-
 from backend.services.chat_safety_metadata import (
     INJECTION_REFUSAL_MESSAGE,
     SAFETY_REFUSAL_MESSAGE,
@@ -16,8 +14,6 @@ from backend.services.chat_safety_metadata import (
     GuardrailReason,
     ResponseOutcome,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 def _make_handler(
@@ -234,7 +230,7 @@ async def test_idempotency_lock_skipped_when_message_id_none() -> None:
     persistence.write_idempotency_message.assert_not_awaited()
 
 
-# ── Injection risk refusal message ──────────────────────────────────
+# Injection risk refusal message
 
 
 async def test_stream_input_block_uses_injection_refusal_for_injection_risk() -> None:

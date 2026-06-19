@@ -6,7 +6,6 @@
 from unittest.mock import patch
 
 import httpx
-import pytest
 
 from backend.services.external_context_service import (
     TavilyExternalContextProvider,
@@ -78,7 +77,7 @@ def test_create_external_context_provider_returns_provider_when_configured() -> 
         assert provider is not None
 
 
-# ── 断路器（与既有「降级为空结果」叠加：熔断快速失败 + 降级兜底） ──────
+# 断路器（与既有「降级为空结果」叠加：熔断快速失败 + 降级兜底）
 
 
 class _FakeFailingClient:
@@ -95,7 +94,6 @@ class _FakeFailingClient:
         pass
 
 
-@pytest.mark.asyncio
 async def test_tavily_circuit_breaker_opens_after_threshold_failures() -> None:
     provider = TavilyExternalContextProvider(
         api_key="key",
@@ -114,7 +112,6 @@ async def test_tavily_circuit_breaker_opens_after_threshold_failures() -> None:
     assert fake.calls == 2
 
 
-@pytest.mark.asyncio
 async def test_tavily_circuit_breaker_ignores_validation_errors() -> None:
     provider = TavilyExternalContextProvider(
         api_key="key",

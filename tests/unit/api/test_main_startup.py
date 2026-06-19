@@ -49,7 +49,6 @@ def test_non_production_keeps_public_api_docs() -> None:
     assert main._api_docs_urls("test") == ("/docs", "/redoc", "/openapi.json")
 
 
-@pytest.mark.asyncio
 async def test_lifespan_sets_up_logging_first(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[str] = []
     main = _fresh_main_module()

@@ -10,8 +10,6 @@ import pytest
 from backend.services import unit_of_work as uow_module
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 
-pytestmark = pytest.mark.asyncio
-
 
 class DummySession:
     def __init__(self) -> None:

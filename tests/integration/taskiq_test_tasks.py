@@ -1,3 +1,5 @@
+"""TaskIQ integration test task definitions (helper, not a test module)."""
+
 from __future__ import annotations
 
 import redis.asyncio as redis

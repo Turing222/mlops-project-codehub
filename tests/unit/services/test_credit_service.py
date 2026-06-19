@@ -17,8 +17,6 @@ from sqlalchemy.exc import IntegrityError
 from backend.core.exceptions import AppException
 from backend.services.credit_service import CreditService
 
-pytestmark = pytest.mark.asyncio
-
 
 def make_account(*, balance: int = 1000) -> SimpleNamespace:
     return SimpleNamespace(id=uuid.uuid4(), user_id=uuid.uuid4(), balance=balance)

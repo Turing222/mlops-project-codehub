@@ -1,4 +1,4 @@
-"""Test deterministic validation of local Codex skill contracts.
+"""Codex skill contract validation unit tests.
 
 职责：覆盖 skill frontmatter、agent metadata、Markdown 引用和 Make target 校验；边界：仅使用临时目录，不读取或修改真实 skill；副作用：写入 pytest 临时文件。
 """

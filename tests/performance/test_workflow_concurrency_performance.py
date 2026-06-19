@@ -1,3 +1,8 @@
+"""Workflow concurrency performance tests.
+
+职责：工作流并发性能基准；边界：performance marker；副作用：无。
+"""
+
 import asyncio
 import time
 import uuid
@@ -14,7 +19,7 @@ from backend.services.feature_flag_service import (
     FeatureFlagService,
 )
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.performance]
+pytestmark = pytest.mark.performance
 
 
 class _FakePubSub:

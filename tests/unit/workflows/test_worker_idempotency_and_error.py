@@ -7,9 +7,8 @@ done 事件保证等关键路径；边界：不启动 HTTP stack、不连接真�
 import uuid
 from unittest.mock import AsyncMock
 
-import pytest
-
 from backend.application.chat.stream_events import (
+    decode_stream_event,
     encode_done_event,
     encode_error_event,
     encode_started_event,
@@ -22,8 +21,6 @@ from backend.core.exceptions import app_service_error
 from backend.models.schemas.chat.dto import LLMResultDTO
 from backend.models.schemas.chat.payloads import GenerationPayload
 from tests.unit.workflows.conftest import FakeChatUow
-
-pytestmark = pytest.mark.asyncio
 
 
 class FakeRedis:
@@ -104,7 +101,13 @@ async def test_stream_error_publishes_error_and_done_and_cleans_lock(
         idempotency_lock_key="idempotency:err",
     )
 
-    assert redis.published == [
+    # Ignore interleaved agent-trace step events; assert the meaningful sequence.
+    non_step_events = [
+        (channel, payload)
+        for channel, payload in redis.published
+        if decode_stream_event(payload)["type"] != "step"
+    ]
+    assert non_step_events == [
         ("stream:err", encode_started_event()),
         ("stream:err", encode_error_event("provider failed")),
         ("stream:err", encode_done_event()),
@@ -263,7 +266,7 @@ async def test_persistence_handler_write_idempotency_lock() -> None:
     assert redis.set_calls == [("lock:abc", str(msg_id), 3600)]
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────
+# Helpers
 
 
 def _make_streaming_llm(chunks: list[str], error: Exception | None = None):

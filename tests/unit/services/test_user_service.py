@@ -62,7 +62,6 @@ def _build_user_create() -> UserCreate:
     )
 
 
-@pytest.mark.asyncio
 async def test_user_register_returns_created_user(
     user_service_ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -89,7 +88,6 @@ async def test_user_register_returns_created_user(
     assert "confirm_password" not in create_call
 
 
-@pytest.mark.asyncio
 async def test_user_register_with_personal_workspace_creates_owner_workspace_role(
     user_service_ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -139,7 +137,6 @@ def test_user_create_forbids_role_and_workspace_fields_raises_validation_error()
         )
 
 
-@pytest.mark.asyncio
 async def test_user_register_rejects_existing_email(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -149,7 +146,6 @@ async def test_user_register_rejects_existing_email(
         await user_service_ctx.service.user_register(_build_user_create())
 
 
-@pytest.mark.asyncio
 async def test_user_register_rejects_existing_username(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -162,7 +158,6 @@ async def test_user_register_rejects_existing_username(
         await user_service_ctx.service.user_register(_build_user_create())
 
 
-@pytest.mark.asyncio
 async def test_user_register_maps_integrity_error_to_validation_error(
     user_service_ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -181,7 +176,6 @@ async def test_user_register_maps_integrity_error_to_validation_error(
         await user_service_ctx.service.user_register(_build_user_create())
 
 
-@pytest.mark.asyncio
 async def test_user_update_raises_not_found_when_user_missing(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -194,7 +188,6 @@ async def test_user_update_raises_not_found_when_user_missing(
         )
 
 
-@pytest.mark.asyncio
 async def test_user_update_rejects_existing_username(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -217,7 +210,6 @@ async def test_user_update_rejects_existing_username(
         )
 
 
-@pytest.mark.asyncio
 async def test_user_update_rejects_existing_email(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -240,7 +232,6 @@ async def test_user_update_rejects_existing_email(
         )
 
 
-@pytest.mark.asyncio
 async def test_user_update_rejects_existing_phone(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -263,7 +254,6 @@ async def test_user_update_rejects_existing_phone(
         )
 
 
-@pytest.mark.asyncio
 async def test_user_update_maps_integrity_error_to_validation_error(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -286,7 +276,6 @@ async def test_user_update_maps_integrity_error_to_validation_error(
         )
 
 
-@pytest.mark.asyncio
 async def test_authenticate_returns_none_when_user_missing(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -299,7 +288,6 @@ async def test_authenticate_returns_none_when_user_missing(
     assert result is None
 
 
-@pytest.mark.asyncio
 async def test_authenticate_returns_none_when_password_invalid(
     user_service_ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -318,7 +306,6 @@ async def test_authenticate_returns_none_when_password_invalid(
     assert result is None
 
 
-@pytest.mark.asyncio
 async def test_authenticate_returns_user_on_valid_credentials(
     user_service_ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -337,7 +324,6 @@ async def test_authenticate_returns_user_on_valid_credentials(
     assert result == user
 
 
-@pytest.mark.asyncio
 async def test_find_or_create_by_phone_recovers_from_integrity_error(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -356,7 +342,6 @@ async def test_find_or_create_by_phone_recovers_from_integrity_error(
     assert result is existing_user
 
 
-@pytest.mark.asyncio
 async def test_find_or_create_by_google_recovers_from_integrity_error(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -378,7 +363,6 @@ async def test_find_or_create_by_google_recovers_from_integrity_error(
     assert result is existing_user
 
 
-@pytest.mark.asyncio
 async def test_find_or_create_by_google_links_email_user_after_integrity_error(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -412,7 +396,6 @@ async def test_find_or_create_by_google_links_email_user_after_integrity_error(
     )
 
 
-@pytest.mark.asyncio
 async def test_find_or_create_by_phone_raises_when_registration_closed(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -427,7 +410,6 @@ async def test_find_or_create_by_phone_raises_when_registration_closed(
     user_service_ctx.repo.create.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_find_or_create_by_phone_returns_existing_when_registration_closed(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -441,7 +423,6 @@ async def test_find_or_create_by_phone_returns_existing_when_registration_closed
     assert result is existing
 
 
-@pytest.mark.asyncio
 async def test_find_or_create_by_google_raises_when_registration_closed(
     user_service_ctx: SimpleNamespace,
 ) -> None:
@@ -460,7 +441,6 @@ async def test_find_or_create_by_google_raises_when_registration_closed(
     user_service_ctx.repo.create.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_find_or_create_by_google_returns_existing_when_registration_closed(
     user_service_ctx: SimpleNamespace,
 ) -> None:

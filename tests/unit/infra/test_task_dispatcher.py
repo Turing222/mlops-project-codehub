@@ -30,7 +30,6 @@ def _decode_lpush_message(redis_client: FakeRedis) -> dict[str, object]:
     return json.loads(message.decode())
 
 
-@pytest.mark.asyncio
 async def test_enqueue_stream_passes_params_through() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
@@ -64,7 +63,6 @@ async def test_enqueue_stream_passes_params_through() -> None:
     assert args[0]["idempotency_lock_key"] == lock_key
 
 
-@pytest.mark.asyncio
 async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
     from backend.models.schemas.chat.payloads import GenerationResult
@@ -113,7 +111,6 @@ async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
     assert result.content == "answer"
 
 
-@pytest.mark.asyncio
 async def test_enqueue_ingestion_passes_params_through() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
@@ -134,7 +131,6 @@ async def test_enqueue_ingestion_passes_params_through() -> None:
     assert message["args"] == [file_id, task_id, trace_ctx]
 
 
-@pytest.mark.asyncio
 async def test_enqueue_repo_analysis_passes_params_through() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
@@ -155,7 +151,6 @@ async def test_enqueue_repo_analysis_passes_params_through() -> None:
     assert message["args"] == [run_id, task_id, trace_ctx]
 
 
-@pytest.mark.asyncio
 async def test_wait_result_timeout_raises_timeout_error() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
@@ -166,7 +161,6 @@ async def test_wait_result_timeout_raises_timeout_error() -> None:
         await dispatcher._wait_result("test-task-id", timeout=0.2)
 
 
-@pytest.mark.asyncio
 async def test_wait_result_is_err_raises_runtime_error() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
@@ -187,7 +181,6 @@ async def test_wait_result_is_err_raises_runtime_error() -> None:
         await dispatcher._wait_result("test-task-id", timeout=10)
 
 
-@pytest.mark.asyncio
 async def test_send_task_redis_push_error_propagates() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
@@ -199,7 +192,6 @@ async def test_send_task_redis_push_error_propagates() -> None:
         await dispatcher._send_task("test_task", "arg1")
 
 
-@pytest.mark.asyncio
 async def test_task_name_constants_match_expected() -> None:
     """Ensure task name constants are not accidentally changed."""
     assert TASK_STREAM == "generate_llm_stream"

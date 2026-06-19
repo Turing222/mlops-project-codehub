@@ -19,7 +19,6 @@ from backend.services.sms_service import SMSService
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.requires_redis,
-    pytest.mark.asyncio,
 ]
 
 

@@ -43,7 +43,6 @@ def test_build_agent_input_splits_system_history_and_current_user() -> None:
     assert prompt.endswith("当前问题")
 
 
-@pytest.mark.asyncio
 async def test_generate_response_uses_pydantic_agent(monkeypatch) -> None:
     service = PydanticAILLMService(
         api_key="test-key", model_name="gemini-test", provider_name="gemini"
@@ -66,7 +65,6 @@ async def test_generate_response_uses_pydantic_agent(monkeypatch) -> None:
     assert result.success is True
 
 
-@pytest.mark.asyncio
 async def test_generate_response_reads_provider_usage(monkeypatch) -> None:
     service = PydanticAILLMService(
         api_key="test-key", model_name="gemini-test", provider_name="gemini"
@@ -87,7 +85,6 @@ async def test_generate_response_reads_provider_usage(monkeypatch) -> None:
     assert result.completion_tokens == 7
 
 
-@pytest.mark.asyncio
 async def test_generate_response_preserves_zero_completion_tokens(monkeypatch) -> None:
     service = PydanticAILLMService(
         api_key="test-key", model_name="gemini-test", provider_name="gemini"
@@ -108,7 +105,6 @@ async def test_generate_response_preserves_zero_completion_tokens(monkeypatch) -
     assert result.completion_tokens == 0
 
 
-@pytest.mark.asyncio
 async def test_generate_response_merges_extra_body(monkeypatch) -> None:
     service = PydanticAILLMService(
         api_key="test-key",
@@ -134,7 +130,6 @@ async def test_generate_response_merges_extra_body(monkeypatch) -> None:
     }
 
 
-@pytest.mark.asyncio
 async def test_stream_response_yields_delta_chunks(monkeypatch) -> None:
     service = PydanticAILLMService(
         api_key="test-key", model_name="gemini-test", provider_name="gemini"
@@ -166,7 +161,6 @@ async def test_stream_response_yields_delta_chunks(monkeypatch) -> None:
     assert chunks == ["Gemini ", "chunk"]
 
 
-@pytest.mark.asyncio
 async def test_generate_response_marks_circuit_failure(monkeypatch) -> None:
     service = PydanticAILLMService(api_key="test-key", model_name="gemini-test")
     calls = {"failure": 0}
@@ -194,7 +188,6 @@ async def test_generate_response_marks_circuit_failure(monkeypatch) -> None:
     assert calls["failure"] == 1
 
 
-@pytest.mark.asyncio
 async def test_stream_midfailure_marks_circuit_failure_not_success(monkeypatch) -> None:
     """流式中途失败时应只记 failure，不得先记 success（缺陷 2 的回归）。"""
     service = PydanticAILLMService(
@@ -238,7 +231,6 @@ async def test_stream_midfailure_marks_circuit_failure_not_success(monkeypatch) 
     assert events == ["failure"]
 
 
-@pytest.mark.asyncio
 async def test_stream_success_marks_circuit_success_after_iteration(
     monkeypatch,
 ) -> None:

@@ -11,7 +11,7 @@ import pytest
 
 from tests.smoke import _http_smoke_helpers as smoke_helpers
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
+pytestmark = pytest.mark.smoke
 smoke_client = smoke_helpers.smoke_client
 
 

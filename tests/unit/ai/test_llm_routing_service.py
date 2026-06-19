@@ -8,8 +8,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncGenerator
 
-import pytest
-
 from backend.ai.providers.llm.routing_service import (
     LLMRouteCandidate,
     LLMRoutingService,
@@ -17,8 +15,6 @@ from backend.ai.providers.llm.routing_service import (
 from backend.contracts.interfaces import AbstractLLMService
 from backend.core.exceptions import app_service_error
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
-
-pytestmark = pytest.mark.asyncio
 
 
 def make_query() -> LLMQueryDTO:

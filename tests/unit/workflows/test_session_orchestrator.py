@@ -23,8 +23,6 @@ from backend.services.feature_flag_service import (
 )
 from backend.services.permission_service import PermissionService
 
-pytestmark = pytest.mark.asyncio
-
 
 def _make_mock_feature_flag_service(
     overrides: dict[str, bool] | None = None,

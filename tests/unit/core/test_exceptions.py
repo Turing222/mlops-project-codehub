@@ -14,8 +14,6 @@ from httpx import ASGITransport, AsyncClient
 from backend.core.exception_handlers import setup_exception_handlers
 from backend.core.exceptions import app_not_found
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture
 async def exception_client() -> AsyncIterator[AsyncClient]:

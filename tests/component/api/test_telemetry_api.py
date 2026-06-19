@@ -1,3 +1,8 @@
+"""Telemetry API component tests.
+
+职责：验证 telemetry 端点的 ASGI 装配与请求/响应序列化；边界：用 dependency override 与 ASGITransport，不连真实下游；副作用：无。
+"""
+
 from __future__ import annotations
 
 import logging
@@ -27,7 +32,6 @@ async def telemetry_client() -> AsyncIterator[AsyncClient]:
         yield client
 
 
-@pytest.mark.asyncio
 async def test_frontend_http_error_event_returns_204_and_logs_payload(
     telemetry_client: AsyncClient,
     caplog: pytest.LogCaptureFixture,
@@ -65,7 +69,6 @@ async def test_frontend_http_error_event_returns_204_and_logs_payload(
     assert record.frontend_url == "/api/v1/users/me"
 
 
-@pytest.mark.asyncio
 async def test_frontend_runtime_event_without_http_fields_returns_204(
     telemetry_client: AsyncClient,
     caplog: pytest.LogCaptureFixture,
@@ -96,7 +99,6 @@ async def test_frontend_runtime_event_without_http_fields_returns_204(
     assert record.frontend_metadata == {"componentStack": "at App\n  at Root"}
 
 
-@pytest.mark.asyncio
 async def test_frontend_error_telemetry_rejects_disallowed_origin(
     telemetry_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -123,7 +125,6 @@ async def test_frontend_error_telemetry_rejects_disallowed_origin(
     assert response.status_code == 403
 
 
-@pytest.mark.asyncio
 async def test_frontend_error_telemetry_allows_forwarded_https_same_origin(
     telemetry_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -150,7 +151,6 @@ async def test_frontend_error_telemetry_allows_forwarded_https_same_origin(
     assert response.status_code == 204
 
 
-@pytest.mark.asyncio
 async def test_frontend_error_telemetry_rejects_invalid_event_type(
     telemetry_client: AsyncClient,
 ) -> None:
@@ -166,7 +166,6 @@ async def test_frontend_error_telemetry_rejects_invalid_event_type(
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_frontend_error_telemetry_rejects_overlong_message(
     telemetry_client: AsyncClient,
 ) -> None:
@@ -182,7 +181,6 @@ async def test_frontend_error_telemetry_rejects_overlong_message(
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_frontend_error_telemetry_rejects_overlong_metadata_value(
     telemetry_client: AsyncClient,
 ) -> None:
@@ -199,7 +197,6 @@ async def test_frontend_error_telemetry_rejects_overlong_metadata_value(
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_frontend_error_telemetry_rejects_nested_metadata(
     telemetry_client: AsyncClient,
 ) -> None:
@@ -216,7 +213,6 @@ async def test_frontend_error_telemetry_rejects_nested_metadata(
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_frontend_metric_returns_204_and_logs_metric_event(
     telemetry_client: AsyncClient,
     caplog: pytest.LogCaptureFixture,
@@ -257,7 +253,6 @@ async def test_frontend_metric_returns_204_and_logs_metric_event(
     )
 
 
-@pytest.mark.asyncio
 async def test_frontend_metric_accepts_bfcache_navigation_type(
     telemetry_client: AsyncClient,
 ) -> None:
@@ -275,7 +270,6 @@ async def test_frontend_metric_accepts_bfcache_navigation_type(
     assert response.status_code == 204
 
 
-@pytest.mark.asyncio
 async def test_frontend_metric_rejects_invalid_name(
     telemetry_client: AsyncClient,
 ) -> None:
@@ -292,7 +286,6 @@ async def test_frontend_metric_rejects_invalid_name(
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_frontend_metric_rejects_invalid_rating(
     telemetry_client: AsyncClient,
 ) -> None:
@@ -309,7 +302,6 @@ async def test_frontend_metric_rejects_invalid_rating(
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_frontend_metric_rejects_missing_value(
     telemetry_client: AsyncClient,
 ) -> None:
@@ -325,7 +317,6 @@ async def test_frontend_metric_rejects_missing_value(
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_frontend_metric_rejects_disallowed_origin(
     telemetry_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,

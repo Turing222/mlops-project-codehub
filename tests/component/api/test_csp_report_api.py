@@ -1,3 +1,8 @@
+"""CSP report API component tests.
+
+职责：验证 CSP 上报端点的 ASGI 装配与请求/响应序列化；边界：用 dependency override 与 ASGITransport，不连真实下游；副作用：无。
+"""
+
 from __future__ import annotations
 
 import logging
@@ -42,7 +47,6 @@ def _csp_payload(**overrides: object) -> dict[str, object]:
     return {"csp-report": report}
 
 
-@pytest.mark.asyncio
 async def test_csp_report_returns_204_and_logs_payload(
     csp_report_client: AsyncClient,
     caplog: pytest.LogCaptureFixture,
@@ -71,7 +75,6 @@ async def test_csp_report_returns_204_and_logs_payload(
     assert record.disposition == "report"
 
 
-@pytest.mark.asyncio
 async def test_csp_report_accepts_csp_report_content_type(
     csp_report_client: AsyncClient,
     caplog: pytest.LogCaptureFixture,
@@ -90,7 +93,6 @@ async def test_csp_report_accepts_csp_report_content_type(
     )
 
 
-@pytest.mark.asyncio
 async def test_csp_report_accepts_zero_line_number(
     csp_report_client: AsyncClient,
     caplog: pytest.LogCaptureFixture,
@@ -111,7 +113,6 @@ async def test_csp_report_accepts_zero_line_number(
     assert record.line_number == 0
 
 
-@pytest.mark.asyncio
 async def test_csp_report_rejects_disallowed_origin(
     csp_report_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -131,7 +132,6 @@ async def test_csp_report_rejects_disallowed_origin(
     assert response.status_code == 403
 
 
-@pytest.mark.asyncio
 async def test_csp_report_allows_forwarded_https_same_origin(
     csp_report_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -155,7 +155,6 @@ async def test_csp_report_allows_forwarded_https_same_origin(
     assert response.status_code == 204
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "payload",
     [
@@ -172,7 +171,6 @@ async def test_csp_report_rejects_missing_report_envelope(
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_csp_report_rejects_overlong_field(
     csp_report_client: AsyncClient,
 ) -> None:

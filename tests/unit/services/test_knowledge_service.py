@@ -19,8 +19,6 @@ from backend.core.exceptions import AppException
 from backend.models.orm.knowledge import FileStatus
 from backend.services.knowledge_service import KnowledgeService
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture
 def knowledge_service(tmp_path: Path) -> tuple[KnowledgeService, SimpleNamespace, Path]:

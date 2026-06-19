@@ -1,4 +1,7 @@
-"""Logger configuration unit tests."""
+"""Logger configuration unit tests.
+
+职责：验证日志级别解析；边界：纯函数，无 I/O；副作用：无。
+"""
 
 import logging
 

@@ -11,7 +11,7 @@ from backend.services.citation_validator import (
     validate_citations,
 )
 
-# ── validate_citations ────────────────────────────────────────────
+# validate_citations
 
 
 class TestValidateCitations:
@@ -100,7 +100,7 @@ class TestValidateCitations:
         assert result.removed_count == 1
 
 
-# ── extract_valid_ref_ids ─────────────────────────────────────────
+# extract_valid_ref_ids
 
 
 class TestExtractValidRefIds:
@@ -172,7 +172,7 @@ class TestExtractValidRefIds:
         assert result == {"R1.1"}
 
 
-# ── StreamingCitationFilter ────────────────────────────────────────
+# StreamingCitationFilter
 
 
 class TestStreamingCitationFilter:

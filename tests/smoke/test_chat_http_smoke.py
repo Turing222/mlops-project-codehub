@@ -11,12 +11,11 @@ import pytest
 
 from tests.smoke import _http_smoke_helpers as smoke_helpers
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
+pytestmark = pytest.mark.smoke
 create_auth_headers = smoke_helpers.create_auth_headers
 smoke_client = smoke_helpers.smoke_client
 
 
-@pytest.mark.asyncio
 async def test_chat_query_sent_over_http(smoke_client: httpx.AsyncClient):
     await smoke_helpers.ensure_ready_environment(smoke_client)
 
@@ -51,7 +50,6 @@ async def test_chat_query_sent_over_http(smoke_client: httpx.AsyncClient):
     assert second_body["answer"]["content"]
 
 
-@pytest.mark.asyncio
 async def test_chat_query_stream_over_http_uses_task_worker(
     smoke_client: httpx.AsyncClient,
 ):

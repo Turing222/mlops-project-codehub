@@ -30,7 +30,6 @@ def manager() -> PromptManager:
         reserved_response_tokens=512,
     )
 
-
 @pytest.fixture
 def sample_history() -> list[dict[str, str]]:
     """两轮对话历史"""
@@ -41,11 +40,7 @@ def sample_history() -> list[dict[str, str]]:
         {"role": "assistant", "content": "今天天气晴朗，非常适合外出。"},
     ]
 
-
-# ============================================================
 # Jinja2 模板渲染测试
-# ============================================================
-
 
 class TestTemplateRendering:
     """Jinja2 模板渲染"""
@@ -88,11 +83,7 @@ class TestTemplateRendering:
         assert "无法基于已提供资料回答" in result
         assert "基于你的通用知识回答" not in result
 
-
-# ============================================================
 # 基础组装测试
-# ============================================================
-
 
 class TestBasicAssembly:
     """基础 Prompt 组装"""
@@ -129,11 +120,7 @@ class TestBasicAssembly:
         assert roles[-1] == "user"
         assert result.messages[-1]["content"] == "新问题"
 
-
-# ============================================================
 # 分组逻辑测试
-# ============================================================
-
 
 class TestGroupIntoRounds:
     """_group_into_rounds 方法"""
@@ -166,11 +153,7 @@ class TestGroupIntoRounds:
         assert len(rounds) == 1
         assert all(m["role"] != "system" for m in rounds[0])
 
-
-# ============================================================
 # Token 工具测试
-# ============================================================
-
 
 class TestTokenUtils:
     """Token 估算工具"""

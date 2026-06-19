@@ -8,13 +8,9 @@ from __future__ import annotations
 import uuid
 from types import SimpleNamespace
 
-import pytest
-
 from backend.api.v1.endpoint import permission_api
 from backend.models.enums import Permission, WorkspaceRole
 from backend.services.permission_service import PermissionService
-
-pytestmark = pytest.mark.asyncio
 
 
 def make_user(**overrides: object) -> SimpleNamespace:

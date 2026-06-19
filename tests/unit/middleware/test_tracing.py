@@ -13,8 +13,6 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.middleware.tracing import REQUEST_ID_CTX, setup_tracing
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture
 async def tracing_client() -> AsyncIterator[AsyncClient]:

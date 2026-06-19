@@ -12,7 +12,7 @@ from backend.services.chat_safety_metadata import (
 )
 from backend.services.safety_scanner import SafetyCategory
 
-# ── GuardrailDecision.scan_result field ──────────────────────────────
+# GuardrailDecision.scan_result field
 
 
 class TestGuardrailDecisionScanResult:
@@ -25,7 +25,7 @@ class TestGuardrailDecisionScanResult:
         assert decision.scan_result is None
 
 
-# ── Phase 1: original intent+target check (unchanged) ───────────────
+# Phase 1: original intent+target check (unchanged)
 
 
 class TestOriginalIntentTargetCheck:
@@ -43,7 +43,7 @@ class TestOriginalIntentTargetCheck:
         assert decision.triggered is False
 
 
-# ── Phase 2: injection risk ──────────────────────────────────────────
+# Phase 2: injection risk
 
 
 class TestInjectionRisk:
@@ -60,7 +60,7 @@ class TestInjectionRisk:
         assert decision.reason == GuardrailReason.INJECTION_RISK.value
 
 
-# ── Phase 2: sensitive data — secrets block ──────────────────────────
+# Phase 2: sensitive data — secrets block
 
 
 class TestSensitiveSecretsBlock:
@@ -76,7 +76,7 @@ class TestSensitiveSecretsBlock:
         assert decision.triggered is True
 
 
-# ── Phase 2: sensitive data — phone/email allow ──────────────────────
+# Phase 2: sensitive data — phone/email allow
 
 
 class TestSensitivePhoneEmailAllow:

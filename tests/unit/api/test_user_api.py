@@ -82,7 +82,6 @@ def import_service() -> SimpleNamespace:
     return service
 
 
-@pytest.mark.asyncio
 async def test_read_users_me_returns_user_response() -> None:
     current_user = make_user(username="me_user", email="me@example.com")
     feature_flag_service = SimpleNamespace(
@@ -110,7 +109,6 @@ async def test_read_users_me_returns_user_response() -> None:
     }
 
 
-@pytest.mark.asyncio
 async def test_read_user_uses_username_branch(user_service: SimpleNamespace) -> None:
     target = make_user(username="alice", email="alice@example.com")
     user_service.get_by_username.return_value = target
@@ -126,7 +124,6 @@ async def test_read_user_uses_username_branch(user_service: SimpleNamespace) -> 
     user_service.get_by_email.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_read_user_uses_email_branch(user_service: SimpleNamespace) -> None:
     target = make_user(username="alice", email="alice@example.com")
     user_service.get_by_email.return_value = target
@@ -142,7 +139,6 @@ async def test_read_user_uses_email_branch(user_service: SimpleNamespace) -> Non
     user_service.get_by_username.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_read_user_returns_404_when_not_found(
     user_service: SimpleNamespace,
 ) -> None:
@@ -159,7 +155,6 @@ async def test_read_user_returns_404_when_not_found(
     assert exc_info.value.message == "用户不存在"
 
 
-@pytest.mark.asyncio
 async def test_update_user_success(user_service: SimpleNamespace) -> None:
     user_id = uuid.uuid4()
     user_in = UserUpdate(username="new_name")
@@ -179,7 +174,6 @@ async def test_update_user_success(user_service: SimpleNamespace) -> None:
     user_service.user_update.assert_awaited_once_with(user_id=user_id, user_in=user_in)
 
 
-@pytest.mark.asyncio
 async def test_update_user_returns_404_when_not_found(
     user_service: SimpleNamespace,
 ) -> None:
@@ -207,7 +201,6 @@ def test_update_user_rejects_unknown_fields_before_service(
     user_service.user_update.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_create_user_success(user_service: SimpleNamespace) -> None:
     user_in = UserCreate(
         username="new_user",
@@ -229,7 +222,6 @@ async def test_create_user_success(user_service: SimpleNamespace) -> None:
     user_service.user_register_with_personal_workspace.assert_awaited_once_with(user_in)
 
 
-@pytest.mark.asyncio
 async def test_create_user_returns_400_when_service_returns_none(
     user_service: SimpleNamespace,
 ) -> None:
@@ -252,7 +244,6 @@ async def test_create_user_returns_400_when_service_returns_none(
     assert exc_info.value.message == "用户创建失败"
 
 
-@pytest.mark.asyncio
 async def test_csv_bulk_insert_users_success(import_service: SimpleNamespace) -> None:
     upload_file = MagicMock(spec=UploadFile)
     expected = UserImportResponse(
@@ -274,7 +265,6 @@ async def test_csv_bulk_insert_users_success(import_service: SimpleNamespace) ->
     import_service.import_from_upload.assert_awaited_once_with(upload_file)
 
 
-@pytest.mark.asyncio
 async def test_update_my_profile_success(user_service: SimpleNamespace) -> None:
     current_user = make_user(username="me_user", email="me@example.com")
     user_in = UserProfileUpdate(username="new_me", email="new_me@example.com")
@@ -299,7 +289,6 @@ async def test_update_my_profile_success(user_service: SimpleNamespace) -> None:
     assert kwargs["user_in"].email == "new_me@example.com"
 
 
-@pytest.mark.asyncio
 async def test_update_my_profile_preserves_unset_fields(
     user_service: SimpleNamespace,
 ) -> None:
@@ -322,7 +311,6 @@ async def test_update_my_profile_preserves_unset_fields(
     assert update_data.phone is None
 
 
-@pytest.mark.asyncio
 async def test_update_my_profile_returns_404_when_not_found(
     user_service: SimpleNamespace,
 ) -> None:

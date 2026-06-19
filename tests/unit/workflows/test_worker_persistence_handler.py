@@ -12,8 +12,6 @@ import pytest
 from backend.core.exceptions import AppException
 from backend.models.orm.chat import MessageStatus
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture
 def fake_persistence_uow() -> AsyncMock:

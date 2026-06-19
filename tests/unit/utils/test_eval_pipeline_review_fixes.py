@@ -96,7 +96,6 @@ def test_retrieval_build_rag_service_injects_reranker(
     assert captured["reranker"] is reranker
 
 
-@pytest.mark.asyncio
 async def test_retrieval_planner_skip_does_not_call_retrieve() -> None:
     rag_service = FakeRAGService()
 
@@ -117,7 +116,6 @@ async def test_retrieval_planner_skip_does_not_call_retrieve() -> None:
     assert summary["planner_used_rate"] == 1.0
 
 
-@pytest.mark.asyncio
 async def test_api_ragas_raises_on_row_count_mismatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -151,7 +149,6 @@ async def test_api_ragas_raises_on_row_count_mismatch(
         )
 
 
-@pytest.mark.asyncio
 async def test_api_401_refresh_updates_shared_headers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -7,14 +7,10 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-import pytest
-
 from backend.services.knowledge_ingestion_recovery_service import (
     STALE_INGESTION_ERROR,
     KnowledgeIngestionRecoveryService,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_recover_stale_ingestions_marks_files_and_tasks_as_failed() -> None:

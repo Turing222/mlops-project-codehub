@@ -43,7 +43,6 @@ def test_factory_returns_google_embedder() -> None:
     assert isinstance(embedder, GoogleGenAIEmbedder)
 
 
-@pytest.mark.asyncio
 async def test_factory_returns_mock_embedder() -> None:
     embedder = RAGEmbedderFactory.create(
         provider="mock",
@@ -70,7 +69,6 @@ def test_factory_rejects_local_embedding_provider() -> None:
         )
 
 
-@pytest.mark.asyncio
 async def test_default_encode_documents_is_bounded_and_ordered() -> None:
     class SlowEmbedder(AbstractRAGEmbedder):
         DEFAULT_ENCODE_DOCUMENTS_CONCURRENCY = 2
@@ -98,7 +96,6 @@ async def test_default_encode_documents_is_bounded_and_ordered() -> None:
     assert embedder.max_active == 2
 
 
-@pytest.mark.asyncio
 async def test_default_encode_documents_propagates_errors() -> None:
     class FailingEmbedder(AbstractRAGEmbedder):
         async def encode_query(self, text: str) -> list[float]:
@@ -113,7 +110,6 @@ async def test_default_encode_documents_propagates_errors() -> None:
         await FailingEmbedder().encode_documents(["1", "bad", "3"])
 
 
-@pytest.mark.asyncio
 async def test_openai_embedder_encode_query_success(monkeypatch) -> None:
     fake_response = SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2, 0.3])])
     fake_client = SimpleNamespace(
@@ -135,7 +131,6 @@ async def test_openai_embedder_encode_query_success(monkeypatch) -> None:
     assert vector == [0.1, 0.2, 0.3]
 
 
-@pytest.mark.asyncio
 async def test_openai_embedder_encode_documents_batches_inputs(monkeypatch) -> None:
     calls = []
     fake_response = SimpleNamespace(
@@ -170,7 +165,6 @@ async def test_openai_embedder_encode_documents_batches_inputs(monkeypatch) -> N
     assert calls[0]["dimensions"] == 3
 
 
-@pytest.mark.asyncio
 async def test_openai_embedder_encode_query_dim_mismatch(monkeypatch) -> None:
     fake_response = SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2])])
     fake_client = SimpleNamespace(
@@ -192,7 +186,6 @@ async def test_openai_embedder_encode_query_dim_mismatch(monkeypatch) -> None:
         await embedder.encode_query("hello")
 
 
-@pytest.mark.asyncio
 async def test_openai_embedder_rejects_empty_text() -> None:
     embedder = OpenAICompatibleEmbedder(
         model_name="text-embedding-3-small",
@@ -205,7 +198,6 @@ async def test_openai_embedder_rejects_empty_text() -> None:
         await embedder.encode_query("   ")
 
 
-@pytest.mark.asyncio
 async def test_google_embedder_uses_query_and_document_task_types(monkeypatch) -> None:
     calls = []
     fake_response = SimpleNamespace(
@@ -251,7 +243,6 @@ async def test_google_embedder_uses_query_and_document_task_types(monkeypatch) -
     assert calls[2]["config"].task_type == "RETRIEVAL_DOCUMENT"
 
 
-@pytest.mark.asyncio
 async def test_google_embedder_encode_query_dim_mismatch(monkeypatch) -> None:
     fake_response = SimpleNamespace(embeddings=[SimpleNamespace(values=[0.1, 0.2])])
     fake_client = SimpleNamespace(

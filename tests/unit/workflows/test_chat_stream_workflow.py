@@ -10,8 +10,6 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
-import pytest
-
 from backend.application.chat.history_projection import history_to_conversation_messages
 from backend.application.chat.web_stream_workflow import ChatWorkflow
 from backend.models.enums import MessageStatus
@@ -72,7 +70,6 @@ def test_history_projection_keeps_only_user_and_assistant_messages() -> None:
     ]
 
 
-@pytest.mark.asyncio
 async def test_stream_workflow_merges_web_metrics_into_message_metadata() -> None:
     message = SimpleNamespace(
         status=MessageStatus.SUCCESS,

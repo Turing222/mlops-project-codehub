@@ -20,8 +20,6 @@ from backend.services.audit_service import (
     record_audit,
 )
 
-pytestmark = pytest.mark.asyncio
-
 
 class FakeUow:
     def __init__(self) -> None:

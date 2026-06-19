@@ -10,7 +10,6 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock, MagicMock
 
-import pytest
 from fastapi import UploadFile
 
 from backend.application.knowledge.upload_workflow import KnowledgeUploadWorkflow
@@ -18,10 +17,7 @@ from backend.models.orm.knowledge import FileStatus
 from backend.services.knowledge_service import SavedKnowledgeFile
 from tests.unit.workflows.conftest import FakeAsyncUow
 
-pytestmark = pytest.mark.asyncio
 
-
-@pytest.mark.asyncio
 async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(
     monkeypatch,
 ) -> None:

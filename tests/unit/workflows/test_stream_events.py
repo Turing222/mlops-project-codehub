@@ -21,7 +21,6 @@ from backend.application.chat.stream_events import (
     stream_done_event,
     stream_error_event,
     stream_started_event,
-    stream_step_event,
 )
 
 

@@ -13,8 +13,6 @@ import pytest
 from backend.models.orm.access import AuditOutcome
 from backend.repositories.audit_repo import AuditEventFilters, AuditRepository
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture
 def repo_ctx() -> tuple[AuditRepository, AsyncMock]:

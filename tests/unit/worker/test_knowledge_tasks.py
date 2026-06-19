@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.requires_taskiq]
+pytestmark = pytest.mark.requires_taskiq
 
 
 async def test_safe_mark_failed_swallows_mark_failed_error() -> None:

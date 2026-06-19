@@ -4,7 +4,6 @@
 边界：使用 FakeRedis，不连接真实 Redis；副作用：无。
 """
 
-import pytest
 
 from backend.application.chat.stream_events import (
     encode_chunk_event,
@@ -14,8 +13,6 @@ from backend.application.chat.stream_events import (
     encode_step_event,
 )
 from backend.application.chat.worker_stream_publisher import WorkerStreamPublisher
-
-pytestmark = pytest.mark.asyncio
 
 
 class FakeRedis:

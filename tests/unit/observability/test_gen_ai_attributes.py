@@ -1,4 +1,7 @@
-"""Tests for build_llm_span_attributes helper."""
+"""Gen AI span attributes unit tests.
+
+职责：验证 build_llm_span_attributes 输出结构；边界：纯函数调用，无外部 I/O；副作用：无。
+"""
 
 from backend.observability.trace_utils import build_llm_span_attributes
 

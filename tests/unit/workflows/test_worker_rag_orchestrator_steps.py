@@ -1,17 +1,16 @@
-"""Worker RAG orchestrator step callback tests."""
+"""Worker RAG orchestrator steps unit tests.
+
+职责：验证 WorkerRAGOrchestrator 步骤回调；边界：mock service/LLM 依赖；副作用：无。
+"""
 
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
 from backend.models.schemas.chat.payloads import FeatureFlags, GenerationPayload
 from backend.services.rag_evidence_policy import RAGEvidenceDecision
 from tests.unit.workflows.conftest import make_rag_hit
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_prepare_context_emits_step_callbacks_in_order() -> None:

@@ -1,10 +1,12 @@
-"""Health check endpoint unit tests."""
+"""Health check endpoint unit tests.
+
+职责：验证 readiness 探针逻辑；边界：monkeypatch instrumentation 状态，不启动服务；副作用：无。
+"""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 from opentelemetry.instrumentation.utils import is_instrumentation_enabled
 
 from backend.api.v1.endpoint.health_check import readiness_check
@@ -46,7 +48,6 @@ class FakeEngine:
         return self.connection_context
 
 
-@pytest.mark.asyncio
 async def test_readiness_check_suppresses_db_instrumentation() -> None:
     engine = FakeEngine()
     request = SimpleNamespace(

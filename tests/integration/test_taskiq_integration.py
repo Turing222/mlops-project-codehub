@@ -1,3 +1,8 @@
+"""TaskIQ broker integration tests.
+
+职责：验证真实 TaskIQ broker 收发；边界：需 requires_taskiq；副作用：连真实 broker。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -118,7 +123,6 @@ def taskiq_worker():
                 proc.wait(timeout=5)
 
 
-@pytest.mark.asyncio
 async def test_taskiq_worker_consumes_task_from_redis(taskiq_worker, taskiq_redis):
     result_key = f"itest:taskiq:{uuid.uuid4().hex}"
     expected_value = "hello-taskiq"

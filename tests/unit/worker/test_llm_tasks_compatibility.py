@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.requires_taskiq]
+pytestmark = pytest.mark.requires_taskiq
 
 
 def _make_generation_payload() -> dict:
@@ -48,7 +48,6 @@ def _make_stream_result():
     return StreamGenerationResult(success=True, output="answer")
 
 
-@pytest.mark.asyncio
 async def test_stream_task_unpacks_new_payload_dict() -> None:
     """New format: single LLMTaskPayload dict as args[0]."""
     from backend.models.schemas.chat.payloads import LLMTaskPayload
@@ -85,7 +84,6 @@ async def test_stream_task_unpacks_new_payload_dict() -> None:
     assert call_kwargs["idempotency_lock_key"] == "lock:abc"
 
 
-@pytest.mark.asyncio
 async def test_stream_task_unpacks_old_positional_args() -> None:
     """Old format: multiple positional args."""
     from backend.worker.tasks.llm_tasks import generate_llm_stream_task
@@ -116,7 +114,6 @@ async def test_stream_task_unpacks_old_positional_args() -> None:
     assert call_kwargs["idempotency_lock_key"] == lock_key
 
 
-@pytest.mark.asyncio
 async def test_stream_task_passes_external_context_provider_to_workflow() -> None:
     from backend.models.schemas.chat.payloads import LLMTaskPayload
     from backend.worker.tasks.llm_tasks import generate_llm_stream_task
@@ -152,7 +149,6 @@ async def test_stream_task_passes_external_context_provider_to_workflow() -> Non
     mock_inner.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_nonstream_task_unpacks_new_payload_dict() -> None:
     from backend.models.schemas.chat.payloads import GenerationResult, LLMTaskPayload
     from backend.worker.tasks.llm_tasks import generate_llm_nonstream_task
@@ -188,7 +184,6 @@ async def test_nonstream_task_unpacks_new_payload_dict() -> None:
     assert call_kwargs["idempotency_lock_key"] == "lock:def"
 
 
-@pytest.mark.asyncio
 async def test_nonstream_task_unpacks_old_positional_args() -> None:
     """Old format: multiple positional args."""
     from backend.models.schemas.chat.payloads import GenerationResult

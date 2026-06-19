@@ -25,8 +25,6 @@ from backend.services.feature_flag_service import (
     FeatureFlagService,
 )
 
-pytestmark = pytest.mark.asyncio
-
 
 def _make_mock_feature_flag_service(
     overrides: dict[str, bool] | None = None,

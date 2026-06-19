@@ -1,4 +1,7 @@
-"""Unit tests for production bootstrap user script."""
+"""Production bootstrap user script unit tests.
+
+职责：验证生产 bootstrap 用户脚本参数校验；边界：直接调用脚本函数，不连数据库；副作用：无。
+"""
 
 import pytest
 
