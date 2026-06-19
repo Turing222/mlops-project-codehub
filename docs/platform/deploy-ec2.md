@@ -2,6 +2,8 @@
 
 本文档定义 Dewflow 在 **单台 EC2** 上的手动部署入口，目标是先把人工部署流程标准化，后续再让 GitHub Actions / SSM 复用同一套命令实现自动 CD。
 
+**首次部署**：按可打勾清单执行 [deploy/CHECKLIST.md](../../deploy/CHECKLIST.md)。Tunnel 模板见 [deploy/cloudflare/README.md](../../deploy/cloudflare/README.md)；域名三根线见 [deploy/domains.env.example](../../deploy/domains.env.example)。EC2 栈可用 `make deploy-bootstrap-prod ARGS=ec2-stack` 编排。
+
 ## 适用范围
 
 本流程面向：
@@ -74,7 +76,8 @@ Root directory: frontend
 Build command: pnpm install --frozen-lockfile && pnpm --filter admin build
 Build output: apps/admin/dist
 Environment (Production): VITE_API_BASE_URL=https://api.<domain>
-Environment (Preview): VITE_API_BASE_URL=<可用的 API origin；缺失时 CF_PAGES=1 构建会直接失败>
+Environment (Preview): VITE_API_BASE_URL=<生产 API 或独立 staging API；缺失时 CF_PAGES=1 构建会直接失败>
+Preview 若指向生产 API，须把 Preview origin 一并写入 BACKEND_CORS_ORIGINS（见 deploy/CHECKLIST.md Phase 4）。
 ```
 
 版本钉住不依赖 Dashboard 配置：Node 版本由 `frontend/.nvmrc` 决定（当前 22），pnpm 版本由 `frontend/package.json` 的 `packageManager` 字段决定（corepack）。CI 与 Pages 构建读取同一来源，避免环境漂移。唯一例外是 fallback 镜像：`frontend/apps/admin/Dockerfile` 通过 `corepack prepare` 单独钉住相同的 pnpm 版本，升级 `packageManager` 时必须同步修改该行。
@@ -180,7 +183,7 @@ RATE_LIMIT_TRUSTED_PROXY_CIDRS=172.30.0.11/32
 
 - `DEPLOY_BASE_URL=https://api.<domain>`
 - `DEPLOY_FRONTEND_BASE_URL=https://app.<domain>`
-- `BACKEND_CORS_ORIGINS=https://app.<domain>`（如果有 `pages.dev` 预发域名，可在上线窗口临时一并加入）
+- `BACKEND_CORS_ORIGINS=https://app.<domain>`（Preview 也打生产 API 时，必须把实际 `pages.dev` 等 Preview origin 一并加入；仅 Production 联调则只保留生产前端域名，详见 [deploy/CHECKLIST.md](../../deploy/CHECKLIST.md) Phase 4）
 - `GOOGLE_ALLOWED_REDIRECT_URIS=https://app.<domain>/auth/google/callback`（仅在启用 Google OAuth 时）
 
 如果需要临时启用前端容器 fallback：

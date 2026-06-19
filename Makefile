@@ -102,7 +102,7 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 	frontend-lint frontend-typecheck frontend-test frontend-test-coverage frontend-build frontend-bundle-check frontend-build-pages-check frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all release-check-clean image-build-release frontend-image-build-release image-build-all-release release-image-env release-tag \
 	docker-prune-stale-infra \
-		deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down deploy-cloudwatch-setup \
+		deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down deploy-cloudwatch-setup deploy-bootstrap-prod \
 	deploy-local-prod-secrets-prepare deploy-local-prod-check deploy-local-prod-up deploy-local-prod-wait deploy-local-prod-verify deploy-local-prod-logs deploy-local-prod-down \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-up-debug env-smoke-wait env-smoke-down env-smoke-logs \
 	set-llm seed-dev seed-prod-bootstrap \
@@ -171,6 +171,7 @@ help:
 			'  deploy-ec2-logs      Show recent EC2 deploy logs' \
 			'  deploy-ec2-down      Stop the EC2 deploy stack' \
 			'  deploy-cloudwatch-setup  Create/update CloudWatch log alarms and SNS topic' \
+		'  deploy-bootstrap-prod  Orchestrate first prod bootstrap (ARGS=ec2-stack|github-gate|verify-pages)' \
 			'  deploy-local-prod-up Start local production-shape rehearsal stack with MinIO S3' \
 		'  deploy-local-prod-down Stop local production-shape rehearsal stack' \
 		'  env-smoke-prepare    Generate the smoke env file from template' \
@@ -386,6 +387,9 @@ deploy-ec2-down:
 
 deploy-cloudwatch-setup:
 	bash deploy/monitoring/cloudwatch-setup.sh
+
+deploy-bootstrap-prod:
+	bash scripts/deploy/bootstrap-prod.sh $(ARGS)
 
 deploy-local-prod-secrets-prepare:
 	$(LOCAL_PROD_DEPLOY_ENV) bash scripts/deploy/local-prod-secrets-prepare.sh

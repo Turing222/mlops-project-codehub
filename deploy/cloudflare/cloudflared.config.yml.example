@@ -1,0 +1,16 @@
+# Cloudflare Tunnel ingress for Dewflow API edge (api-nginx on loopback).
+#
+# Copy to the EC2 host (e.g. /etc/cloudflared/config.yml), replace placeholders,
+# and keep credentials outside Git. See deploy/cloudflare/README.md.
+#
+# Prerequisites on EC2:
+#   - deploy/.env.ec2 has API_NGINX_BIND=127.0.0.1 and API_NGINX_PORT=8081
+#   - make deploy-ec2-up && curl http://127.0.0.1:8081/api/v1/health_check/live
+
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: api.<domain>
+    service: http://127.0.0.1:8081
+  - service: http_status:404
