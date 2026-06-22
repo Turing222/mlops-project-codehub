@@ -27,7 +27,7 @@ dependencies = [
     "jieba~=0.42.1",
     # File parsing (shared by web and worker)
     "openpyxl~=3.1.0",
-    "growthbook==2.1.0",
+    "growthbook==2.1.5",
 ]
 
 [project.optional-dependencies]

@@ -527,7 +527,7 @@ requires-dist = [
     { name = "boto3", specifier = "~=1.42.0" },
     { name = "fastapi", marker = "extra == 'web'", specifier = "~=0.136.0" },
     { name = "google-auth", extras = ["requests"], marker = "extra == 'web'", specifier = "~=2.49.0" },
-    { name = "growthbook", specifier = "==2.1.0" },
+    { name = "growthbook", specifier = "==2.1.5" },
     { name = "httpx", marker = "extra == 'web'", specifier = "~=0.28.0" },
     { name = "jieba", specifier = "~=0.42.1" },
     { name = "jinja2", marker = "extra == 'ai'", specifier = "~=3.1.0" },
@@ -897,7 +897,7 @@ wheels = [
 
 [[package]]
 name = "growthbook"
-version = "2.1.0"
+version = "2.1.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -905,9 +905,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0f/b1/222605c5d10358f7001bde88a642f687e3c9b07413f1a7c937a9a7762b5a/growthbook-2.1.0.tar.gz", hash = "sha256:dd7c765731b3fa26997315c983d28f2314dd5c5cc4b4778ed3102d23fd0b06d7", size = 68362, upload-time = "2026-01-22T19:47:38.415Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2a/96/159e983e1c316e2b30a90ded895b976d0d78afed440a6083f9fe52af7f9e/growthbook-2.1.5.tar.gz", hash = "sha256:92542b1f54c22e90cb3ea34da529ff333a8a4e66ccda6dbc6d6da73978ed3a8e", size = 69867, upload-time = "2026-03-06T16:30:44.627Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/33/fb/07fdee7685c382712bfc3ee5e66fe1147ef823898e95cd3a80687018c8f9/growthbook-2.1.0-py2.py3-none-any.whl", hash = "sha256:622a13a961c92806426d80c2bf61ad6c2f21f7cd2632310c20d6b807ae78175b", size = 44895, upload-time = "2026-01-22T19:47:37.121Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/fa/e63c8abda6668bee6aa374988b3fbbd4f533e57dc813881893443bae7f5b/growthbook-2.1.5-py2.py3-none-any.whl", hash = "sha256:a1d7646a81276c6e9c0fd03483025d8bb270afe12d6b6f4262b6e6a6c8c194bc", size = 45510, upload-time = "2026-03-06T16:30:43.784Z" },
 ]
 
 [[package]]
