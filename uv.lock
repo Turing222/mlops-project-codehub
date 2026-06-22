@@ -531,7 +531,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'web'", specifier = "~=0.28.0" },
     { name = "jieba", specifier = "~=0.42.1" },
     { name = "jinja2", marker = "extra == 'ai'", specifier = "~=3.1.0" },
-    { name = "langfuse", specifier = "~=3.14.0" },
+    { name = "langfuse", specifier = "~=3.14.6" },
     { name = "openai", marker = "extra == 'ai'", specifier = "~=2.21.0" },
     { name = "openpyxl", specifier = "~=3.1.0" },
     { name = "opentelemetry-api", specifier = "~=1.40.0" },
@@ -1241,7 +1241,7 @@ wheels = [
 
 [[package]]
 name = "langfuse"
-version = "3.14.5"
+version = "3.14.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backoff" },
@@ -1252,12 +1252,11 @@ dependencies = [
     { name = "opentelemetry-sdk" },
     { name = "packaging" },
     { name = "pydantic" },
-    { name = "requests" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ec/6b/7a945e8bc56cbf343b6f6171fd45870b0ea80ea38463b2db8dd5a9dc04a2/langfuse-3.14.5.tar.gz", hash = "sha256:2f543ec1540053d39b08a50ed5992caf1cd54d472a55cb8e5dcf6d4fcb7ff631", size = 235474, upload-time = "2026-02-23T10:42:47.721Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/e4/5bb96bc5f95f476c8f7c4e654a6420250938cc21645b914a1309c2dc3d49/langfuse-3.14.6.tar.gz", hash = "sha256:058f7b7caa9284b964feaee81c223542d78e9fb4daabf312269b9f903471b9c4", size = 236530, upload-time = "2026-04-01T17:27:55.057Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/a1/10f04224542d6a57073c4f339b6763836a0899c98966f1d4ffcf56d2cf61/langfuse-3.14.5-py3-none-any.whl", hash = "sha256:5054b1c705ec69bce2d7077ce7419727ac629159428da013790979ca9cae77d5", size = 421240, upload-time = "2026-02-23T10:42:46.085Z" },
+    { url = "https://files.pythonhosted.org/packages/8b/9a/f2d82cdb7fb71d89de2e693b317a8f2c3d3da44db8a1533b96cf0fbe362f/langfuse-3.14.6-py3-none-any.whl", hash = "sha256:5eb22a5ea579ac10f050513e3fedccc3c9a981eeefe44f9014273bc229a56f88", size = 421426, upload-time = "2026-04-01T17:27:53.487Z" },
 ]
 
 [[package]]
