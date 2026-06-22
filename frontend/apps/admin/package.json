@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.11",
-    "antd": "^6.2.2",
+    "antd": "^6.2.3",
     "axios": "^1.17.0",
     "i18next": "^24.2.2",
     "lucide-react": "^0.563.0",
