@@ -15,6 +15,7 @@
 - [Components](standards/components.md): 页面、feature、组件和表单的拆分约定。
 - [Testing](standards/testing.md): 前端测试分层、覆盖重点和验收命令。
 - [Styling](standards/styling.md): 样式组织、设计系统和响应式约定。
+- [Feature Flags](standards/feature-flags.md): feature flag 来源、消费入口和命名约定。
 
 ## 使用原则
 

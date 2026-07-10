@@ -6,7 +6,7 @@ Use this reference for any work under `frontend/`. Detailed rules live in `front
 
 The frontend is a pnpm workspace with a single app: `frontend/apps/admin`.
 
-- Stack: React 19, TypeScript, Vite 7, antd 6, TanStack Query 5, Zustand 5, react-router 7, zod 4.
+- Stack: React 19, TypeScript, Vite 7, antd 6, TanStack Query 5, Zustand 5, react-router-dom 7, zod 4.
 - Testing: Vitest + Testing Library + MSW for unit/integration, Playwright for e2e (mock and smoke projects).
 - Feature flags are served by the backend; the frontend never connects to GrowthBook directly (see [secrets-and-flags.md](secrets-and-flags.md)).
 
@@ -42,6 +42,7 @@ Read the smallest matching document before frontend work:
 - [frontend/docs/standards/streaming.md](../../../../frontend/docs/standards/streaming.md): SSE parsing centralized in `streams/`.
 - [frontend/docs/standards/styling.md](../../../../frontend/docs/standards/styling.md): antd first, localized styles.
 - [frontend/docs/standards/testing.md](../../../../frontend/docs/standards/testing.md): test layering and minimum-test guidance for new features.
+- [frontend/docs/standards/feature-flags.md](../../../../frontend/docs/standards/feature-flags.md): feature flags are backend-served; consume via `useFeatureFlag()` / `FeatureGate`, never GrowthBook directly.
 
 ## Delivery And Release
 
@@ -60,6 +61,7 @@ Use Make targets from the repository root:
 make frontend-lint
 make frontend-typecheck
 make frontend-test
+make frontend-test-coverage
 make frontend-build
 make frontend-bundle-check
 make frontend-e2e-mock

@@ -312,6 +312,8 @@ services:
     <<: *default-security
     image: ${DOCKER_IMAGE_NAME_AI:?missing DOCKER_IMAGE_NAME_AI (set in deploy/.env.ec2 via make release-image-env)}
     container_name: credit_scheduler
+    # SIGINT: taskiq scheduler ignores SIGTERM; asyncio.run only cancels the main task on SIGINT, triggering graceful shutdown.
+    stop_signal: SIGINT
     stop_grace_period: 30s
     command: sh -c 'exec taskiq scheduler backend.worker.scheduler_entrypoint:build_scheduler $${TASKIQ_SCHEDULER_MODULES:-backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks}'
     env_file: *deploy-env-file

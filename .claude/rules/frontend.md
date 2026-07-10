@@ -8,7 +8,7 @@ paths:
 Distilled from `.codex/skills/project/references/frontend.md` and `frontend/docs/`.
 
 App: `frontend/apps/admin` (pnpm workspace). React 19 + TS + Vite + antd 6 +
-TanStack Query 5 + Zustand 5 + zod 4.
+react-router-dom 7 + TanStack Query 5 + Zustand 5 + zod 4.
 
 ## Layering
 

@@ -43,6 +43,7 @@
 - [Component Standard](standards/components.md)
 - [Testing Standard](standards/testing.md)
 - [Styling Standard](standards/styling.md)
+- [Feature Flag Standard](standards/feature-flags.md)
 
 当前已落地：
 
