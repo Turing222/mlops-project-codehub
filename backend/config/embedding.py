@@ -109,7 +109,7 @@ def build_embedding_profiles(config: LLMModelsConfig) -> dict[str, EmbeddingProf
                 base_url=None,
                 api_key_envs=("RAG_EMBED_API_KEY", "LLM_API_KEY", "OPENAI_API_KEY"),
                 aliases=("openai", "openai-compatible", "external-api"),
-                dimensions=1536,
+                dimensions=768,
             ),
         }
 
