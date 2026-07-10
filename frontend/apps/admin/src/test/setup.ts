@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup } from '@testing-library/react';
+import { act, cleanup } from '@testing-library/react/pure';
 import { afterEach, beforeAll, vi } from 'vitest';
 
 import { useAuthStore } from '../stores/auth-store';
@@ -11,6 +11,23 @@ import { initReactI18next } from 'react-i18next';
 import mockZhCN from '../assets/locales/zh-CN.json';
 
 setupServerLifecycle();
+
+// React 19's scheduler drains pending macrotasks within a few rounds; 5 leaves margin
+// without slowing teardown noticeably (see flushSchedulerMacrotask usage in afterEach).
+const SCHEDULER_FLUSH_ROUNDS = 5;
+
+function flushSchedulerMacrotask(): Promise<void> {
+    return new Promise((resolve) => {
+        const setImmediateFn = (globalThis as typeof globalThis & {
+            setImmediate?: (callback: () => void) => void;
+        }).setImmediate;
+        if (typeof setImmediateFn === 'function') {
+            setImmediateFn(resolve);
+        } else {
+            setTimeout(resolve, 0);
+        }
+    });
+}
 
 Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -64,7 +81,15 @@ afterEach(async () => {
             await appI18n.changeLanguage('zh-CN');
         });
     }
-    cleanup();
+    // React 19 schedules concurrent work via setImmediate (performWorkUntilDeadline).
+    // Wrap cleanup + scheduler flush in act() so pending work finishes before jsdom teardown
+    // (v8 instrumentation can otherwise surface ReferenceError: window is not defined).
+    await act(async () => {
+        cleanup();
+        for (let index = 0; index < SCHEDULER_FLUSH_ROUNDS; index++) {
+            await flushSchedulerMacrotask();
+        }
+    });
     localStorage.clear();
     sessionStorage.clear();
     useAuthStore.getState().resetAll();

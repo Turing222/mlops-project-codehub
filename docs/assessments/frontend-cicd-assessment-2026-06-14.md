@@ -110,7 +110,7 @@
 | R2 | **高** | 无对真实后端的前端 e2e 冒烟门禁（`e2e-smoke` 仅手动）；API 契约回归无自动捕获 | `package.json:16`、各 workflow | workflow 已落地(§8.2)，待补凭据 secret |
 | R3 | 中 | 无 Pages 发布后的自动 post-deploy 冒烟；`verify-pages` 纯手动 | `deploy-ec2.md:94-98` | 已自动化 `verify-pages`(§8.3/§9.4)；线上 e2e 待 fixture 改造 |
 | R4 | 中 | 直推 `main` 绕过 `pr-gate`（e2e-mock 不在 push 触发） | `pr-gate-ci.yml:3-6` | 缓解：R2 workflow 加了 `push:[main]` |
-| R5 | 中 | 前端单测无 coverage 门禁，回归保护强度不可度量 | `vitest.config.ts` | 已可度量(report-only + floor，§9.1)；转正式门禁待修 teardown 竞态 |
+| R5 | 中 | 前端单测无 coverage 门禁，回归保护强度不可度量 | `vitest.config.ts` | 已可度量 + 正式门禁（§9.1）；floor 阈值在 CI 阻断 |
 | R6 | 低 | bundle-check 是相对 baseline（±10%），可被多次刷新逐步放大 | `check-bundle-size.mjs:75` | 已加绝对硬上限(§9.3) |
 | R7 | 低 | e2e-mock `retries:2` 掩盖 flaky，且 trace/report 未 upload-artifact，失败证据不落盘 | `playwright.config.ts:7` | 部分：R2 smoke 上传 report；mock e2e 仍未传 |
 | R8 | 低 | CI build 与 Pages 生产 build 产物形态不同（无 `VITE_API_BASE_URL`），生产 `_headers` 真值未在 CI 演练 | 见 3.3 / 3.5 | 已演练(§9.2) |
@@ -402,10 +402,10 @@ jobs:
 
 ### 9.1 R5 — 前端单测覆盖率可度量
 - `frontend/apps/admin/vitest.config.ts` 加 `coverage`（provider v8，reporter text-summary/json-summary/html/lcov，`include: src/**/*.{ts,tsx}` 全量口径）。
-- 新增 `test:coverage` 脚本、`make frontend-test-coverage`；`static-ci.yml` 的 `frontend-static` 加 **report-only** 步骤并上传 `frontend-coverage` artifact。
+- 新增 `test:coverage` 脚本、`make frontend-test-coverage`；`static-ci.yml` 的 `frontend-static` 跑覆盖率并上传 `frontend-coverage` artifact（**正式门禁**，floor 阈值在 `vitest.config.ts`）。
 - **实测基线（全量口径）**：Statements 45.17% / Branches 36.72% / Functions 41.46% / Lines 45.97%（197 测试全过）。注意这低于"只算被测文件"的口径（那个口径 ~68%），因为全量口径把未被测模块也计入分母——这才是真实的回归信号。
 - **下限（floor）**：statements 40 / branches 30 / functions 35 / lines 40，设在实测下方留余量；非追逐目标，与 `testing.md` 一致。
-- **为何 report-only**：`--coverage`（v8 插桩）会暴露 react-dom scheduler 在 jsdom 拆环境后触发的 late teardown 错误（`streaming-contract` / `admin-users-contract` 等 contract 测试），使 `vitest run --coverage` 退出码非 0；而普通 `make frontend-test` 干净退出 0、仍是阻塞门禁。修掉这些 contract 测试的清理泄漏后，去掉 CI 步骤的 `continue-on-error` 即可把下限转为正式门禁。**这是一个独立的测试基建后续项。**
+- **teardown 竞态（已解决）**：v8 插桩曾暴露 React 19 scheduler 经 Node `setImmediate` 在 jsdom 拆环境后触发的 late teardown（`ReferenceError: window is not defined`）；与 `streaming-contract` / `admin-users-contract` 无关（它们不渲染组件）。修复：`src/test/setup.ts` 禁用 RTL 自动 cleanup、在 `act(cleanup)` 内 flush setImmediate；`vitest.config.ts` 设 `RTL_SKIP_AUTO_CLEANUP` 与 `fileParallelism: false`。`static-ci.yml` 已去掉 coverage 步骤的 `continue-on-error`。
 
 ### 9.2 R8 — 生产形态构建在 CI 演练
 - 新增 `make frontend-build-pages-check`：以 `CF_PAGES=1` + `VITE_API_BASE_URL=https://api.example.com` 构建，断言 `dist/_headers` 含 `Content-Security-Policy-Report-Only` 与真实 `report-uri .../api/v1/csp/reports`、无 `<domain>` 占位符。
@@ -423,7 +423,6 @@ jobs:
 - `make frontend-build-pages-check`、`make frontend-bundle-check` 本地 exit 0；coverage thresholds 通过（实测高于下限）。
 
 ### 9.6 已知遗留（独立后续项，非本轮范围）
-- contract 测试在 v8 插桩下的 late teardown 泄漏（阻碍 coverage 转正式门禁）。
 - split-origin 下 smoke fixture 的 API-origin 改造（阻碍线上浏览器 e2e）。
 - R1（branch protection 巡检）/ R2（前端 e2e-smoke）需要在仓库设置侧补 secret / Variables 才真正生效（见 §8.1 / §8.2）。
 

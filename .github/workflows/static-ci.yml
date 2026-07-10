@@ -99,15 +99,9 @@ jobs:
       - name: Typecheck
         run: make frontend-typecheck
 
-      - name: Unit tests
-        run: make frontend-test
-
-      # Coverage is report-only for now: v8 instrumentation surfaces a pre-existing
-      # late react-dom scheduler teardown error (plain `make frontend-test` is clean).
-      # Thresholds (floors) are configured in vitest.config.ts; drop continue-on-error
-      # to enforce them once that teardown race is resolved. See assessment doc §9.
-      - name: Coverage (report-only)
-        continue-on-error: true
+      # Unit tests run under coverage so the floors in vitest.config.ts are enforced
+      # as a blocking gate; a plain `vitest run` would be a redundant second full pass.
+      - name: Unit tests + coverage
         run: make frontend-test-coverage
 
       - name: Upload coverage report

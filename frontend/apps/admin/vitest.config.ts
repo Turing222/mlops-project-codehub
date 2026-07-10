@@ -24,6 +24,14 @@ export default defineConfig({
         environment: 'jsdom',
         globals: true,
         css: true,
+        // RTL_SKIP_AUTO_CLEANUP: setup.ts owns cleanup in act(); avoids sync auto-cleanup
+        // racing React 19 scheduler work after our flush (see src/test/setup.ts).
+        env: {
+            RTL_SKIP_AUTO_CLEANUP: 'true',
+        },
+        // Run test files serially in a single worker: deterministic teardown ordering
+        // keeps the React 19 scheduler flush in setup.ts reliable under v8 coverage.
+        fileParallelism: false,
         setupFiles: ['./src/test/setup.ts'],
         exclude: [
             ...configDefaults.exclude,
@@ -55,14 +63,6 @@ export default defineConfig({
                 branches: 30,
                 functions: 35,
                 lines: 40,
-            },
-        },
-        poolOptions: {
-            threads: {
-                singleThread: true,
-            },
-            forks: {
-                singleFork: true,
             },
         },
     },

@@ -51,6 +51,7 @@ make qa-standards-fast
 make frontend-lint
 make frontend-typecheck
 make frontend-test
+make frontend-test-coverage
 make frontend-build
 make frontend-e2e-mock
 make frontend-check
