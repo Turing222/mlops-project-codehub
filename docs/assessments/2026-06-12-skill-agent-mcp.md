@@ -1,7 +1,10 @@
 # Skill / Agent / MCP 评估报告
 
-> 日期：2026-06-12 · 分支：`feat/frontend-v1` · 范围：`.codex/skills/`、`agents/openai.yaml`、`.agents/`、Serena MCP 接线
+> 日期：2026-06-12
+> 范围：`.codex/skills/`、`agents/openai.yaml`、`.agents/` 与 Serena MCP 接线
 > 性质：只读评估，未改动任何运行逻辑文件。
+> 证据基线：分支 `feat/frontend-v1` 的项目级 agent 配置与 skill 资产
+> 状态：冻结；后续现行约定以 `.codex/skills/` 与 `AGENTS.md` 为准
 
 ## 1. 体系全貌
 
@@ -58,7 +61,7 @@ MCP 侧只接了一个服务：**Serena**（语义导航 + 诊断），通过 `s
 ## 5. 问题汇总与优先级
 
 | # | 级别 | 问题 | 建议动作 |
-|---|------|------|---------|
+| --- | --- | --- | --- |
 | 1 | P1 | `read`/`debug` SKILL.md 把 Codex 专用 `apply_patch` 当禁令，Claude 侧落空 | 已改为客户端中性的写操作描述 |
 | 2 | P1 | 根目录 `.agents/` 空目录、未跟踪、无用途 | 删除，或 `.gitkeep`+README 说明 |
 | 3 | P2 | Serena 工具白名单四处重复无单一事实源 | 文档点明 `fixed_tools` 为事实源，其余仅免确认 |

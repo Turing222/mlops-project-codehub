@@ -1,8 +1,10 @@
-# 前端 CI/CD 评估（2026-06-14）
+# 前端 CI/CD 评估
 
-> 评估范围：`frontend/apps/admin` 在 `.github/workflows/` 中的 CI 覆盖，以及 Cloudflare Pages 交付（CD）模型。
-> 证据基线：分支 `feat/frontend-v1`，workflow 文件、`Makefile` frontend targets、`docs/platform/frontend-delivery-and-edge-responsibilities.md`、`docs/platform/deploy-ec2.md`。
-> 本文记录评估结论与 §8/§9 的落地设计；对应 workflow / Makefile / 前端测试配置变更见同文档后续章节与 Change Summary。
+> 日期：2026-06-14
+> 范围：`frontend/apps/admin` 的 CI 覆盖与 Cloudflare Pages 交付模型
+> 性质：时点评估，包含 §8/§9 的后续落地记录
+> 证据基线：分支 `feat/frontend-v1`、workflow、`Makefile` frontend targets 与相关 platform 文档
+> 状态：冻结；现行交付约定以 `docs/platform/` 和 `.github/workflows/` 为准
 
 ## 1. 拓扑概览
 
@@ -15,7 +17,7 @@
 ## 2. 前端在各 Workflow 中的覆盖矩阵
 
 | Workflow | 触发 | 前端相关 job / 步骤 | 说明 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `static-ci.yml` | push `main`/`master` + **所有 PR** | `frontend-static`：lint → typecheck → unit test → build → **bundle-check** | 前端静态门禁主力；无 paths 过滤 |
 | `pr-gate-ci.yml` | `pull_request`（非 draft）+ dispatch | `pr-gate` 末段：**frontend-e2e-mock**（Playwright，装 Chromium） | 仅 PR 跑；**push main 不跑** |
 | `security-ci.yml` | push + 指定 paths PR + 周一 cron | `frontend-dependencies`：`pnpm audit`（prod=high / dev=critical，registry 钉死）；`frontend-image`：构建 fallback 镜像 + trivy 扫描 | 依赖与镜像漏洞 |
@@ -105,7 +107,7 @@
 ## 6. 风险与差距（按优先级）
 
 | # | 严重度 | 问题 | 证据 | 状态 |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | R1 | **高** | 部署 gate 仅靠 GitHub branch protection 人工配置，仓库无法自验；缺失即"CI 未过先上线" | `deploy-ec2.md:84-90` | workflow 已落地(§8.1)，待补 PAT secret |
 | R2 | **高** | 无对真实后端的前端 e2e 冒烟门禁（`e2e-smoke` 仅手动）；API 契约回归无自动捕获 | `package.json:16`、各 workflow | workflow 已落地(§8.2)，待补凭据 secret |
 | R3 | 中 | 无 Pages 发布后的自动 post-deploy 冒烟；`verify-pages` 纯手动 | `deploy-ec2.md:94-98` | 已自动化 `verify-pages`(§8.3/§9.4)；线上 e2e 待 fixture 改造 |

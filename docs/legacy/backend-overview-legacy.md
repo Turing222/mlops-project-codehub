@@ -1,10 +1,8 @@
-# Legacy Backend README
+# Dewflow AI Backend（历史版）
 
 > 这是保留的旧版根 README，主要反映仓库在“后端主视角”阶段的说明内容。
-> 
+>
 > 当前建议优先从仓库级入口 [../../README.md](../../README.md) 开始阅读；本文件暂时保留，不删除，供历史参考与补充查阅。
-
-# Dewflow AI Backend
 
 基于 FastAPI + PostgreSQL(pgvector) + Redis + TaskIQ 的异步 AI 服务后端，采用分层架构与 Ports & Adapters（六边形架构）模式。
 
@@ -109,13 +107,13 @@ uv run alembic upgrade head
 **必填**（无默认值，缺一不可启动）：
 
 | 变量 | 说明 |
-|------|------|
+| --- | --- |
 | `SECRET_KEY` | JWT 签名密钥 |
 
 **数据库**（不设 `DATABASE_URL` 时按以下拼装）：
 
 | 变量 | 默认值 |
-|------|--------|
+| --- | --- |
 | `POSTGRES_USER` | `postgres` |
 | `POSTGRES_PASSWORD` | — |
 | `POSTGRES_SERVER` | `localhost` |
@@ -129,7 +127,7 @@ uv run alembic upgrade head
 **Redis**（不设 `REDIS_URL` / `TASKIQ_REDIS_URL` 时按以下拼装，TaskIQ 默认使用 DB 1）：
 
 | 变量 | 默认值 |
-|------|--------|
+| --- | --- |
 | `REDIS_HOST` | `localhost` |
 | `REDIS_PORT` | `6379` |
 | `REDIS_PASSWORD` | — |
@@ -137,7 +135,7 @@ uv run alembic upgrade head
 **LLM**：
 
 | 变量 | 默认值 |
-|------|--------|
+| --- | --- |
 | `LLM_PROVIDER` | `mock`（可选 `openai-compatible` / `deepseek` / `gemini`） |
 | `LLM_API_KEY` | — |
 | `LLM_BASE_URL` | `https://api.openai.com/v1` |
@@ -150,7 +148,7 @@ Provider 密钥：`OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `DEEP
 **RAG / Embedding**：
 
 | 变量 | 默认值 |
-|------|--------|
+| --- | --- |
 | `RAG_EMBED_PROVIDER` | `google` |
 | `RAG_EMBED_DIM` | `768` |
 | `RAG_TOP_K` | `4` |
@@ -164,7 +162,7 @@ Provider 密钥：`OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `DEEP
 **Feature Flag / GrowthBook**：
 
 | 变量 | 默认值 |
-|------|--------|
+| --- | --- |
 | `GROWTHBOOK_API_HOST` | `https://cdn.growthbook.io` |
 | `GROWTHBOOK_SDK_KEY` | `sdk-dummy-key-for-development` |
 | `GROWTHBOOK_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5` |
@@ -173,7 +171,7 @@ Provider 密钥：`OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `DEEP
 **存储**：
 
 | 变量 | 默认值 |
-|------|--------|
+| --- | --- |
 | `STORAGE_BACKEND` | `local`（可选 `s3`） |
 | `LOCAL_STORAGE_ROOT` | `.files/knowledge_files` |
 | `S3_BUCKET` / `S3_REGION` / `S3_ENDPOINT_URL` | — |
@@ -181,7 +179,7 @@ Provider 密钥：`OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `DEEP
 **限流**：
 
 | 变量 | 默认值 |
-|------|--------|
+| --- | --- |
 | `AUTH_REGISTER_RATE_LIMIT_TIMES` | `10` |
 | `AUTH_REGISTER_RATE_LIMIT_SECONDS` | `60` |
 | `AUTH_LOGIN_RATE_LIMIT_TIMES` | `20` |
@@ -204,7 +202,7 @@ Provider 密钥：`OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `DEEP
 **可观测性**（可选）：
 
 | 变量 | 说明 |
-|------|------|
+| --- | --- |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | Langfuse LLM 观测 |
 | `LANGFUSE_BASE_URL` | 默认 `https://us.cloud.langfuse.com` |
 | `ENABLE_OTEL_TRACES` | 开启 DB tracing（`true` / `1`） |
@@ -260,14 +258,14 @@ docker compose -f deploy/docker-compose.yml up -d
 ### 6.1 Auth
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | POST | `/auth/register` | 注册 |
 | POST | `/auth/login` | 登录（返回 Bearer Token） |
 
 ### 6.2 Users
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | GET | `/users/me` | 当前用户信息 |
 | GET | `/users` | 查询单用户（需 superuser） |
 | PATCH | `/users/{user_id}` | 更新用户（需 superuser） |
@@ -277,7 +275,7 @@ docker compose -f deploy/docker-compose.yml up -d
 ### 6.3 Chat
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | POST | `/chat/query_sent` | 非流式问答 |
 | POST | `/chat/query_stream` | SSE 流式问答 |
 | GET | `/chat/sessions` | 会话列表 |
@@ -292,7 +290,7 @@ docker compose -f deploy/docker-compose.yml up -d
 ### 6.4 Knowledge
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | POST | `/knowledge/bases` | 创建知识库 |
 | POST | `/knowledge/bases/{kb_id}/upload` | 上传文件触发异步入库 |
 | GET | `/knowledge/tasks/{task_id}` | 查询任务状态 |
@@ -305,7 +303,7 @@ docker compose -f deploy/docker-compose.yml up -d
 ### 6.5 Workspaces
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | POST | `/workspaces` | 创建工作区 |
 | GET | `/workspaces` | 工作区列表 |
 | GET | `/workspaces/{workspace_id}` | 工作区详情 |
@@ -321,14 +319,14 @@ docker compose -f deploy/docker-compose.yml up -d
 ### 6.6 Permissions & Audit
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | GET | `/permissions/policy` | 查看权限策略配置 |
 | GET | `/audit/events` | 查询审计事件（支持按资源/用户/时间筛选） |
 
 ### 6.7 Health & Debug
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | GET | `/health_check/live` | 存活探针 |
 | GET | `/health_check/db_ready` | 数据库就绪探针 |
 | GET | `/metrics` | 占位/探针端点；真实应用指标通过 OTLP 推送，不从此端点抓取 |
@@ -338,7 +336,7 @@ docker compose -f deploy/docker-compose.yml up -d
 ## 7. 数据模型
 
 | 表 | 说明 |
-|------|------|
+| --- | --- |
 | `users` | 用户、权限、Token 配额 |
 | `chat_sessions` | 对话会话 |
 | `chat_messages` | 消息（状态、token 统计、search_context、幂等 id） |

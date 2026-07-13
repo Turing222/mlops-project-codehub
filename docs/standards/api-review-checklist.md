@@ -1,4 +1,4 @@
-# API Review Tips
+# API Review 检查清单
 
 这些笔记是轻量 review 提醒，不是强制规范。只有当某条提醒反复证明有用时，再考虑沉淀到 `AGENTS.md` 或 review skill。
 
@@ -12,4 +12,3 @@
 - 只为副作用执行的依赖用 `_` 或 `_xxx` 命名，例如限流。
 - 如果注入了 `PermissionService`，通常应调用 `require_permission(...)`；否则考虑删除。
 - `Depends`、`Query`、`Form` 等 FastAPI 输入逻辑不要放进 schema 模块。
-

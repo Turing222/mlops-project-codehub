@@ -1,7 +1,10 @@
-# 文档贴切度审计报告（2026-06-12）
+# 文档贴切度审计报告
 
-> 这是一份**时点快照**审计，核对 Dewflow 仓库内全部项目文档是否与当前代码/结构/Makefile 一致。
-> 不属于长期规范，修复完成后可归档或删除。代码标识、命令、字段名保留英文。
+> 日期：2026-06-12
+> 范围：仓库内全部项目文档与当时的代码、目录结构和 `Makefile`
+> 性质：时点审计，不属于长期规范
+> 证据基线：76 个 `.md` 文件的机械扫描与分簇语义核对
+> 状态：冻结；后续现行约定以 `docs/README.md` 及各长期目录为准
 
 ## 范围与方法
 
@@ -66,13 +69,13 @@
 
 ### 后端簇
 
-#### docs/legacy/README.backend-legacy.md — ⚠️ 旧版保留副本，存在陈旧
+#### docs/legacy/backend-overview-legacy.md — ⚠️ 旧版保留副本，存在陈旧
 
 - **[med，已处理]** legacy README:320 对 `/metrics` 的描述不完整：实际同时存在根路径 `GET /metrics` 探针（`backend/main.py:101`）和前端指标上报 `POST /api/v1/telemetry/metrics`（`backend/api/v1/endpoint/telemetry_api.py:148` 经 `prefix="/telemetry"` 挂载）。
 - **[low，已处理]** ORM 表清单不全：现已存在但 legacy 未列出的表包括 `credit_accounts`、`credit_transactions`、`repo_analysis_results`、`repo_analysis_runs`、`usage_records`。核心表仍准确，属增量陈旧。
 - 说明：该文件本就标注为"旧版根 README 保留副本"，以上为其陈旧程度量化，非新错误。
 
-#### docs/todos/todo-storage-column-types.md — ⚠️ 待办未落地
+#### docs/todos/storage-column-types.md — ⚠️ 待办未落地
 
 - **[med]** 文档描述把 `file_path`/`storage_key` 从 `String(1024)` 改为 `Text` 的迁移待办；实际 `backend/models/orm/knowledge.py:81,89` 仍为 `String(1024)`，迁移**未创建/未应用**。文档说"迁移完成后删除本文件"，但文件仍在——即这是一个**真实未完成的 TODO**，文档本身准确，只是提示该项尚未推进。
 
@@ -82,7 +85,7 @@
 
 #### 后端其余 — ✅ 准确
 
-- `async-default-style.md`、`backend-interface-style.md`、`sqlalchemy-async-pitfalls.md`、`api-keys-and-degradation.md`、`automation-standard.md`、`api-review-tips.md`、`static-test-node.md` 均与代码一致。
+- `async-default-style.md`、`backend-interface-style.md`、`sqlalchemy-async-pitfalls.md`、`api-keys-and-degradation.md`、`automation-standard.md`、`api-review-checklist.md`、`static-test-node.md` 均与代码一致。
 - `.codex/skills/project/references/architecture.md`：web/worker 拆分、3-tier 调用链、依赖注入规则经抽查均成立；`coding.md`、`config-policy.md` 准确。
 
 ### 部署 / 运维簇 — ✅ 全部准确
@@ -104,8 +107,8 @@
 
 1. **已处理**：`frontend/docs/architecture.md` 目录示例已对齐实际 `src/`。
 2. **已处理**：`frontend/docs/migration-plan.md:116-119` 已改为 `src/query/` 单数目录，并补齐 `hooks/` 与 `keys/` 分层。
-3. **已处理**：`docs/legacy/README.backend-legacy.md:320` 已同时列出 `GET /metrics` 和 `POST /api/v1/telemetry/metrics`。
-4. **待处理**：`docs/todos/todo-storage-column-types.md` 仍对应真实迁移待办；要么落地 `String(1024)`→`Text` 迁移后删除该文件，要么保留并确认仍有效。
+3. **已处理**：`docs/legacy/backend-overview-legacy.md:320` 已同时列出 `GET /metrics` 和 `POST /api/v1/telemetry/metrics`。
+4. **待处理**：`docs/todos/storage-column-types.md` 仍对应真实迁移待办；要么落地 `String(1024)`→`Text` 迁移后删除该文件，要么保留并确认仍有效。
 5. **已处理**：`testing.md:59` 的 `mock-data` 已标注为文件；`secrets-and-flags.md:36-38` 已澄清为"`/users/me` 响应的 `features` 字段"；legacy README 的 ORM 表清单已补全。
 
 ## 维护提醒

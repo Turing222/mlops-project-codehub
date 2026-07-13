@@ -57,7 +57,7 @@ export default defineConfig({
             // “不为覆盖率数字写脆弱测试”一致。include 全量 src 后是“真实口径”：未被测模块
             // 也计入分母（故数值低于只算被测文件的口径）。阈值设在当前实测值下方留波动余量；
             // 覆盖率明显下滑、或新增大块未测代码才触发。实测基线见
-            // docs/assessments/frontend-cicd-assessment-2026-06-14.md §9。
+            // docs/assessments/2026-06-14-frontend-cicd.md §9。
             thresholds: {
                 statements: 40,
                 branches: 30,

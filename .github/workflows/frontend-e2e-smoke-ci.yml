@@ -6,7 +6,7 @@ name: Frontend E2E Smoke CI
 # real-chat 的流式 chunk 由 worker 经 Redis 发布，仅 uvicorn 不够。
 # 凭据走 seed 出来的 seed_member（scripts/seed/dev_seed.py，SEED_PASSWORD=SeedPass123!）。
 # Fork PR 读不到 repository secrets，job 会 skip。
-# 详见 docs/assessments/frontend-cicd-assessment-2026-06-14.md §8.2。
+# 详见 docs/assessments/2026-06-14-frontend-cicd.md §8.2。
 
 on:
   pull_request:

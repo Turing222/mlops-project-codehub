@@ -3,8 +3,8 @@
 > 日期：2026-06-14
 > 范围：`backend/` 后端服务的熔断（circuit breaking）、降级（graceful degradation）及其配套韧性机制（限流、并发、超时、重试）
 > 性质：只读静态分析，结论均给出 `文件:行号` 证据
-
----
+> 证据基线：评估时的 `backend/` 实现、静态检索结果与文中测试证据
+> 状态：冻结；后续修复记录仅用于解释历史结论，现状以代码和长期文档为准
 
 ## 1. 概述与结论速览
 
@@ -21,7 +21,7 @@
 ## 2. 机制清单与统计
 
 | 类别 | 实现位置 | 数量 | 状态作用域 |
-|------|----------|------|-----------|
+| --- | --- | --- | --- |
 | 熔断 CircuitBreaker | `backend/core/circuit_breaker.py` | 1 个实现 / 1 处接入（LLM） | 进程内 |
 | 降级 fallback | RAG / Rerank / Planner / 外部检索 / FeatureFlag / 路由 | ≥7 处 | 调用内 |
 | 限流 RateLimiter | `backend/middleware/rate_limit.py` | 1 个实现 / ~9 组配额 | Redis 分布式 |
@@ -122,7 +122,7 @@
 ### 5.3 多级超时
 
 | 超时项 | 默认值 | 配置位置 | 强制方式 |
-|--------|--------|----------|---------|
+| --- | --- | --- | --- |
 | 首条消息 | 30s | `CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS` | `web_stream_workflow.py:214-227` |
 | 消息间隔 | 10s | `CHAT_STREAM_MESSAGE_TIMEOUT_SECONDS` | `:262-272` |
 | Rerank | 15s | `RAG_RERANK_TIMEOUT_SECONDS` | httpx timeout |
@@ -163,7 +163,7 @@
 ### 6.2 风险与缺陷（按优先级）
 
 | 级别 | 问题 | 位置 | 影响 | 验证状态 |
-|------|------|------|------|---------|
+| --- | --- | --- | --- | --- |
 | 中 | 半开态不限并发探测，恢复瞬间放量（受 LLM semaphore=5 上限缓解） | `circuit_breaker.py:65-66` | 单 worker 最多 5 路探测涌向恢复中的下游 | 静态推断，建议补并发用例复现 |
 | 中 | 流式 `on_success` 标记过早，中途失败先被记成功 | `pydantic_ai_service.py:137` | 削弱熔断灵敏度 | 静态推断，建议补中途失败单测 |
 | 中 | 熔断仅覆盖 LLM，rerank/外部/DB/GrowthBook 无断路器 | 全局 | 持续故障下无快速失败保护 | 已确认（rg 全量检索仅 LLM 接入）|
@@ -201,7 +201,7 @@
 ### 8.1 已落实项
 
 | 评估建议 | 落实 | 测试证据 |
-|----------|------|----------|
+| --- | --- | --- |
 | §6.3.1 半开限流探测 | `CircuitBreaker.half_open_max_calls`（默认 1）；过期探测 `on_success` 在 OPEN 态忽略 | `tests/unit/core/test_circuit_breaker.py` |
 | §6.3.2 流式 `on_success` 时机 | 移到 `async for` 迭代结束后 | `test_stream_midfailure_marks_circuit_failure_not_success` |
 | §6.3.3 扩大熔断覆盖 | Rerank（bifrost/dashscope）、Tavily、GrowthBook | 各 provider/service 单测 + `test_retrieve_with_rerank_degrades_when_circuit_breaker_open` |
@@ -210,7 +210,7 @@
 ### 8.2 接入点（修复后）
 
 | 服务名 | 实现位置 | 熔断打开时行为 |
-|--------|----------|----------------|
+| --- | --- | --- |
 | `llm:*` | `pydantic_ai_service.py` | 向上抛 `CIRCUIT_BREAKER_OPEN`（路由层 fallback） |
 | `rerank:bifrost` / `rerank:dashscope` | `bifrost_rerank.py` / `dashscope_rerank.py` | `rag_service` 降级为候选原始排序 |
 | `external_context:tavily` | `external_context_service.py` | 降级为空结果 |
