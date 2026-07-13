@@ -311,7 +311,7 @@ docker push <registry>/dewflow-frontend:${IMAGE_TAG}
    make deploy-ec2-verify
    ```
 
-如果本次发布包含数据库 migration，先确认 migration 是否向后兼容。不可逆或破坏性 schema 变更不能只靠镜像回退修复；需要按“生产数据库备份与恢复”小节使用 snapshot / PITR 恢复或执行明确的反向迁移。
+如果本次发布包含数据库 migration，先确认 migration 是否向后兼容。不可逆或破坏性 schema 变更不能只靠镜像回退修复；需要按 [RDS 备份与恢复](rds-backup-and-restore.md) 中的流程使用 snapshot / PITR，或执行明确的反向迁移。
 
 ### 数据库配置
 
@@ -455,7 +455,7 @@ make deploy-ec2-verify
 
 默认不把 knowledge smoke 作为第一轮 EC2 部署验证必跑项，因为它通常对 DB / storage 假设更深，适合后续逐步放开。
 
-### 6. 查看日志
+### 7. 查看日志
 
 ```bash
 make deploy-ec2-logs
@@ -469,7 +469,7 @@ make deploy-ec2-logs ARGS="api"
 
 > 如果需要进一步增强，也可以后续把日志 target 改成更显式的服务参数形式。
 
-### 7. 停止部署栈
+### 8. 停止部署栈
 
 ```bash
 make deploy-ec2-down
@@ -477,102 +477,9 @@ make deploy-ec2-down
 
 如果要连 volume 一起删除，必须显式设置 `DEPLOY_CONFIRM_VOLUME_WIPE=yes`；无确认时默认保留命名卷。
 
-## 生产数据库备份与恢复（RDS）
+## RDS 备份与恢复
 
-如果生产数据库使用 **Amazon RDS for PostgreSQL**，备份责任在 RDS 控制面，而不在本仓库的 Compose `postgres` 容器脚本中。也就是说：
-
-- 本地 / smoke / 演练环境仍可使用 Compose `postgres`。
-- 生产库备份不依赖容器内 `pg_dump` 定时脚本，也不依赖 EBS volume snapshot。
-- 生产侧应使用 RDS 自带的 automated backups、DB snapshots 和 restore 流程。
-
-### 当前状态
-
-- 当前仓库中的 `postgres` 服务只属于 [deploy/docker-compose.local-postgres.yml](../../deploy/docker-compose.local-postgres.yml) 的本地 / 自管 fallback 形态，不应被当成 RDS 生产备份策略的一部分。
-- 如果生产库已经迁到 RDS，那么之前删除的容器内数据库备份脚本不需要恢复到当前生产入口。
-
-### 条件成立时可用
-
-当生产数据库是 RDS 时，建议至少启用以下能力：
-
-1. **Automated Backups**：开启自动备份，并设置合适的 retention period。
-2. **Point-in-Time Recovery (PITR)**：确保可以恢复到误操作前的时间点。
-3. **Manual DB Snapshot**：在高风险操作前手动打快照，例如：
-   - 大版本升级
-   - schema migration
-   - 大批量数据修复
-   - 不可逆发布
-4. **Restore drill**：定期验证能否从 automated backup / snapshot 恢复出可用实例。
-
-### 推荐做法
-
-- 日常依赖 **RDS automated backups + PITR** 作为主备份方案。
-- 在高风险变更前创建 **manual DB snapshot** 作为静态锚点。
-- 如果有跨 Region / 合规保留要求，再评估 **AWS Backup** 或跨 Region backup 策略。
-- 在部署或发布 runbook 中明确：哪些变更必须先打 snapshot，再执行迁移或发布。
-
-### 不建议的做法
-
-- 不要把 Compose `postgres` 的备份方式直接等同于生产 RDS 的备份方式。
-- 不要仅依赖“有自动备份”这一个事实，而不做恢复演练；没有 restore drill，备份策略就不算闭环。
-- 不要在生产路径里恢复旧的容器内数据库备份脚本，除非未来重新回到 self-managed PostgreSQL on EC2。
-
-### 发布前 checklist（RDS）
-
-在以下操作前，默认执行一次 **manual DB snapshot**：
-
-- schema migration
-- 大版本升级
-- 批量数据修复 / backfill
-- 任何不可逆发布
-
-推荐检查顺序：
-
-1. 确认目标是**生产 RDS 实例**，记录 `DB instance identifier`、Region 和变更单号。
-2. 确认 **automated backups 已开启**，且 retention period 不是 0。
-3. 确认最近一次自动备份状态正常，没有实例正在进行其他高风险维护操作。
-4. 创建 **manual DB snapshot**，命名里带上环境、日期和变更标识，例如 `prod-2026-06-07-before-migration-<ticket>`。
-5. 等待 snapshot 进入 `available` 状态，再执行 migration / 发布。
-6. 在发布记录中写明：
-   - 使用的 snapshot 名称
-   - 开始变更时间
-   - 执行人
-7. 发布完成后，确认应用 smoke、核心查询和连接池状态正常。
-
-### 故障时怎么选恢复方式
-
-- **误删 / 数据写坏，但希望回到某个时间点** → 优先用 **PITR**。
-- **高风险变更刚完成，想回到变更前固定状态** → 优先用 **manual snapshot restore**。
-- **只想恢复单个库 / 单张表 / 少量数据** → 不要先整库覆盖；先从 snapshot 或 PITR **恢复到一台新实例**，再导出需要的数据回灌。
-
-默认原则：**先恢复到新实例验证，再决定是否切换生产流量**，不要直接对生产实例做覆盖式操作。
-
-### Restore drill checklist
-
-建议至少按固定节奏（例如每月或每个大版本前）做一次恢复演练。
-
-推荐检查顺序：
-
-1. 选择一个最近的 automated backup 或 manual snapshot。
-2. 将其**恢复到新的临时 RDS 实例**，不要直接覆盖生产实例。
-3. 为临时实例配置最小必要的网络访问（Security Group / 子网 / 跳板访问路径），避免直接暴露公网。
-4. 验证以下项目：
-   - 能正常连接数据库
-   - 关键 schema / extension / role 存在
-   - 应用最小 smoke query 可执行
-   - 关键业务表有合理数据量
-5. 记录本次演练的：
-   - 恢复耗时（RTO）
-   - 可接受的数据回退窗口（RPO）
-   - 是否需要额外的参数组、白名单或应用切换步骤
-6. 演练完成后，删除临时实例，避免持续计费。
-
-### 建议额外沉淀到运行手册里的信息
-
-- 生产 RDS 实例名 / ARN 对照表
-- snapshot 命名约定
-- 谁能创建 snapshot、谁能执行 restore
-- 发布前“是否需要 snapshot”的判定规则
-- 恢复后的应用切换步骤（连接串、只读验证、回切条件）
+生产数据库的 snapshot、PITR、发布前检查和恢复演练统一见 [rds-backup-and-restore.md](rds-backup-and-restore.md)。高风险 migration 或不可逆发布必须先完成对应 checklist。
 
 ## Bifrost Gateway
 
@@ -663,80 +570,13 @@ API P99、5xx 错误率、Redis 内存、Postgres 连接数这类指标告警不
 
 不要把两者重新揉成一套，否则会让部署面和测试面相互污染。
 
-## 钉版基础设施镜像核查
+## 基础设施镜像维护
 
-### 当前 nginx 钉版
-
-仓库内 nginx 仅用于反向代理（`proxy_pass` / 静态 SPA fallback），不使用 `rewrite`、njs 或 HTTP/3 模块。`api-nginx` 与 frontend fallback runtime **共用同一 tag**，升级时需同步修改以下位置：
-
-| 用途 | 镜像 tag | 定义位置 |
-| --- | --- | --- |
-| EC2 API edge (`api-nginx`) | `nginx:1.30.1-alpine` | `deploy/docker-compose.yml` |
-| frontend fallback runtime | `nginx:1.30.1-alpine` | `frontend/apps/admin/Dockerfile` |
-| CI `nginx -t` 校验 | `nginx:1.30.1-alpine` | `.github/workflows/deploy-validate-ci.yml` |
-
-收到 nginx OSS / F5 安全公告时：先对照 advisory 检查上述配置是否触发 exploit 条件，再将 tag 升到修复版，跑 `nginx -t`、frontend 镜像 build 和 `make deploy-ec2-check`，最后在 EC2 上 `docker compose pull api-nginx && docker compose up -d api-nginx`；只有启用 `frontend-fallback` profile 时才需要 rebuild 并更新 `DOCKER_IMAGE_NAME_FRONTEND`。
-
-### 当前 Redis / PostgreSQL / MinIO 钉版
-
-| 组件 | 镜像 tag | 定义位置 |
-| --- | --- | --- |
-| Redis（生产 / 本地 / CI） | `redis:7.4.9-alpine` | `deploy/docker-compose.yml`, `docker-compose.db.yml`, `deploy/k8s/local-scaling/redis.yaml`, CI workflows |
-| pgvector + PostgreSQL 17（本地 / CI） | `pgvector/pgvector:0.8.2-pg17-bookworm` | `docker-compose.db.yml`, `deploy/docker-compose.local-postgres.yml`, CI workflows |
-| MinIO（本地 smoke / 演练） | `quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z` | `docker-compose.db.yml`, `deploy/docker-compose.local-s3.yml` |
-| MinIO client | `quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z` | `docker-compose.db.yml`, `deploy/docker-compose.local-s3.yml` |
-
-生产数据库默认走 RDS；pgvector 镜像只用于本地 fallback 与 CI。升级 Redis / pgvector / MinIO 时，保持 compose、CI service 与上表同步，再跑 `make deploy-ec2-check` 或对应 CI workflow。
-
-Dependabot 的 `docker` ecosystem 主要覆盖 Dockerfile,不会完整跟踪 compose 中的钉版基础设施镜像。当前先采用季度人工核查,后续如果人工流程开始漏检,再接入 Renovate 的 docker-compose manager。
-
-每季度至少检查一次以下范围：
-
-- `deploy/docker-compose.yml`
-- `deploy/docker-compose.local-postgres.yml`
-- `deploy/docker-compose.local-s3.yml`
-- `deploy/docker-compose.local-logging.yml`
-- `docker-compose.db.yml`
-- `.github/workflows/*.yml` 中的 service image
-
-核查步骤：
-
-```bash
-rg -n "image:" deploy docker-compose*.yml .github/workflows | sort
-```
-
-对每个钉版镜像记录当前 tag、最新兼容 tag、相关 CVE / release note、是否需要 PR。重点关注 `pgvector/pgvector`、`redis`、`nginx`、`maximhq/bifrost`、`quay.io/minio/minio` 和 `quay.io/minio/mc`。发现安全修复或兼容 patch 时,按普通 deploy 变更走 `make deploy-ec2-check` 和本地生产形态演练。
+当前钉版、同步修改位置和季度核查步骤见 [infrastructure-image-maintenance.md](infrastructure-image-maintenance.md)。镜像升级仍按普通 deploy 变更运行 `make deploy-ec2-check`。
 
 ## 本地生产形态演练
 
-如果 smoke 已经通过，想在上 EC2 前确认生产 compose、secret 注入、前端反代、worker、migration 和 S3 形态，可以运行本地演练栈：
-
-```bash
-make deploy-local-prod-secrets-prepare
-make deploy-local-prod-check
-make deploy-local-prod-up
-make deploy-local-prod-wait
-make deploy-local-prod-verify
-```
-
-这套命令会：
-
-- 使用 `deploy/.env.local-prod.template` 作为 env 入口（内含 `POSTGRES_SERVER=postgres`、MinIO bucket 等本地值；**不要**复用 `deploy/.env.ec2.template`，否则容器会通过 `env_file` 读到 RDS 占位符）。
-- 使用 `deploy/docker-compose.yml` 作为主体。
-- 叠加 `deploy/docker-compose.local-postgres.yml`，在本机提供 PostgreSQL fallback。
-- 叠加 `deploy/docker-compose.local-s3.yml`，额外加入 MinIO 模拟 S3。
-- 叠加 `deploy/docker-compose.local-logging.yml`，把 CloudWatch Logs 降级为本机 `json-file`。
-- 使用 `secrets/local-prod`，不复用 `secrets/ec2` 的真实部署 secret。
-- 显式启用 `frontend-fallback` profile，并把 frontend 暴露到 `http://localhost:8080`，避免占用本机 80 端口。
-- 不拉入 `docker-compose.db.yml` 中的 Tempo / smoke-only 组件。
-
-查看日志和停止：
-
-```bash
-make deploy-local-prod-logs
-make deploy-local-prod-logs ARGS="api"
-make deploy-local-prod-down
-```
+生产 compose、secret 注入、frontend fallback、worker、migration 和 S3 的本地验证步骤见 [local-production-rehearsal.md](local-production-rehearsal.md)。
 
 ## 后续自动 CD 的接入方式
 

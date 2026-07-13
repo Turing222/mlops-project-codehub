@@ -1,0 +1,53 @@
+slug: storage-column-types
+title: Migrate Storage Path Columns to Text
+status: active
+
+goal: Replace bounded storage path columns with PostgreSQL Text while preserving a safe, reversible migration path.
+
+completion_chain:
+  - The knowledge_files.file_path and knowledge_files.storage_key ORM columns use Text.
+  - An Alembic revision upgrades both columns and provides a documented downgrade path.
+  - Focused tests and migration validation pass without changing storage-key behavior.
+  - Production rollout notes address lock timing and backward compatibility.
+
+workstreams:
+  - id: 1
+    title: Confirm the migration scope and operational constraints.
+    status: done
+    kind: blocking
+    deps: []
+  - id: 2
+    title: Implement the ORM and Alembic type changes.
+    status: pending
+    kind: serial
+    deps: [1]
+  - id: 3
+    title: Add focused tests and validate upgrade and downgrade behavior.
+    status: pending
+    kind: serial
+    deps: [2]
+  - id: 4
+    title: Prepare rollout guidance and complete the handoff.
+    status: pending
+    kind: serial
+    deps: [3]
+
+current_checkpoint:
+  name: migration-scope-aligned
+  state: planned
+  summary: The existing String(1024) columns and intended Text migration are confirmed; implementation has not started.
+
+open_decisions: []
+
+next_choices:
+  - id: A
+    label: Implement the migration
+    note: Update the ORM, create the Alembic revision, and add focused migration coverage.
+  - id: B
+    label: Defer implementation
+    note: Keep the work item active until a production rollout window is selected.
+
+attached_artifacts:
+  task_plan: task-plan.md
+  reviews: []
+  debug: []
