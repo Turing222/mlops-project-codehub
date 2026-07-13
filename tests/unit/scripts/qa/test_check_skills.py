@@ -1,11 +1,16 @@
 """Codex skill contract validation unit tests.
 
-职责：覆盖 skill frontmatter、agent metadata、Markdown 引用和 Make target 校验；边界：仅使用临时目录，不读取或修改真实 skill；副作用：写入 pytest 临时文件。
+职责：覆盖 skill 结构、路由清单、Markdown 引用、Make target 和 Serena allowlist 校验；边界：仅使用临时目录，不读取或修改真实 skill；副作用：写入 pytest 临时文件。
 """
 
+import json
 from pathlib import Path
 
-from scripts.qa.check_skills import audit_skills
+from scripts.qa.check_skills import (
+    audit_mcp_allowlists,
+    audit_skill_indexes,
+    audit_skills,
+)
 
 
 def _write(path: Path, content: str) -> None:
@@ -48,6 +53,54 @@ def _build_valid_tree(tmp_path: Path) -> tuple[Path, Path]:
     makefile_path = tmp_path / "Makefile"
     _write(makefile_path, _makefile())
     return skills_root, makefile_path
+
+
+def _skill_index(section_title: str, *skill_names: str) -> str:
+    entries = "\n".join(
+        f"- `.codex/skills/{skill_name}/SKILL.md`" for skill_name in skill_names
+    )
+    return f"# Routing\n\n## {section_title}\n\n{entries}\n"
+
+
+def _build_mcp_configs(
+    tmp_path: Path,
+    *,
+    fixed_tools: tuple[str, ...] = ("find_symbol", "initial_instructions"),
+    codex_tools: tuple[str, ...] | None = None,
+    claude_tools: tuple[str, ...] | None = None,
+) -> tuple[Path, Path, Path]:
+    codex_tools = fixed_tools if codex_tools is None else codex_tools
+    claude_tools = fixed_tools if claude_tools is None else claude_tools
+    serena_project_path = tmp_path / ".serena" / "project.yml"
+    codex_config_path = tmp_path / ".codex" / "config.toml"
+    claude_settings_path = tmp_path / ".claude" / "settings.json"
+    _write(
+        serena_project_path,
+        (
+            "fixed_tools: []\n"
+            if not fixed_tools
+            else "fixed_tools:\n" + "".join(f"- {tool}\n" for tool in fixed_tools)
+        ),
+    )
+    _write(
+        codex_config_path,
+        "[mcp_servers.serena]\n"
+        "enabled_tools = [" + ", ".join(f'"{tool}"' for tool in codex_tools) + "]\n",
+    )
+    _write(
+        claude_settings_path,
+        json.dumps(
+            {
+                "permissions": {
+                    "allow": [
+                        "Bash(make lint *)",
+                        *(f"mcp__serena__{tool}" for tool in claude_tools),
+                    ]
+                }
+            }
+        ),
+    )
+    return serena_project_path, codex_config_path, claude_settings_path
 
 
 def test_audit_skills_accepts_valid_skill(tmp_path: Path) -> None:
@@ -154,4 +207,156 @@ def test_audit_skills_reports_unknown_make_target(tmp_path: Path) -> None:
 
     assert [violation.message for violation in violations] == [
         "referenced Make target does not exist: qa-missing"
+    ]
+
+
+def test_audit_skill_indexes_accepts_matching_indexes(tmp_path: Path) -> None:
+    skills_root, _ = _build_valid_tree(tmp_path)
+    agents_path = tmp_path / "AGENTS.md"
+    claude_path = tmp_path / "CLAUDE.md"
+    _write(agents_path, _skill_index("Local Skills", "demo-skill"))
+    _write(claude_path, _skill_index("Task Skills", "demo-skill"))
+
+    violations = audit_skill_indexes(
+        skills_root,
+        ((agents_path, "Local Skills"), (claude_path, "Task Skills")),
+    )
+
+    assert violations == []
+
+
+def test_audit_skill_indexes_reports_missing_and_unknown_skills(
+    tmp_path: Path,
+) -> None:
+    skills_root, _ = _build_valid_tree(tmp_path)
+    index_path = tmp_path / "AGENTS.md"
+    _write(index_path, _skill_index("Local Skills", "unknown-skill"))
+
+    messages = {
+        violation.message
+        for violation in audit_skill_indexes(
+            skills_root, ((index_path, "Local Skills"),)
+        )
+    }
+
+    assert messages == {
+        "skill index is missing `demo-skill`",
+        "skill index references unknown skill `unknown-skill`",
+    }
+
+
+def test_audit_skill_indexes_ignores_mentions_outside_inventory(
+    tmp_path: Path,
+) -> None:
+    skills_root, _ = _build_valid_tree(tmp_path)
+    index_path = tmp_path / "AGENTS.md"
+    _write(
+        index_path,
+        "# Routing\n\n"
+        "Load `.codex/skills/demo-skill/SKILL.md` before work.\n\n"
+        "## Local Skills\n",
+    )
+
+    messages = [
+        violation.message
+        for violation in audit_skill_indexes(
+            skills_root, ((index_path, "Local Skills"),)
+        )
+    ]
+
+    assert messages == ["skill index is missing `demo-skill`"]
+
+
+def test_audit_skill_indexes_requires_inventory_section(tmp_path: Path) -> None:
+    skills_root, _ = _build_valid_tree(tmp_path)
+    index_path = tmp_path / "AGENTS.md"
+    _write(index_path, "# Routing\n")
+
+    messages = [
+        violation.message
+        for violation in audit_skill_indexes(
+            skills_root, ((index_path, "Local Skills"),)
+        )
+    ]
+
+    assert messages == ["skill index section `Local Skills` does not exist"]
+
+
+def test_audit_skill_indexes_reports_duplicate_entries(tmp_path: Path) -> None:
+    skills_root, _ = _build_valid_tree(tmp_path)
+    index_path = tmp_path / "AGENTS.md"
+    _write(
+        index_path,
+        _skill_index("Local Skills", "demo-skill", "demo-skill"),
+    )
+
+    messages = [
+        violation.message
+        for violation in audit_skill_indexes(
+            skills_root, ((index_path, "Local Skills"),)
+        )
+    ]
+
+    assert messages == ["skill index lists `demo-skill` more than once"]
+
+
+def test_audit_mcp_allowlists_accepts_matching_tool_sets(tmp_path: Path) -> None:
+    config_paths = _build_mcp_configs(
+        tmp_path,
+        codex_tools=("initial_instructions", "find_symbol"),
+        claude_tools=("find_symbol", "initial_instructions"),
+    )
+
+    assert audit_mcp_allowlists(*config_paths) == []
+
+
+def test_audit_mcp_allowlists_reports_client_drift(tmp_path: Path) -> None:
+    config_paths = _build_mcp_configs(
+        tmp_path,
+        codex_tools=("find_symbol", "extra_tool"),
+        claude_tools=("find_symbol",),
+    )
+
+    messages = [violation.message for violation in audit_mcp_allowlists(*config_paths)]
+
+    assert messages == [
+        "Serena allowlist differs from `fixed_tools`: "
+        "missing=['initial_instructions'], extra=['extra_tool']",
+        "Serena allowlist differs from `fixed_tools`: missing=['initial_instructions']",
+    ]
+
+
+def test_audit_mcp_allowlists_reports_duplicate_tools(tmp_path: Path) -> None:
+    config_paths = _build_mcp_configs(
+        tmp_path,
+        codex_tools=("find_symbol", "find_symbol", "initial_instructions"),
+    )
+
+    messages = [violation.message for violation in audit_mcp_allowlists(*config_paths)]
+
+    assert messages == ["`enabled_tools` contains duplicate tools"]
+
+
+def test_audit_mcp_allowlists_rejects_empty_fixed_tools(tmp_path: Path) -> None:
+    config_paths = _build_mcp_configs(tmp_path, fixed_tools=())
+
+    messages = [violation.message for violation in audit_mcp_allowlists(*config_paths)]
+
+    assert messages == ["`fixed_tools` must not be empty"]
+
+
+def test_audit_mcp_allowlists_reports_empty_client_allowlists(tmp_path: Path) -> None:
+    config_paths = _build_mcp_configs(
+        tmp_path,
+        codex_tools=(),
+        claude_tools=(),
+    )
+
+    messages = [violation.message for violation in audit_mcp_allowlists(*config_paths)]
+
+    assert messages == [
+        "Serena allowlist differs from `fixed_tools`: "
+        "missing=['find_symbol', 'initial_instructions']",
+        "Serena allowlist differs from `fixed_tools`: "
+        "missing=['find_symbol', 'initial_instructions']",
     ]

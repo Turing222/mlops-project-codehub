@@ -42,6 +42,7 @@ make qa-test-component
 make qa-test-integration
 make qa-test-all
 make qa-skill-check
+make qa-serena-smoke
 make qa-standards-fast
 ```
 
@@ -64,17 +65,14 @@ It is a navigation layer only; keep edits, shell commands, and validation in the
 host agent workflow.
 
 ```bash
-# verify Serena can index Python and TypeScript symbols
-serena project index
-
-# verify the stdio server starts; it exits when stdin closes
-scripts/dev/serena-mcp.sh codex
-scripts/dev/serena-mcp.sh claude-code
+# start both stdio contexts and query fixed non-empty Python/TypeScript files
+make qa-serena-smoke
 ```
 
 - Codex reads `.codex/config.toml` after the project is trusted.
 - Claude Code reads `.mcp.json` at session start; approve the project-scoped server when prompted.
 - No manual server startup is needed for stdio mode. The client starts Serena as a subprocess.
+- `qa-serena-smoke` is an opt-in local check and is not part of the default CI gates; it requires Serena plus the project Python and frontend language servers.
 - Exposed tools are restricted to the `initial_instructions` bootstrap manual plus symbol overview, symbol search, declaration, references, and file diagnostics.
 - Serena uses LSP for `python` and `typescript`; TypeScript uses the project app's `typescript-language-server`.
 
