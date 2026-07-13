@@ -1,6 +1,6 @@
 ---
 name: debug
-description: "SRE-style troubleshooting for Dewflow backend and frontend. Enforces read-only investigation, structured hypotheses, project boundary checks, and explicit human approval before code changes. Triggers on debug, fix bug, investigate, 报错, 排查, 修 bug, 线上问题, 页面报错, 白屏."
+description: "SRE-style troubleshooting for Dewflow backend and frontend. Enforces read-only investigation, structured hypotheses, project boundary checks, and explicit human approval before code changes. Triggers on debug, investigate, 报错, 排查, 线上问题, 页面报错, 白屏. Explicit fix requests are owned by edit, except production incidents which stay two-phase here."
 ---
 
 # Debugging Protocol

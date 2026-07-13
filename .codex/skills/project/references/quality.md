@@ -75,7 +75,7 @@ scripts/dev/serena-mcp.sh claude-code
 - Codex reads `.codex/config.toml` after the project is trusted.
 - Claude Code reads `.mcp.json` at session start; approve the project-scoped server when prompted.
 - No manual server startup is needed for stdio mode. The client starts Serena as a subprocess.
-- Exposed tools are restricted to symbol overview, symbol search, declaration, references, and file diagnostics.
+- Exposed tools are restricted to the `initial_instructions` bootstrap manual plus symbol overview, symbol search, declaration, references, and file diagnostics.
 - Serena uses LSP for `python` and `typescript`; TypeScript uses the project app's `typescript-language-server`.
 
 ## Operational Constraints

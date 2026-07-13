@@ -12,12 +12,13 @@ Use this skill when the primary task is changing existing files.
 1. Identify the owning stack, then load the matching project reference: `architecture.md` for backend, `frontend.md` for frontend.
 2. Read the target files and nearby tests before editing.
 3. Check `git status --short` so user changes are not overwritten.
-4. Apply the smallest coherent patch that satisfies the latest request.
-5. Preserve architecture boundaries — backend: endpoint → service → repository, and web → dispatcher → worker; frontend: pages compose only, API calls via `src/api`, streams in `src/streams`.
-6. Do not add bare `while True`; use an explicit bounded loop with a clear exit path.
-7. Run focused validation first (`make qa-*` for backend, `make frontend-*` for frontend), then broader checks only when the change risk justifies it.
-8. If behavior changed or coverage gaps are exposed, consider loading `add-tests`.
-9. If files were modified, append the Change Summary block from `.codex/skills/project/references/handoff.md`.
+4. For bugfixes, gather evidence first: reproduce the failure or cite concrete evidence such as a user-provided expected/actual report, error message, log, failing command or test, relevant source location, or call-chain evidence before patching. If evidence cannot support a root cause, do not patch blindly — report the collected evidence and the next investigation step.
+5. Apply the smallest coherent patch that satisfies the latest request.
+6. Preserve architecture boundaries — backend: endpoint → service → repository, and web → dispatcher → worker; frontend: pages compose only, API calls via `src/api`, streams in `src/streams`.
+7. Do not add bare `while True`; use an explicit bounded loop with a clear exit path.
+8. Run focused validation first (`make qa-*` for backend, `make frontend-*` for frontend), then broader checks only when the change risk justifies it.
+9. If behavior changed or coverage gaps are exposed, consider loading `add-tests`.
+10. If files were modified, append the Change Summary block from `.codex/skills/project/references/handoff.md`.
 
 ## Progressive Disclosure
 
