@@ -12,6 +12,7 @@
 - 类型契约不清晰
 - 依赖层级和迁移链问题
 - 基础配置错误
+- 文档命名、索引、链接和 Markdown 结构漂移
 - 单元和组件级回归
 
 本节点不应该依赖外部 LLM、真实对象存储或完整运行时环境。
@@ -34,6 +35,12 @@ make qa-lint-fix
 make qa-format
 ```
 
+只检查项目文档：
+
+```bash
+make qa-docs
+```
+
 运行完整静态节点：
 
 ```bash
@@ -46,11 +53,13 @@ make check
 make qa-lint
 make qa-format-check
 make qa-boundaries
+make qa-no-while-true
 make qa-test-markers
 make qa-typecheck
 make qa-layer-deps
 make qa-alembic-check
 make qa-config-check
+make qa-standards-fast
 make qa-test-unit
 make qa-test-component
 ```
@@ -124,6 +133,8 @@ make qa-format-check
 make qa-typecheck
 make qa-test-unit
 ```
+
+如果修改了 `docs/`，同时运行 `make qa-docs`。
 
 合并前静态全量：
 
