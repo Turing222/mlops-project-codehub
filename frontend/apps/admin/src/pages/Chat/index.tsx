@@ -11,7 +11,7 @@ import Sidebar from './Sidebar';
 import MessageList from './MessageList';
 import AgentTracePanel from './AgentTracePanel';
 import UserProfileModal from './UserProfileModal';
-import KBFilesModal from './KBFilesModal';
+import KBFilesModal from '../../features/knowledge/KBFilesModal';
 import { FeatureGate } from '../../context/FeatureGate';
 import styles from './ChatPage.module.css';
 
@@ -23,6 +23,13 @@ const ChatPage: React.FC = () => {
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [isKBModalOpen, setIsKBModalOpen] = useState(false);
     const { t } = useTranslation();
+
+    // Identity teardown must close modals so knowledge files query cannot re-enable.
+    // Adjust state during render (not in an effect) when auth flips to anonymous.
+    if (!isAuthenticated && (isKBModalOpen || isProfileModalOpen)) {
+        setIsKBModalOpen(false);
+        setIsProfileModalOpen(false);
+    }
 
     const controller = useChatController();
     
@@ -263,11 +270,23 @@ const ChatPage: React.FC = () => {
                         streamingText={controller.streamingText}
                         isStreaming={controller.isStreaming}
                         isLoading={controller.isLoadingHistory}
-                        onSend={controller.sendQuery}
+                        onSend={(text) => {
+                            if (!isAuthenticated) {
+                                setShowAuthModal(true);
+                                return;
+                            }
+                            void controller.sendQuery(text);
+                        }}
                         onRetryFailedMessage={controller.retryFailedMessage}
                         chatMode={controller.chatMode}
                         setChatMode={controller.setChatMode}
-                        onUploadKBFile={controller.uploadKBFile}
+                        onUploadKBFile={async (file) => {
+                            if (!isAuthenticated) {
+                                setShowAuthModal(true);
+                                return;
+                            }
+                            await controller.uploadKBFile(file);
+                        }}
                         isIngesting={controller.isIngesting}
                     />
                 </div>

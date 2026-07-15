@@ -23,15 +23,52 @@ vi.mock('../../streams/chat-stream', () => ({
     streamChatQuery: vi.fn(),
 }));
 
+const mockAuthState = vi.hoisted(() => ({
+    user: { id: '1', is_superuser: false } as { id: string; is_superuser: boolean } | null,
+}));
+
 vi.mock('../../context/useAuth', () => ({
     useAuth: () => ({
-        user: { id: '1', is_superuser: false },
+        get user() {
+            return mockAuthState.user;
+        },
         refreshUser: vi.fn().mockResolvedValue(undefined),
     }),
 }));
 
 vi.mock('../../api/knowledge', () => ({
-    getDefaultKBAPI: vi.fn().mockResolvedValue({ id: 'kb1', name: 'Default KB' }),
+    uploadKBFileAPI: vi.fn(),
+    getKBTaskStatusAPI: vi.fn(),
+}));
+
+vi.mock('../../api/repo-analysis', () => ({
+    submitRepoReadmeCheckAPI: vi.fn(),
+    getRepoAnalysisRunAPI: vi.fn(),
+}));
+
+const mockDefaultKbState = vi.hoisted(() => ({
+    data: undefined as { id: string; name: string } | undefined,
+    fetchCount: 0,
+}));
+
+vi.mock('../../query/hooks/knowledge', () => ({
+    useDefaultKBQuery: () => ({
+        get data() {
+            return mockDefaultKbState.data;
+        },
+    }),
+    defaultKBQueryOptions: () => ({
+        queryKey: ['knowledge', 'default'],
+        queryFn: async () => {
+            mockDefaultKbState.fetchCount += 1;
+            mockDefaultKbState.data = mockDefaultKbState.data ?? {
+                id: 'kb1',
+                name: 'Default KB',
+            };
+            return mockDefaultKbState.data;
+        },
+        staleTime: Infinity,
+    }),
 }));
 
 vi.mock('../../query/keys/chat', () => ({
@@ -50,26 +87,40 @@ vi.mock('../../query/hooks/chat', () => ({
 
 import { streamChatQuery } from '../../streams/chat-stream';
 import { getSessionDetailAPI } from '../../api/chat';
-import { getDefaultKBAPI } from '../../api/knowledge';
+import { uploadKBFileAPI } from '../../api/knowledge';
+import { submitRepoReadmeCheckAPI } from '../../api/repo-analysis';
 
 const mockStreamChatQuery = vi.mocked(streamChatQuery);
 const mockGetSessionDetailAPI = vi.mocked(getSessionDetailAPI);
-const mockGetDefaultKBAPI = vi.mocked(getDefaultKBAPI);
+const mockUploadKBFileAPI = vi.mocked(uploadKBFileAPI);
+const mockSubmitRepoReadmeCheckAPI = vi.mocked(submitRepoReadmeCheckAPI);
 
-function createWrapper() {
-    const queryClient = new QueryClient({
+function createWrapper(queryClient?: QueryClient) {
+    const client = queryClient ?? new QueryClient({
         defaultOptions: {
             queries: { retry: false, gcTime: 0 },
             mutations: { retry: false },
         },
     });
     return ({ children }: { children: ReactNode }) => (
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );
+}
+
+function createTestClient() {
+    return new QueryClient({
+        defaultOptions: {
+            queries: { retry: false, gcTime: 0 },
+            mutations: { retry: false },
+        },
+    });
 }
 
 beforeEach(() => {
     vi.clearAllMocks();
+    mockAuthState.user = { id: '1', is_superuser: false };
+    mockDefaultKbState.data = undefined;
+    mockDefaultKbState.fetchCount = 0;
     // Reset per-test session detail mock to "no data" default
     mockSessionDetailData = { data: undefined, isLoading: false };
     mockGetSessionDetailAPI.mockResolvedValue({
@@ -743,7 +794,7 @@ describe('useChatController', () => {
         });
 
         it('should fetch default knowledge base ID and pass it during RAG chat initiation', async () => {
-            mockGetDefaultKBAPI.mockResolvedValue({ id: 'resolved-kb-id', name: 'My KB' });
+            mockDefaultKbState.data = undefined;
             mockStreamChatQuery.mockReturnValue(new AbortController());
 
             const { result } = renderHook(() => useChatController(), {
@@ -758,11 +809,11 @@ describe('useChatController', () => {
                 await result.current.sendQuery('hello RAG');
             });
 
-            expect(mockGetDefaultKBAPI).toHaveBeenCalledTimes(1);
+            expect(mockDefaultKbState.fetchCount).toBe(1);
             expect(mockStreamChatQuery).toHaveBeenCalledWith(
                 expect.objectContaining({
                     query: 'hello RAG',
-                    kbId: 'resolved-kb-id',
+                    kbId: 'kb1',
                 }),
                 expect.any(Object),
             );
@@ -779,7 +830,7 @@ describe('useChatController', () => {
                 await result.current.sendQuery('hello normal');
             });
 
-            expect(mockGetDefaultKBAPI).not.toHaveBeenCalled();
+            expect(mockDefaultKbState.fetchCount).toBe(0);
             expect(mockStreamChatQuery).toHaveBeenCalledWith(
                 expect.objectContaining({
                     query: 'hello normal',
@@ -790,7 +841,6 @@ describe('useChatController', () => {
         });
 
         it('should enable external context during enhanced RAG chat initiation', async () => {
-            mockGetDefaultKBAPI.mockResolvedValue({ id: 'resolved-kb-id', name: 'My KB' });
             mockStreamChatQuery.mockReturnValue(new AbortController());
 
             const { result } = renderHook(() => useChatController(), {
@@ -812,6 +862,424 @@ describe('useChatController', () => {
                 }),
                 expect.any(Object),
             );
+        });
+
+        it('resolves default KB once then reuses query data on subsequent RAG sends', async () => {
+            mockStreamChatQuery.mockReturnValue(new AbortController());
+
+            const { result, rerender } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            act(() => {
+                result.current.setChatMode('rag');
+            });
+
+            await act(async () => {
+                await result.current.sendQuery('first RAG');
+            });
+            // After fetchQuery, observer re-reads cached defaultKb on next render.
+            rerender();
+
+            await act(async () => {
+                await result.current.sendQuery('second RAG');
+            });
+
+            expect(mockDefaultKbState.fetchCount).toBe(1);
+            expect(mockStreamChatQuery).toHaveBeenLastCalledWith(
+                expect.objectContaining({
+                    query: 'second RAG',
+                    kbId: 'kb1',
+                }),
+                expect.any(Object),
+            );
+        });
+
+        it('re-resolves default KB after identity teardown clears query cache', async () => {
+            mockStreamChatQuery.mockReturnValue(new AbortController());
+            const queryClient = createTestClient();
+
+            const { result, rerender } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(queryClient),
+            });
+
+            act(() => {
+                result.current.setChatMode('rag');
+            });
+
+            await act(async () => {
+                await result.current.sendQuery('owned by A');
+            });
+            expect(mockDefaultKbState.fetchCount).toBe(1);
+
+            // Simulate AuthProvider terminateIdentitySession: clear cache + switch user.
+            await act(async () => {
+                queryClient.clear();
+            });
+            mockDefaultKbState.data = undefined;
+            mockAuthState.user = { id: '2', is_superuser: false };
+            rerender();
+
+            act(() => {
+                result.current.setChatMode('rag');
+            });
+            await act(async () => {
+                await result.current.sendQuery('owned by B');
+            });
+
+            expect(mockDefaultKbState.fetchCount).toBe(2);
+        });
+    });
+
+    describe('identity lifecycle reset', () => {
+        it('clears local chat runtime when confirmed user becomes anonymous', async () => {
+            let capturedSignal: AbortSignal | undefined;
+            mockStreamChatQuery.mockImplementation((options: StreamOptions) => {
+                capturedSignal = options.signal;
+                return new AbortController();
+            });
+
+            const { result, rerender } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            await act(async () => {
+                await result.current.sendQuery('hello from A');
+            });
+            act(() => {
+                result.current.setChatMode('rag');
+                result.current.setIsIngestionSidebarOpen(true);
+            });
+
+            expect(result.current.messages.length).toBeGreaterThan(0);
+            expect(capturedSignal?.aborted).toBe(false);
+
+            mockAuthState.user = null;
+            rerender();
+
+            expect(result.current.messages).toEqual([]);
+            expect(result.current.activeSessionId).toBeNull();
+            expect(result.current.streamingText).toBe('');
+            expect(result.current.isStreaming).toBe(false);
+            expect(result.current.traceSteps).toEqual([]);
+            expect(result.current.citations).toEqual([]);
+            expect(result.current.chatMode).toBe('normal');
+            expect(result.current.activeTraceTab).toBe('rag');
+            expect(result.current.isIngesting).toBe(false);
+            expect(result.current.isIngestionSidebarOpen).toBe(false);
+            expect(capturedSignal?.aborted).toBe(true);
+        });
+
+        it('clears local chat runtime when confirmed user A switches to B', async () => {
+            mockStreamChatQuery.mockReturnValue(new AbortController());
+
+            const { result, rerender } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            await act(async () => {
+                await result.current.sendQuery('owned by A');
+            });
+            act(() => {
+                result.current.setChatMode('web_rag');
+            });
+            expect(result.current.messages).toHaveLength(1);
+
+            mockAuthState.user = { id: '2', is_superuser: false };
+            rerender();
+
+            expect(result.current.messages).toEqual([]);
+            expect(result.current.chatMode).toBe('normal');
+            expect(result.current.activeSessionId).toBeNull();
+        });
+
+        it('aborts active stream on identity change', async () => {
+            let capturedSignal: AbortSignal | undefined;
+            mockStreamChatQuery.mockImplementation((options: StreamOptions) => {
+                capturedSignal = options.signal;
+                return new AbortController();
+            });
+
+            const { result, rerender } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            await act(async () => {
+                await result.current.sendQuery('streaming for A');
+            });
+            expect(capturedSignal?.aborted).toBe(false);
+
+            mockAuthState.user = { id: '2', is_superuser: false };
+            rerender();
+
+            expect(capturedSignal?.aborted).toBe(true);
+        });
+
+        it('does not clear a fresh session when first loading from anonymous to user', async () => {
+            mockAuthState.user = null;
+            mockStreamChatQuery.mockReturnValue(new AbortController());
+
+            const { result, rerender } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            // Anonymous composition has no prior confirmed identity; first login must not wipe state.
+            act(() => {
+                result.current.setChatMode('rag');
+            });
+            expect(result.current.chatMode).toBe('rag');
+
+            mockAuthState.user = { id: '1', is_superuser: false };
+            rerender();
+
+            expect(result.current.chatMode).toBe('rag');
+            expect(result.current.messages).toEqual([]);
+        });
+
+        it('anonymous normal/rag/upload do not send identity-bound requests', async () => {
+            mockAuthState.user = null;
+            mockStreamChatQuery.mockReturnValue(new AbortController());
+            mockDefaultKbState.fetchCount = 0;
+            mockSubmitRepoReadmeCheckAPI.mockClear();
+            mockUploadKBFileAPI.mockClear();
+
+            const { result } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            await act(async () => {
+                await result.current.sendQuery('hello anonymous');
+            });
+            expect(mockStreamChatQuery).not.toHaveBeenCalled();
+            expect(result.current.messages).toEqual([]);
+
+            act(() => {
+                result.current.setChatMode('rag');
+            });
+            await act(async () => {
+                await result.current.sendQuery('rag anonymous');
+            });
+            expect(mockStreamChatQuery).not.toHaveBeenCalled();
+            expect(mockDefaultKbState.fetchCount).toBe(0);
+
+            const file = new File(['# hi'], 'doc.md', { type: 'text/markdown' });
+            await act(async () => {
+                await result.current.uploadKBFile(file);
+            });
+            expect(mockUploadKBFileAPI).not.toHaveBeenCalled();
+            expect(result.current.isIngesting).toBe(false);
+        });
+
+        it('does not commit deferred work started before null→B login', async () => {
+            // Start as A with a hanging upload, tear down to anonymous, then land as B.
+            let resolveUpload: (value: {
+                task_id: string;
+                file_id: string;
+                file_status: string;
+                task_status: string;
+                deduplicated: boolean;
+            }) => void = () => undefined;
+            mockUploadKBFileAPI.mockImplementation(
+                () => new Promise((resolve) => {
+                    resolveUpload = resolve;
+                }),
+            );
+
+            const file = new File(['# hi'], 'doc.md', { type: 'text/markdown' });
+            const { result, rerender } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            let uploadPromise: Promise<void> | undefined;
+            act(() => {
+                uploadPromise = result.current.uploadKBFile(file);
+            });
+            expect(result.current.isIngesting).toBe(true);
+
+            mockAuthState.user = null;
+            rerender();
+            expect(result.current.isIngesting).toBe(false);
+
+            mockAuthState.user = { id: '2', is_superuser: false };
+            rerender();
+
+            await act(async () => {
+                resolveUpload({
+                    task_id: 'task-a',
+                    file_id: 'file-a',
+                    file_status: 'READY',
+                    task_status: 'completed',
+                    deduplicated: true,
+                });
+                await uploadPromise;
+            });
+
+            expect(result.current.isIngesting).toBe(false);
+            expect(result.current.isIngestionSidebarOpen).toBe(false);
+            expect(result.current.ingestionSteps.every((step) => step.status === 'idle')).toBe(true);
+        });
+
+        it('does not commit deferred repo_check after startNewChat aborts the controller', async () => {
+            let resolveSubmit: (value: { run_id: string; task_id: string; status: 'pending' }) => void =
+                () => undefined;
+            mockSubmitRepoReadmeCheckAPI.mockImplementation(
+                () => new Promise((resolve) => {
+                    resolveSubmit = resolve;
+                }),
+            );
+
+            const { result } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            act(() => {
+                result.current.setChatMode('repo_check');
+            });
+
+            let sendPromise: Promise<void> | undefined;
+            act(() => {
+                sendPromise = result.current.sendQuery('https://github.com/acme/demo');
+            });
+            expect(result.current.messages).toHaveLength(1);
+
+            act(() => {
+                result.current.startNewChat();
+            });
+            expect(result.current.messages).toEqual([]);
+
+            await act(async () => {
+                resolveSubmit({ run_id: 'run-a', task_id: 'task-a', status: 'pending' });
+                await sendPromise;
+            });
+
+            expect(result.current.messages).toEqual([]);
+        });
+
+        it('does not commit deferred repo_check result after A→B', async () => {
+            let resolveSubmit: (value: { run_id: string; task_id: string; status: 'pending' }) => void =
+                () => undefined;
+            mockSubmitRepoReadmeCheckAPI.mockImplementation(
+                () => new Promise((resolve) => {
+                    resolveSubmit = resolve;
+                }),
+            );
+
+            const { result, rerender } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            act(() => {
+                result.current.setChatMode('repo_check');
+            });
+
+            let sendPromise: Promise<void> | undefined;
+            act(() => {
+                sendPromise = result.current.sendQuery('https://github.com/acme/demo');
+            });
+
+            mockAuthState.user = { id: '2', is_superuser: false };
+            rerender();
+            expect(result.current.messages).toEqual([]);
+
+            await act(async () => {
+                resolveSubmit({ run_id: 'run-a', task_id: 'task-a', status: 'pending' });
+                await sendPromise;
+            });
+
+            expect(result.current.messages).toEqual([]);
+            expect(result.current.chatMode).toBe('normal');
+        });
+
+        it('does not commit deferred default-KB failure after A→B', async () => {
+            let resolveKb: (value: { id: string; name: string }) => void = () => undefined;
+            mockDefaultKbState.fetchCount = 0;
+            mockDefaultKbState.data = undefined;
+            // Override defaultKBQueryOptions path used by fetchQuery via mock state queryFn — controller uses fetchQuery(defaultKBQueryOptions()).
+            // The mock queryFn is already defined; make it hang once.
+            const originalFetch = mockDefaultKbState;
+            void originalFetch;
+            const queryClient = createTestClient();
+            // Replace options by intercepting fetchQuery
+            const fetchSpy = vi.spyOn(queryClient, 'fetchQuery').mockImplementation(
+                () => new Promise((resolve) => {
+                    resolveKb = resolve as (value: { id: string; name: string }) => void;
+                }) as never,
+            );
+
+            const { result, rerender } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(queryClient),
+            });
+
+            act(() => {
+                result.current.setChatMode('rag');
+            });
+
+            let sendPromise: Promise<void> | undefined;
+            act(() => {
+                sendPromise = result.current.sendQuery('rag under A');
+            });
+
+            mockAuthState.user = { id: '2', is_superuser: false };
+            rerender();
+
+            await act(async () => {
+                resolveKb({ id: 'kb-a', name: 'A KB' });
+                await sendPromise;
+            });
+
+            expect(result.current.messages).toEqual([]);
+            expect(result.current.isStreaming).toBe(false);
+            fetchSpy.mockRestore();
+        });
+
+        it('does not reopen ingestion state from deferred upload after A→B', async () => {
+            let resolveUpload: (value: {
+                task_id: string;
+                file_id: string;
+                file_status: string;
+                task_status: string;
+                deduplicated: boolean;
+            }) => void = () => undefined;
+            mockUploadKBFileAPI.mockImplementation(
+                () => new Promise((resolve) => {
+                    resolveUpload = resolve;
+                }),
+            );
+
+            const file = new File(['# hi'], 'doc.md', { type: 'text/markdown' });
+            const { result, rerender } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            let uploadPromise: Promise<void> | undefined;
+            act(() => {
+                uploadPromise = result.current.uploadKBFile(file);
+            });
+
+            expect(result.current.isIngesting).toBe(true);
+            expect(result.current.isIngestionSidebarOpen).toBe(true);
+
+            mockAuthState.user = { id: '2', is_superuser: false };
+            rerender();
+            expect(result.current.isIngesting).toBe(false);
+            expect(result.current.isIngestionSidebarOpen).toBe(false);
+
+            await act(async () => {
+                resolveUpload({
+                    task_id: 'task-a',
+                    file_id: 'file-a',
+                    file_status: 'READY',
+                    task_status: 'completed',
+                    deduplicated: true,
+                });
+                await uploadPromise;
+            });
+
+            expect(result.current.isIngesting).toBe(false);
+            expect(result.current.isIngestionSidebarOpen).toBe(false);
+            expect(result.current.ingestionSteps.every((step) => step.status === 'idle' || step.status === 'done' || step.status === 'error' || step.status === 'running' || step.status === 'skipped')).toBe(true);
+            // After identity reset, steps are re-initialized to idle ingestion steps.
+            expect(result.current.ingestionSteps.every((step) => step.status === 'idle')).toBe(true);
         });
     });
 });

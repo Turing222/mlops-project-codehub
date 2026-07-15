@@ -7,7 +7,8 @@ import { chatKeys } from '../../query/keys/chat';
 import { useSessionDetailQuery } from '../../query/hooks/chat';
 import { getSessionDetailAPI } from '../../api/chat';
 import { streamChatQuery } from '../../streams/chat-stream';
-import { getDefaultKBAPI, uploadKBFileAPI, getKBTaskStatusAPI } from '../../api/knowledge';
+import { uploadKBFileAPI, getKBTaskStatusAPI } from '../../api/knowledge';
+import { defaultKBQueryOptions, useDefaultKBQuery } from '../../query/hooks/knowledge';
 import { submitRepoReadmeCheckAPI } from '../../api/repo-analysis';
 import type { ChatMessage, ChatSession } from '../../types/chat';
 import type { ChatStreamStepEvent } from '../../schemas/chat';
@@ -83,32 +84,99 @@ export function useChatController(): UseChatControllerReturn {
     const [isIngesting, setIsIngesting] = useState(false);
     const [isIngestionSidebarOpen, setIsIngestionSidebarOpen] = useState(false);
 
-    const defaultKbIdRef = useRef<string | null>(null);
+    // enabled:false — no auto fetch; first RAG send resolves via fetchQuery (TQ v5
+    // no-ops observer refetch while disabled). Same options as useDefaultKBQuery.
+    const { data: defaultKb } = useDefaultKBQuery({ enabled: false });
 
     const fetchDefaultKbId = useCallback(async (): Promise<string | null> => {
-        if (defaultKbIdRef.current) return defaultKbIdRef.current;
+        // Imperative fetchQuery bypasses observer enabled — require confirmed identity first.
+        if (!user?.id) return null;
+        if (defaultKb?.id) return defaultKb.id;
         try {
-            const kb = await getDefaultKBAPI();
-            defaultKbIdRef.current = kb.id;
+            const kb = await queryClient.fetchQuery(defaultKBQueryOptions());
             return kb.id;
         } catch (err) {
             console.error('获取默认知识库失败:', err);
             return null;
         }
-    }, []);
+    }, [defaultKb?.id, queryClient, user?.id]);
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const retryCacheRef = useRef<Map<string, RetryCacheEntry>>(new Map());
     const pollIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const tabSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /** Last confirmed bootstrap user id; null means anonymous. */
+    const lastConfirmedUserIdRef = useRef<string | null>(null);
+    /** Bumped on identity teardown; deferred promises must re-check before setState. */
+    const identityGenerationRef = useRef(0);
+
+    const isCurrentIdentity = useCallback((generation: number) => {
+        return generation === identityGenerationRef.current;
+    }, []);
+
+    const clearIngestionTimers = useCallback(() => {
+        if (pollIntervalRef.current) {
+            clearTimeout(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+        }
+        if (tabSwitchTimerRef.current) {
+            clearTimeout(tabSwitchTimerRef.current);
+            tabSwitchTimerRef.current = null;
+        }
+    }, []);
+
+    /** Shared session-level reset used by startNewChat and identity teardown. */
+    const resetChatSessionState = useCallback(() => {
+        abortControllerRef.current?.abort();
+        retryCacheRef.current.clear();
+        setIsSessionFromHistory(false);
+        setActiveSessionId(null);
+        setActiveSession(null);
+        setChatMode('normal');
+        setMessages([]);
+        setStreamingText('');
+        setIsStreaming(false);
+        setTraceSteps([]);
+        setCitations([]);
+    }, []);
+
+    /** Full identity teardown: session + KB cache + ingestion runtime. */
+    const resetIdentityRuntime = useCallback(() => {
+        identityGenerationRef.current += 1;
+        resetChatSessionState();
+        clearIngestionTimers();
+        setIngestionSteps(createInitialIngestionSteps());
+        setActiveTraceTab('rag');
+        setIsIngestionSidebarOpen(false);
+        setIsIngesting(false);
+    }, [resetChatSessionState, clearIngestionTimers]);
 
     useEffect(() => {
         return () => {
+            // Invalidate deferred upload/poll continuations after unmount (PR4-adjacent).
+            identityGenerationRef.current += 1;
             abortControllerRef.current?.abort();
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
             if (tabSwitchTimerRef.current) clearTimeout(tabSwitchTimerRef.current);
         };
     }, []);
+
+    // Identity transitions:
+    // - A→null or A→B: full runtime reset (also bumps generation)
+    // - null→B: bump generation + abort so deferred anonymous work cannot land on B
+    //   without wiping a fresh empty session UI
+    useEffect(() => {
+        const nextUserId = user?.id != null ? String(user.id) : null;
+        const previousUserId = lastConfirmedUserIdRef.current;
+        if (previousUserId !== null && previousUserId !== nextUserId) {
+            resetIdentityRuntime();
+        } else if (previousUserId === null && nextUserId !== null) {
+            identityGenerationRef.current += 1;
+            abortControllerRef.current?.abort();
+            clearIngestionTimers();
+        }
+        lastConfirmedUserIdRef.current = nextUserId;
+    }, [user?.id, resetIdentityRuntime, clearIngestionTimers]);
 
     const detailSessionId = isSessionFromHistory ? activeSessionId : null;
     const { data: sessionDetailData, isLoading: detailLoading } =
@@ -250,6 +318,10 @@ export function useChatController(): UseChatControllerReturn {
     const sendQuery = useCallback(async (text: string, options?: SendMessageOptions) => {
         const normalizedText = text.trim();
         if (!normalizedText) return;
+        // Require bootstrap-confirmed user — never fire identity-bound APIs anonymously.
+        if (user?.id == null) return;
+
+        const generation = identityGenerationRef.current;
 
         // Abort any in-flight stream before starting a new one
         abortControllerRef.current?.abort();
@@ -279,6 +351,7 @@ export function useChatController(): UseChatControllerReturn {
 
             try {
                 const response = await submitRepoReadmeCheckAPI(normalizedText);
+                if (!isCurrentIdentity(generation) || newController.signal.aborted) return;
                 const assistantMsg: ChatMessage = {
                     id: `repo-check-msg-${Date.now()}`,
                     session_id: activeSessionId || '',
@@ -294,6 +367,7 @@ export function useChatController(): UseChatControllerReturn {
                 };
                 setMessages((prev) => [...prev, assistantMsg]);
             } catch (err: unknown) {
+                if (!isCurrentIdentity(generation) || newController.signal.aborted) return;
                 const errorMessage =
                     err instanceof Error
                         ? err.message
@@ -340,6 +414,7 @@ export function useChatController(): UseChatControllerReturn {
         let targetKbId: string | undefined = undefined;
         if (!activeSessionId && (chatMode === 'rag' || chatMode === 'web_rag')) {
             const kbId = await fetchDefaultKbId();
+            if (!isCurrentIdentity(generation) || newController.signal.aborted) return;
             if (kbId) {
                 targetKbId = kbId;
             } else if (chatMode === 'rag') {
@@ -364,6 +439,8 @@ export function useChatController(): UseChatControllerReturn {
             }
         }
 
+        if (!isCurrentIdentity(generation) || newController.signal.aborted) return;
+
         let runtimeSessionId: string | null = activeSessionId;
         let metaReceived = false;
         let messageId = '';
@@ -382,7 +459,7 @@ export function useChatController(): UseChatControllerReturn {
             },
             {
                 onStarted() {
-                    if (newController.signal.aborted) return;
+                    if (!isCurrentIdentity(generation) || newController.signal.aborted) return;
                     const networkMs = Date.now() - queryStartTime;
                     setTraceSteps((prev) =>
                         prev.map((step) =>
@@ -399,7 +476,7 @@ export function useChatController(): UseChatControllerReturn {
                     );
                 },
                 onMeta(event) {
-                    if (newController.signal.aborted) return;
+                    if (!isCurrentIdentity(generation) || newController.signal.aborted) return;
                     if (metaReceived) return;
                     metaReceived = true;
                     messageId = event.message_id || '';
@@ -447,16 +524,16 @@ export function useChatController(): UseChatControllerReturn {
                     }
                 },
                 onStep(event) {
-                    if (newController.signal.aborted) return;
+                    if (!isCurrentIdentity(generation) || newController.signal.aborted) return;
                     handleStreamStep(event);
                 },
                 onChunk(event) {
-                    if (newController.signal.aborted) return;
+                    if (!isCurrentIdentity(generation) || newController.signal.aborted) return;
                     accumulatedContent += event.content;
                     setStreamingText((prev) => prev + event.content);
                 },
                 onDone() {
-                    if (newController.signal.aborted) return;
+                    if (!isCurrentIdentity(generation) || newController.signal.aborted) return;
                     const assistantMsg: ChatMessage = {
                         id: messageId || `msg-${Date.now()}`,
                         session_id: runtimeSessionId || '',
@@ -492,40 +569,41 @@ export function useChatController(): UseChatControllerReturn {
                         queryClient.invalidateQueries({ queryKey: chatKeys.sessionDetail(runtimeSessionId) });
                         getSessionDetailAPI(runtimeSessionId)
                             .then((detail) => {
-                                if (!newController.signal.aborted) {
-                                    setActiveSession(detail.session);
-                                    setMessages(detail.messages || []);
-                                    const lastAssistantMsg = [
-                                        ...detail.messages,
-                                    ]
-                                        .reverse()
-                                        .find((m) => m.role === 'assistant');
-                                    const lastMetrics = parseRagMetrics(lastAssistantMsg?.search_context);
-                                    if (lastMetrics?.external_context_used && detail.session?.kb_id) {
-                                        setChatMode('web_rag');
-                                    }
-                                    if (lastAssistantMsg?.search_context) {
-                                        setCitations(
-                                            parseCitations(
-                                                lastAssistantMsg.search_context,
-                                            ),
-                                        );
-                                    } else {
-                                        setCitations([]);
-                                    }
-                                    setTraceSteps((prev) => applyTraceMetricsToSteps(
-                                        prev,
-                                        parseChatMessageMetrics(lastAssistantMsg?.message_metadata),
-                                        parseRagMetrics(lastAssistantMsg?.search_context),
-                                    ));
+                                if (!isCurrentIdentity(generation) || newController.signal.aborted) {
+                                    return;
                                 }
+                                setActiveSession(detail.session);
+                                setMessages(detail.messages || []);
+                                const lastAssistantMsg = [
+                                    ...detail.messages,
+                                ]
+                                    .reverse()
+                                    .find((m) => m.role === 'assistant');
+                                const lastMetrics = parseRagMetrics(lastAssistantMsg?.search_context);
+                                if (lastMetrics?.external_context_used && detail.session?.kb_id) {
+                                    setChatMode('web_rag');
+                                }
+                                if (lastAssistantMsg?.search_context) {
+                                    setCitations(
+                                        parseCitations(
+                                            lastAssistantMsg.search_context,
+                                        ),
+                                    );
+                                } else {
+                                    setCitations([]);
+                                }
+                                setTraceSteps((prev) => applyTraceMetricsToSteps(
+                                    prev,
+                                    parseChatMessageMetrics(lastAssistantMsg?.message_metadata),
+                                    parseRagMetrics(lastAssistantMsg?.search_context),
+                                ));
                             })
                             .catch(() => { });
                     }
                     queryClient.invalidateQueries({ queryKey: chatKeys.sessions() });
                 },
                 onError(err) {
-                    if (newController.signal.aborted) return;
+                    if (!isCurrentIdentity(generation) || newController.signal.aborted) return;
                     setIsStreaming(false);
                     setStreamingText('');
                     setTraceSteps((prev) => {
@@ -565,7 +643,7 @@ export function useChatController(): UseChatControllerReturn {
                 },
             },
         );
-    }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient, chatMode, fetchDefaultKbId, handleStreamStep]);
+    }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient, chatMode, fetchDefaultKbId, handleStreamStep, isCurrentIdentity]);
 
     const retryFailedMessage = useCallback((messageId: string) => {
         if (import.meta.env.DEV) console.log('[retry] 点击重试, messageId=', messageId, 'isStreaming=', isStreaming);
@@ -631,22 +709,14 @@ export function useChatController(): UseChatControllerReturn {
     }, []);
 
     const startNewChat = useCallback(() => {
-        abortControllerRef.current?.abort();
-        retryCacheRef.current.clear();
-        setIsSessionFromHistory(false);
-        setActiveSessionId(null);
-        setActiveSession(null);
-        setChatMode('normal');
-        setMessages([]);
-        setStreamingText('');
-        setIsStreaming(false);
-        setTraceSteps([]);
-        setCitations([]);
-    }, []);
+        resetChatSessionState();
+    }, [resetChatSessionState]);
 
 
 
     const uploadKBFile = useCallback(async (file: File) => {
+        if (user?.id == null) return;
+
         const suffix = file.name.split('.').pop()?.toLowerCase();
         if (suffix !== 'md' && suffix !== 'markdown') {
             message.error('仅支持上传 .md 或 .markdown 格式的文件！');
@@ -657,14 +727,8 @@ export function useChatController(): UseChatControllerReturn {
             return;
         }
 
-        if (pollIntervalRef.current) {
-            clearTimeout(pollIntervalRef.current);
-            pollIntervalRef.current = null;
-        }
-        if (tabSwitchTimerRef.current) {
-            clearTimeout(tabSwitchTimerRef.current);
-            tabSwitchTimerRef.current = null;
-        }
+        const generation = identityGenerationRef.current;
+        clearIngestionTimers();
 
         setIsIngesting(true);
         setActiveTraceTab('ingestion');
@@ -681,6 +745,7 @@ export function useChatController(): UseChatControllerReturn {
 
         try {
             const uploadRes = await uploadKBFileAPI(file);
+            if (!isCurrentIdentity(generation)) return;
             const uploadFinishedAt = Date.now();
 
             setIngestionSteps((prev) =>
@@ -717,6 +782,7 @@ export function useChatController(): UseChatControllerReturn {
                 message.success('文件入库成功 (秒传匹配)！');
 
                 tabSwitchTimerRef.current = setTimeout(() => {
+                    if (!isCurrentIdentity(generation)) return;
                     setActiveTraceTab('rag');
                 }, 4000);
                 return;
@@ -735,6 +801,13 @@ export function useChatController(): UseChatControllerReturn {
             );
 
             const pollOnce = async () => {
+                if (!isCurrentIdentity(generation)) {
+                    if (pollIntervalRef.current) {
+                        clearTimeout(pollIntervalRef.current);
+                        pollIntervalRef.current = null;
+                    }
+                    return;
+                }
                 if (!pollIntervalRef.current) return;
                 pollAttempts++;
                 if (pollAttempts > maxPollAttempts) {
@@ -754,6 +827,7 @@ export function useChatController(): UseChatControllerReturn {
 
                 try {
                     const taskRes = await getKBTaskStatusAPI(taskId);
+                    if (!isCurrentIdentity(generation)) return;
                     const currentStatus = taskRes.status.toLowerCase();
                     const progress = taskRes.progress;
 
@@ -882,6 +956,7 @@ export function useChatController(): UseChatControllerReturn {
                         setIsIngesting(false);
                         message.success('文件入库成功！');
                         tabSwitchTimerRef.current = setTimeout(() => {
+                            if (!isCurrentIdentity(generation)) return;
                             setActiveTraceTab('rag');
                         }, 4000);
                     } else if (currentStatus === 'failed') {
@@ -895,12 +970,14 @@ export function useChatController(): UseChatControllerReturn {
 
                 } catch (err) {
                     console.error('轮询入库任务状态失败:', err);
+                    if (!isCurrentIdentity(generation)) return;
                     pollIntervalRef.current = setTimeout(pollOnce, 1000);
                 }
             };
             pollIntervalRef.current = setTimeout(pollOnce, 1000);
 
         } catch (err: unknown) {
+            if (!isCurrentIdentity(generation)) return;
             console.error('上传文件失败:', err);
             const errMsg = err instanceof Error ? err.message : '文件上传失败';
             setIsIngesting(false);
@@ -917,7 +994,7 @@ export function useChatController(): UseChatControllerReturn {
             );
             message.error(errMsg);
         }
-    }, []);
+    }, [clearIngestionTimers, isCurrentIdentity, user?.id]);
 
     return {
         activeSessionId,

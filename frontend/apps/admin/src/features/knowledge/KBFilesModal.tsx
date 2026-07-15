@@ -1,9 +1,13 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Modal, Table, Button, Space, Tag, message, Popconfirm } from 'antd';
 import { Database, FileText, Trash2, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { getDefaultKBFilesAPI, deleteKBFileAPI } from '../../api/knowledge';
+import { useAuth } from '../../context/useAuth';
 import type { KnowledgeFile } from '../../schemas/chat';
+import {
+    useDeleteKBFileMutation,
+    useKBFilesQuery,
+} from '../../query/hooks/knowledge';
 import styles from './KBFilesModal.module.css';
 
 interface KBFilesModalProps {
@@ -13,39 +17,29 @@ interface KBFilesModalProps {
 
 const KBFilesModal: React.FC<KBFilesModalProps> = ({ visible, onClose }) => {
     const { t } = useTranslation();
-    const [loading, setLoading] = useState(false);
-    const [files, setFiles] = useState<KnowledgeFile[]>([]);
-    const fetchVersionRef = useRef(0);
-
-    const fetchFiles = useCallback(async () => {
-        const version = ++fetchVersionRef.current;
-        setLoading(true);
-        try {
-            const data = await getDefaultKBFilesAPI();
-            if (version !== fetchVersionRef.current) return;
-            setFiles(data);
-        } catch (error) {
-            if (version !== fetchVersionRef.current) return;
-            console.error('Failed to load KB files:', error);
-            message.error(t('chat.load_kb_files_failed', '加载文件列表失败'));
-        } finally {
-            if (version === fetchVersionRef.current) {
-                setLoading(false);
-            }
-        }
-    }, [t]);
+    const { isAuthenticated } = useAuth();
+    const listEnabled = visible && isAuthenticated;
+    const {
+        data: files = [],
+        isFetching,
+        isError,
+        errorUpdatedAt,
+    } = useKBFilesQuery({ enabled: listEnabled });
+    const deleteMutation = useDeleteKBFileMutation();
+    const lastNotifiedErrorAtRef = useRef(0);
 
     useEffect(() => {
-        if (visible) {
-            void fetchFiles();
-        }
-    }, [visible, fetchFiles]);
+        if (!listEnabled || !isError || !errorUpdatedAt) return;
+        if (errorUpdatedAt === lastNotifiedErrorAtRef.current) return;
+        lastNotifiedErrorAtRef.current = errorUpdatedAt;
+        message.error(t('chat.load_kb_files_failed', '加载文件列表失败'));
+    }, [listEnabled, isError, errorUpdatedAt, t]);
 
     const handleDelete = async (id: string) => {
+        if (!isAuthenticated) return;
         try {
-            await deleteKBFileAPI(id);
+            await deleteMutation.mutateAsync(id);
             message.success(t('chat.delete_kb_file_success', '文件退库成功'));
-            void fetchFiles();
         } catch (error) {
             console.error('Failed to delete KB file:', error);
             message.error(t('chat.delete_kb_file_failed', '文件退库失败'));
@@ -125,8 +119,8 @@ const KBFilesModal: React.FC<KBFilesModalProps> = ({ visible, onClose }) => {
                 }
                 return (
                     <Tag color="processing" icon={<Loader2 size={12} className={styles['spinning-icon']} style={{ verticalAlign: 'middle', marginRight: 4 }} />}>
-                        {s === 'UPLOADED' ? t('chat.status_uploaded', '已上传') : 
-                         s === 'PARSING' ? t('chat.status_parsing', '解析中') : 
+                        {s === 'UPLOADED' ? t('chat.status_uploaded', '已上传') :
+                         s === 'PARSING' ? t('chat.status_parsing', '解析中') :
                          t('chat.status_chunking', '分块中')}
                     </Tag>
                 );
@@ -143,10 +137,12 @@ const KBFilesModal: React.FC<KBFilesModalProps> = ({ visible, onClose }) => {
                     okText={t('chat.confirm', '确认')}
                     cancelText={t('chat.cancel', '取消')}
                     placement="left"
+                    disabled={!isAuthenticated}
                 >
                     <Button
                         type="text"
                         danger
+                        disabled={!isAuthenticated}
                         icon={<Trash2 size={15} />}
                         className={styles['delete-btn']}
                     />
@@ -178,7 +174,7 @@ const KBFilesModal: React.FC<KBFilesModalProps> = ({ visible, onClose }) => {
                 dataSource={files}
                 columns={columns}
                 rowKey="id"
-                loading={loading}
+                loading={isFetching}
                 pagination={{ pageSize: 8 }}
                 className={styles['files-table']}
             />

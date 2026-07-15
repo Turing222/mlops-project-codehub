@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { authKeys } from './auth';
 import { chatKeys } from './chat';
+import { knowledgeKeys } from './knowledge';
 import { userKeys } from './users';
 
 describe('query-keys', () => {
@@ -46,10 +47,33 @@ describe('query-keys', () => {
         });
     });
 
+    describe('knowledgeKeys', () => {
+        it('all returns ["knowledge"]', () => {
+            expect(knowledgeKeys.all()).toEqual(['knowledge']);
+        });
+
+        it('default extends all with "default"', () => {
+            expect(knowledgeKeys.default()).toEqual(['knowledge', 'default']);
+        });
+
+        it('files extends all with "files"', () => {
+            expect(knowledgeKeys.files()).toEqual(['knowledge', 'files']);
+        });
+
+        it('task places task id at the end', () => {
+            expect(knowledgeKeys.task('task-1')).toEqual(['knowledge', 'task', 'task-1']);
+        });
+    });
+
     describe('cross-domain isolation', () => {
         it('top-level keys do not collide', () => {
-            const roots = [authKeys.all()[0], chatKeys.all()[0], userKeys.all()[0]];
-            expect(new Set(roots).size).toBe(3);
+            const roots = [
+                authKeys.all()[0],
+                chatKeys.all()[0],
+                userKeys.all()[0],
+                knowledgeKeys.all()[0],
+            ];
+            expect(new Set(roots).size).toBe(4);
         });
 
         it('sessionDetail keys are unique per session id', () => {
