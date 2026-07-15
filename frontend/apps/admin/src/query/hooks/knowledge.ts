@@ -3,6 +3,8 @@ import {
   deleteKBFileAPI,
   getDefaultKBAPI,
   getDefaultKBFilesAPI,
+  getKBTaskStatusAPI,
+  uploadKBFileAPI,
 } from '../../api/knowledge';
 import { useAuthStore } from '../../stores/auth-store';
 import { knowledgeKeys } from '../keys/knowledge';
@@ -53,6 +55,35 @@ export function useDeleteKBFileMutation() {
         return;
       }
       void queryClient.invalidateQueries({ queryKey: knowledgeKeys.files() });
+    },
+  });
+}
+
+export function useUploadKBFileMutation() {
+  return useMutation({
+    mutationFn: (file: File) => uploadKBFileAPI(file),
+    retry: false,
+  });
+}
+
+export function useKBTaskStatusQuery(
+  taskId: string | null | undefined,
+  { enabled }: { enabled: boolean },
+) {
+  const normalizedTaskId = taskId?.trim() ?? '';
+  const canQuery = enabled && normalizedTaskId.length > 0;
+
+  return useQuery({
+    queryKey: knowledgeKeys.task(normalizedTaskId),
+    queryFn: () => getKBTaskStatusAPI(normalizedTaskId),
+    enabled: useKnowledgeAuthEnabled(canQuery),
+    retry: false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status?.toLowerCase();
+      if (status === 'completed' || status === 'failed') {
+        return false;
+      }
+      return 1000;
     },
   });
 }

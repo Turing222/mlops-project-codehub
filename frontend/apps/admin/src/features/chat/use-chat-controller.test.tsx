@@ -51,25 +51,29 @@ const mockDefaultKbState = vi.hoisted(() => ({
     fetchCount: 0,
 }));
 
-vi.mock('../../query/hooks/knowledge', () => ({
-    useDefaultKBQuery: () => ({
-        get data() {
-            return mockDefaultKbState.data;
-        },
-    }),
-    defaultKBQueryOptions: () => ({
-        queryKey: ['knowledge', 'default'],
-        queryFn: async () => {
-            mockDefaultKbState.fetchCount += 1;
-            mockDefaultKbState.data = mockDefaultKbState.data ?? {
-                id: 'kb1',
-                name: 'Default KB',
-            };
-            return mockDefaultKbState.data;
-        },
-        staleTime: Infinity,
-    }),
-}));
+vi.mock('../../query/hooks/knowledge', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../query/hooks/knowledge')>();
+    return {
+        ...actual,
+        useDefaultKBQuery: () => ({
+            get data() {
+                return mockDefaultKbState.data;
+            },
+        }),
+        defaultKBQueryOptions: () => ({
+            queryKey: ['knowledge', 'default'],
+            queryFn: async () => {
+                mockDefaultKbState.fetchCount += 1;
+                mockDefaultKbState.data = mockDefaultKbState.data ?? {
+                    id: 'kb1',
+                    name: 'Default KB',
+                };
+                return mockDefaultKbState.data;
+            },
+            staleTime: Infinity,
+        }),
+    };
+});
 
 vi.mock('../../query/keys/chat', () => ({
     chatKeys: {
@@ -1094,7 +1098,12 @@ describe('useChatController', () => {
             act(() => {
                 uploadPromise = result.current.uploadKBFile(file);
             });
+            // mutateAsync schedules mutationFn on a microtask — flush before identity teardown.
+            await act(async () => {
+                await Promise.resolve();
+            });
             expect(result.current.isIngesting).toBe(true);
+            expect(mockUploadKBFileAPI).toHaveBeenCalled();
 
             mockAuthState.user = null;
             rerender();
@@ -1255,9 +1264,13 @@ describe('useChatController', () => {
             act(() => {
                 uploadPromise = result.current.uploadKBFile(file);
             });
+            await act(async () => {
+                await Promise.resolve();
+            });
 
             expect(result.current.isIngesting).toBe(true);
             expect(result.current.isIngestionSidebarOpen).toBe(true);
+            expect(mockUploadKBFileAPI).toHaveBeenCalled();
 
             mockAuthState.user = { id: '2', is_superuser: false };
             rerender();

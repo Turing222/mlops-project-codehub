@@ -6,6 +6,8 @@ import {
     useDefaultKBQuery,
     useDeleteKBFileMutation,
     useKBFilesQuery,
+    useKBTaskStatusQuery,
+    useUploadKBFileMutation,
 } from './knowledge';
 import { createTestQueryClient } from '../../test/render-with-query';
 import { knowledgeKeys } from '../keys/knowledge';
@@ -15,6 +17,8 @@ vi.mock('../../api/knowledge', () => ({
     getDefaultKBAPI: vi.fn(),
     getDefaultKBFilesAPI: vi.fn(),
     deleteKBFileAPI: vi.fn(),
+    uploadKBFileAPI: vi.fn(),
+    getKBTaskStatusAPI: vi.fn(),
 }));
 
 vi.mock('./auth', () => ({
@@ -25,12 +29,16 @@ import {
     deleteKBFileAPI,
     getDefaultKBAPI,
     getDefaultKBFilesAPI,
+    getKBTaskStatusAPI,
+    uploadKBFileAPI,
 } from '../../api/knowledge';
 import { useMeQuery } from './auth';
 
 const mockGetDefaultKBAPI = vi.mocked(getDefaultKBAPI);
 const mockGetDefaultKBFilesAPI = vi.mocked(getDefaultKBFilesAPI);
 const mockDeleteKBFileAPI = vi.mocked(deleteKBFileAPI);
+const mockUploadKBFileAPI = vi.mocked(uploadKBFileAPI);
+const mockGetKBTaskStatusAPI = vi.mocked(getKBTaskStatusAPI);
 const mockUseMeQuery = vi.mocked(useMeQuery);
 
 type MeQueryReturn = ReturnType<typeof useMeQuery>;
@@ -96,6 +104,17 @@ function authedMe() {
     useAuthStore.getState().setToken('tok');
 }
 
+const pendingTask = {
+    id: 'task-1',
+    action_type: 'ingest',
+    status: 'running',
+    progress: 10,
+    payload: { file_status: 'PARSING' },
+    error_log: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+};
+
 beforeEach(() => {
     vi.clearAllMocks();
     useAuthStore.getState().resetAll();
@@ -103,6 +122,14 @@ beforeEach(() => {
     mockGetDefaultKBAPI.mockResolvedValue(defaultKb);
     mockGetDefaultKBFilesAPI.mockResolvedValue(files);
     mockDeleteKBFileAPI.mockResolvedValue(undefined);
+    mockUploadKBFileAPI.mockResolvedValue({
+        task_id: 'task-1',
+        file_id: 'file-1',
+        file_status: 'PENDING',
+        task_status: 'pending',
+        deduplicated: false,
+    });
+    mockGetKBTaskStatusAPI.mockResolvedValue(pendingTask);
 });
 
 describe('useDefaultKBQuery', () => {
@@ -253,5 +280,149 @@ describe('useDeleteKBFileMutation', () => {
         ).rejects.toThrow('delete failed');
 
         expect(queryClient.getQueryData(knowledgeKeys.files())).toEqual(files);
+    });
+});
+
+describe('useUploadKBFileMutation', () => {
+    it('calls upload API with retry disabled', async () => {
+        const file = new File(['# hi'], 'doc.md', { type: 'text/markdown' });
+        const { result } = renderHook(() => useUploadKBFileMutation(), {
+            wrapper: createWrapper(),
+        });
+
+        await act(async () => {
+            await result.current.mutateAsync(file);
+        });
+
+        expect(mockUploadKBFileAPI).toHaveBeenCalledWith(file);
+        expect(result.current.failureCount).toBe(0);
+    });
+
+    it('does not auto-retry on failure', async () => {
+        mockUploadKBFileAPI.mockRejectedValue(new Error('upload failed'));
+        const file = new File(['# hi'], 'doc.md', { type: 'text/markdown' });
+        const { result } = renderHook(() => useUploadKBFileMutation(), {
+            wrapper: createWrapper(),
+        });
+
+        await expect(
+            act(async () => {
+                await result.current.mutateAsync(file);
+            }),
+        ).rejects.toThrow('upload failed');
+
+        expect(mockUploadKBFileAPI).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('useKBTaskStatusQuery', () => {
+    it('does not query when task id is empty or disabled', () => {
+        authedMe();
+        const { result: emptyId } = renderHook(
+            () => useKBTaskStatusQuery('', { enabled: true }),
+            { wrapper: createWrapper() },
+        );
+        const { result: disabled } = renderHook(
+            () => useKBTaskStatusQuery('task-1', { enabled: false }),
+            { wrapper: createWrapper() },
+        );
+
+        expect(emptyId.current.fetchStatus).toBe('idle');
+        expect(disabled.current.fetchStatus).toBe('idle');
+        expect(mockGetKBTaskStatusAPI).not.toHaveBeenCalled();
+    });
+
+    it('polls every second while task is active', async () => {
+        vi.useFakeTimers();
+        authedMe();
+        mockGetKBTaskStatusAPI.mockResolvedValue(pendingTask);
+
+        const { result } = renderHook(
+            () => useKBTaskStatusQuery('task-1', { enabled: true }),
+            { wrapper: createWrapper() },
+        );
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(mockGetKBTaskStatusAPI).toHaveBeenCalled();
+        const callsAfterFirst = mockGetKBTaskStatusAPI.mock.calls.length;
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(1000);
+        });
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(mockGetKBTaskStatusAPI.mock.calls.length).toBeGreaterThan(callsAfterFirst);
+        expect(result.current.data?.status).toBe('running');
+        vi.useRealTimers();
+    });
+
+    it.each([
+        {
+            status: 'completed',
+            taskId: 'task-done',
+            progress: 100,
+            payload: { file_status: 'READY' },
+        },
+        {
+            status: 'failed',
+            taskId: 'task-failed',
+            progress: 40,
+            payload: { file_status: 'FAILED' },
+        },
+    ] as const)('stops interval when status is $status', async ({ status, taskId, progress, payload }) => {
+        vi.useFakeTimers();
+        authedMe();
+        mockGetKBTaskStatusAPI.mockResolvedValue({
+            ...pendingTask,
+            id: taskId,
+            status,
+            progress,
+            payload,
+            error_log: status === 'failed' ? 'failed' : null,
+        });
+
+        renderHook(
+            () => useKBTaskStatusQuery(taskId, { enabled: true }),
+            { wrapper: createWrapper() },
+        );
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        await act(async () => {
+            await Promise.resolve();
+        });
+        const callsAfterTerminal = mockGetKBTaskStatusAPI.mock.calls.length;
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(3000);
+        });
+
+        expect(mockGetKBTaskStatusAPI).toHaveBeenCalledTimes(callsAfterTerminal);
+        vi.useRealTimers();
+    });
+
+    it('does not stack Query retries on a single query error', async () => {
+        authedMe();
+        mockGetKBTaskStatusAPI.mockRejectedValue(new Error('network blip'));
+
+        const { result } = renderHook(
+            () => useKBTaskStatusQuery('task-err', { enabled: true }),
+            { wrapper: createWrapper() },
+        );
+
+        await waitFor(() => {
+            expect(result.current.isError).toBe(true);
+        });
+
+        expect(mockGetKBTaskStatusAPI).toHaveBeenCalledTimes(1);
     });
 });

@@ -1,21 +1,19 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { message } from 'antd';
 import { useAuth } from '../../context/useAuth';
 import { resolveIdempotencyKey } from '../../lib/http/idempotency';
 import { chatKeys } from '../../query/keys/chat';
 import { useSessionDetailQuery } from '../../query/hooks/chat';
 import { getSessionDetailAPI } from '../../api/chat';
 import { streamChatQuery } from '../../streams/chat-stream';
-import { uploadKBFileAPI, getKBTaskStatusAPI } from '../../api/knowledge';
 import { defaultKBQueryOptions, useDefaultKBQuery } from '../../query/hooks/knowledge';
 import { submitRepoReadmeCheckAPI } from '../../api/repo-analysis';
+import { useKbIngestion } from '../knowledge/use-kb-ingestion';
 import type { ChatMessage, ChatSession } from '../../types/chat';
 import type { ChatStreamStepEvent } from '../../schemas/chat';
 import {
     applyTraceMetricsToSteps,
     createInitialTraceSteps,
-    createInitialIngestionSteps,
     parseCitations,
     parseChatMessageMetrics,
     parseRagMetrics,
@@ -79,15 +77,24 @@ export function useChatController(): UseChatControllerReturn {
     const [traceSteps, setTraceSteps] = useState<AgentTraceStep[]>([]);
     const [citations, setCitations] = useState<CitationItem[]>([]);
     const [chatMode, setChatMode] = useState<ChatMode>('normal');
-    const [activeTraceTab, setActiveTraceTab] = useState<'rag' | 'ingestion'>('rag');
-    const [ingestionSteps, setIngestionSteps] = useState<AgentTraceStep[]>(createInitialIngestionSteps());
-    const [isIngesting, setIsIngesting] = useState(false);
-    const [isIngestionSidebarOpen, setIsIngestionSidebarOpen] = useState(false);
+
+    const {
+        activeTraceTab,
+        setActiveTraceTab,
+        ingestionSteps,
+        uploadKBFile,
+        isIngesting,
+        isIngestionSidebarOpen,
+        setIsIngestionSidebarOpen,
+        resetIngestion,
+    } = useKbIngestion({ userId: user?.id != null ? String(user.id) : null });
 
     // enabled:false — no auto fetch; first RAG send resolves via fetchQuery (TQ v5
     // no-ops observer refetch while disabled). Same options as useDefaultKBQuery.
     const { data: defaultKb } = useDefaultKBQuery({ enabled: false });
 
+    // Manual memoization kept for stable identity across sendQuery; compiler cannot prove deps.
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- fetchQuery closure over user/defaultKb
     const fetchDefaultKbId = useCallback(async (): Promise<string | null> => {
         // Imperative fetchQuery bypasses observer enabled — require confirmed identity first.
         if (!user?.id) return null;
@@ -103,8 +110,6 @@ export function useChatController(): UseChatControllerReturn {
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const retryCacheRef = useRef<Map<string, RetryCacheEntry>>(new Map());
-    const pollIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const tabSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     /** Last confirmed bootstrap user id; null means anonymous. */
     const lastConfirmedUserIdRef = useRef<string | null>(null);
     /** Bumped on identity teardown; deferred promises must re-check before setState. */
@@ -112,17 +117,6 @@ export function useChatController(): UseChatControllerReturn {
 
     const isCurrentIdentity = useCallback((generation: number) => {
         return generation === identityGenerationRef.current;
-    }, []);
-
-    const clearIngestionTimers = useCallback(() => {
-        if (pollIntervalRef.current) {
-            clearTimeout(pollIntervalRef.current);
-            pollIntervalRef.current = null;
-        }
-        if (tabSwitchTimerRef.current) {
-            clearTimeout(tabSwitchTimerRef.current);
-            tabSwitchTimerRef.current = null;
-        }
     }, []);
 
     /** Shared session-level reset used by startNewChat and identity teardown. */
@@ -140,24 +134,18 @@ export function useChatController(): UseChatControllerReturn {
         setCitations([]);
     }, []);
 
-    /** Full identity teardown: session + KB cache + ingestion runtime. */
+    /** Full identity teardown: session + ingestion runtime. */
     const resetIdentityRuntime = useCallback(() => {
         identityGenerationRef.current += 1;
         resetChatSessionState();
-        clearIngestionTimers();
-        setIngestionSteps(createInitialIngestionSteps());
-        setActiveTraceTab('rag');
-        setIsIngestionSidebarOpen(false);
-        setIsIngesting(false);
-    }, [resetChatSessionState, clearIngestionTimers]);
+        resetIngestion();
+    }, [resetChatSessionState, resetIngestion]);
 
     useEffect(() => {
         return () => {
-            // Invalidate deferred upload/poll continuations after unmount (PR4-adjacent).
             identityGenerationRef.current += 1;
             abortControllerRef.current?.abort();
-            if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
-            if (tabSwitchTimerRef.current) clearTimeout(tabSwitchTimerRef.current);
+            // useKbIngestion owns its unmount cleanup; stream abort stays here.
         };
     }, []);
 
@@ -169,14 +157,17 @@ export function useChatController(): UseChatControllerReturn {
         const nextUserId = user?.id != null ? String(user.id) : null;
         const previousUserId = lastConfirmedUserIdRef.current;
         if (previousUserId !== null && previousUserId !== nextUserId) {
+            // Identity teardown must reset session + ingestion runtime synchronously.
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional identity boundary
             resetIdentityRuntime();
         } else if (previousUserId === null && nextUserId !== null) {
             identityGenerationRef.current += 1;
             abortControllerRef.current?.abort();
-            clearIngestionTimers();
+            // Invalidate in-flight ingestion without wiping a fresh empty session UI.
+            resetIngestion();
         }
         lastConfirmedUserIdRef.current = nextUserId;
-    }, [user?.id, resetIdentityRuntime, clearIngestionTimers]);
+    }, [user?.id, resetIdentityRuntime, resetIngestion]);
 
     const detailSessionId = isSessionFromHistory ? activeSessionId : null;
     const { data: sessionDetailData, isLoading: detailLoading } =
@@ -194,6 +185,7 @@ export function useChatController(): UseChatControllerReturn {
     useEffect(() => {
         if (!isSessionFromHistory || !sessionDetailData) return;
         // Historical session selection hydrates local chat state from query data.
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate live state from detail Query
         setMessages(sessionDetailData.messages || []);
         const lastAssistantMsg = [...(sessionDetailData.messages || [])]
             .reverse()
@@ -711,290 +703,6 @@ export function useChatController(): UseChatControllerReturn {
     const startNewChat = useCallback(() => {
         resetChatSessionState();
     }, [resetChatSessionState]);
-
-
-
-    const uploadKBFile = useCallback(async (file: File) => {
-        if (user?.id == null) return;
-
-        const suffix = file.name.split('.').pop()?.toLowerCase();
-        if (suffix !== 'md' && suffix !== 'markdown') {
-            message.error('仅支持上传 .md 或 .markdown 格式的文件！');
-            return;
-        }
-        if (file.size > 20 * 1024 * 1024) {
-            message.error('文件大小不能超过 20MB！');
-            return;
-        }
-
-        const generation = identityGenerationRef.current;
-        clearIngestionTimers();
-
-        setIsIngesting(true);
-        setActiveTraceTab('ingestion');
-        setIsIngestionSidebarOpen(true);
-
-        const now = Date.now();
-        setIngestionSteps([
-            { id: 'file-upload', status: 'running', description: `正在上传: ${file.name}`, startedAt: now, finishedAt: null },
-            { id: 'content-audit', status: 'idle', description: '等待文件解析提取', startedAt: null, finishedAt: null },
-            { id: 'semantic-chunk', status: 'idle', description: '等待分块处理', startedAt: null, finishedAt: null },
-            { id: 'vector-index', status: 'idle', description: '等待构建向量索引', startedAt: null, finishedAt: null },
-            { id: 'ingestion-complete', status: 'idle', description: '等待入库完成', startedAt: null, finishedAt: null },
-        ]);
-
-        try {
-            const uploadRes = await uploadKBFileAPI(file);
-            if (!isCurrentIdentity(generation)) return;
-            const uploadFinishedAt = Date.now();
-
-            setIngestionSteps((prev) =>
-                prev.map((step) =>
-                    step.id === 'file-upload'
-                        ? {
-                            ...step,
-                            status: 'done',
-                            finishedAt: uploadFinishedAt,
-                            durationMs: uploadFinishedAt - now,
-                            description: `已成功上传: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
-                        }
-                        : step
-                )
-            );
-
-            if (uploadRes.deduplicated || uploadRes.task_status === 'completed') {
-                const completeTime = Date.now();
-                setIngestionSteps((prev) =>
-                    prev.map((step) => {
-                        if (step.id === 'file-upload') return step;
-                        return {
-                            ...step,
-                            status: 'done',
-                            startedAt: step.startedAt ?? uploadFinishedAt,
-                            finishedAt: completeTime,
-                            description: step.id === 'ingestion-complete'
-                                ? '知识库文档秒传匹配成功，入库完成！'
-                                : '已完成(秒传缓存)',
-                        };
-                    })
-                );
-                setIsIngesting(false);
-                message.success('文件入库成功 (秒传匹配)！');
-
-                tabSwitchTimerRef.current = setTimeout(() => {
-                    if (!isCurrentIdentity(generation)) return;
-                    setActiveTraceTab('rag');
-                }, 4000);
-                return;
-            }
-
-            const taskId = uploadRes.task_id;
-            let pollAttempts = 0;
-            const maxPollAttempts = 120;
-
-            setIngestionSteps((prev) =>
-                prev.map((step) =>
-                    step.id === 'content-audit'
-                        ? { ...step, status: 'running', startedAt: Date.now() }
-                        : step
-                )
-            );
-
-            const pollOnce = async () => {
-                if (!isCurrentIdentity(generation)) {
-                    if (pollIntervalRef.current) {
-                        clearTimeout(pollIntervalRef.current);
-                        pollIntervalRef.current = null;
-                    }
-                    return;
-                }
-                if (!pollIntervalRef.current) return;
-                pollAttempts++;
-                if (pollAttempts > maxPollAttempts) {
-                    if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
-                    pollIntervalRef.current = null;
-                    setIsIngesting(false);
-                    setIngestionSteps((prev) =>
-                        prev.map((step) =>
-                            step.status === 'running' || step.status === 'idle'
-                                ? { ...step, status: 'error', finishedAt: Date.now(), description: '入库任务查询超时' }
-                                : step
-                        )
-                    );
-                    message.error('文件入库超时，请前往后台查看任务状态。');
-                    return;
-                }
-
-                try {
-                    const taskRes = await getKBTaskStatusAPI(taskId);
-                    if (!isCurrentIdentity(generation)) return;
-                    const currentStatus = taskRes.status.toLowerCase();
-                    const progress = taskRes.progress;
-
-                    setIngestionSteps((prev) => {
-                        const tickTime = Date.now();
-                        return prev.map((step) => {
-                            if (step.id === 'file-upload') return step;
-
-                            if (currentStatus === 'completed') {
-                                return {
-                                    ...step,
-                                    status: 'done',
-                                    startedAt: step.startedAt ?? tickTime,
-                                    finishedAt: step.finishedAt ?? tickTime,
-                                    description: step.id === 'ingestion-complete' ? '文档已成功解析、切片并建索入库！' : step.description || '已完成',
-                                    metricDetails: step.id === 'vector-index' ? { '入库进度': '100%' } : step.metricDetails,
-                                };
-                            }
-
-                            if (currentStatus === 'failed') {
-                                if (step.id === 'ingestion-complete') {
-                                    return {
-                                        ...step,
-                                        status: 'error',
-                                        finishedAt: tickTime,
-                                        description: taskRes.error_log || '知识文件入库失败，详细信息见错误日志',
-                                    };
-                                }
-                                if (step.status === 'running' || step.status === 'idle') {
-                                    return {
-                                        ...step,
-                                        status: 'error',
-                                        finishedAt: tickTime,
-                                        description: '处理中断',
-                                    };
-                                }
-                                return step;
-                            }
-
-                            const fileStatusFromPayload = (taskRes.payload?.file_status as string | undefined)?.toUpperCase();
-
-                            if (step.id === 'content-audit') {
-                                if (fileStatusFromPayload === 'PARSING' || progress < 30) {
-                                    return {
-                                        ...step,
-                                        status: 'running',
-                                        startedAt: step.startedAt ?? tickTime,
-                                        description: '正在解析提取文档文本内容...',
-                                    };
-                                } else {
-                                    return {
-                                        ...step,
-                                        status: 'done',
-                                        startedAt: step.startedAt ?? tickTime,
-                                        finishedAt: step.finishedAt ?? tickTime,
-                                        description: '文档文本内容已成功提取',
-                                    };
-                                }
-                            }
-
-                            if (step.id === 'semantic-chunk') {
-                                if (fileStatusFromPayload === 'CHUNKING' || (progress >= 30 && progress < 60)) {
-                                    return {
-                                        ...step,
-                                        status: 'running',
-                                        startedAt: step.startedAt ?? tickTime,
-                                        description: '正在进行智能文本切片与安全扫描...',
-                                    };
-                                } else if (progress >= 60 || fileStatusFromPayload === 'READY') {
-                                    return {
-                                        ...step,
-                                        status: 'done',
-                                        startedAt: step.startedAt ?? tickTime,
-                                        finishedAt: step.finishedAt ?? tickTime,
-                                        description: '文本切片及分块安全扫描已完成',
-                                    };
-                                } else {
-                                    return step;
-                                }
-                            }
-
-                            if (step.id === 'vector-index') {
-                                if (progress >= 60 && progress < 100) {
-                                    return {
-                                        ...step,
-                                        status: 'running',
-                                        startedAt: step.startedAt ?? tickTime,
-                                        description: '正在计算向量嵌入并写入向量数据库...',
-                                        metricDetails: { '入库进度': `${progress}%` },
-                                    };
-                                } else if (progress >= 100 || fileStatusFromPayload === 'READY') {
-                                    return {
-                                        ...step,
-                                        status: 'done',
-                                        startedAt: step.startedAt ?? tickTime,
-                                        finishedAt: step.finishedAt ?? tickTime,
-                                        description: '向量索引构建完成',
-                                        metricDetails: { '入库进度': '100%' },
-                                    };
-                                } else {
-                                    return step;
-                                }
-                            }
-
-                            if (step.id === 'ingestion-complete') {
-                                if (progress >= 100 || fileStatusFromPayload === 'READY') {
-                                    return {
-                                        ...step,
-                                        status: 'done',
-                                        startedAt: step.startedAt ?? tickTime,
-                                        finishedAt: tickTime,
-                                        description: '文档入库全生命周期执行完成！',
-                                    };
-                                } else {
-                                    return step;
-                                }
-                            }
-
-                            return step;
-                        });
-                    });
-
-                    if (currentStatus === 'completed') {
-                        if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
-                        pollIntervalRef.current = null;
-                        setIsIngesting(false);
-                        message.success('文件入库成功！');
-                        tabSwitchTimerRef.current = setTimeout(() => {
-                            if (!isCurrentIdentity(generation)) return;
-                            setActiveTraceTab('rag');
-                        }, 4000);
-                    } else if (currentStatus === 'failed') {
-                        if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
-                        pollIntervalRef.current = null;
-                        setIsIngesting(false);
-                        message.error(taskRes.error_log || '文件入库失败，请查看右侧诊断！');
-                    } else {
-                        pollIntervalRef.current = setTimeout(pollOnce, 1000);
-                    }
-
-                } catch (err) {
-                    console.error('轮询入库任务状态失败:', err);
-                    if (!isCurrentIdentity(generation)) return;
-                    pollIntervalRef.current = setTimeout(pollOnce, 1000);
-                }
-            };
-            pollIntervalRef.current = setTimeout(pollOnce, 1000);
-
-        } catch (err: unknown) {
-            if (!isCurrentIdentity(generation)) return;
-            console.error('上传文件失败:', err);
-            const errMsg = err instanceof Error ? err.message : '文件上传失败';
-            setIsIngesting(false);
-            setIngestionSteps((prev) =>
-                prev.map((step) => {
-                    if (step.id === 'file-upload') {
-                        return { ...step, status: 'error', finishedAt: Date.now(), description: `上传失败: ${errMsg}` };
-                    }
-                    if (step.id === 'ingestion-complete') {
-                        return { ...step, status: 'error', finishedAt: Date.now(), description: '处理中断' };
-                    }
-                    return step;
-                })
-            );
-            message.error(errMsg);
-        }
-    }, [clearIngestionTimers, isCurrentIdentity, user?.id]);
 
     return {
         activeSessionId,
