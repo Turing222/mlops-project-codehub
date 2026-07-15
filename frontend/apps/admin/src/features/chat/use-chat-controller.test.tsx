@@ -734,6 +734,137 @@ describe('useChatController', () => {
         expect(result.current.messages[2].content).toBe('follow up');
     });
 
+    it('selectSession during streaming aborts the stream and ignores late callbacks', async () => {
+        let streamSignal: AbortSignal | undefined;
+        let callbacks: Partial<StreamCallbacks> = {};
+        mockStreamChatQuery.mockImplementation((options: StreamOptions, cb: StreamCallbacks) => {
+            streamSignal = options.signal;
+            callbacks = cb;
+            return new AbortController();
+        });
+
+        const { result } = renderHook(() => useChatController(), {
+            wrapper: createWrapper(),
+        });
+
+        await act(async () => {
+            result.current.sendQuery('in flight');
+        });
+        expect(result.current.isStreaming).toBe(true);
+        expect(streamSignal?.aborted).toBe(false);
+
+        act(() => {
+            result.current.selectSession({
+                id: 'hist-other',
+                title: 'Other',
+                user_id: '1',
+                created_at: '',
+                updated_at: '',
+                total_tokens: 0,
+            });
+        });
+
+        expect(streamSignal?.aborted).toBe(true);
+        expect(result.current.isStreaming).toBe(false);
+        expect(result.current.activeSessionId).toBe('hist-other');
+        // selectSession clears live messages while waiting for detail.
+        expect(result.current.messages).toEqual([]);
+
+        const messageCount = result.current.messages.length;
+        act(() => {
+            callbacks.onChunk!({ type: 'chunk', content: 'should not land' });
+            callbacks.onDone!();
+            callbacks.onError!(new Error('late'));
+        });
+        expect(result.current.messages.length).toBe(messageCount);
+        expect(result.current.activeSessionId).toBe('hist-other');
+    });
+
+    it('selectSession while post-done detail is pending ignores late detail write', async () => {
+        let streamSignal: AbortSignal | undefined;
+        let callbacks: Partial<StreamCallbacks> = {};
+        let resolveDetail: ((value: SessionDetailResponse) => void) | undefined;
+
+        mockStreamChatQuery.mockImplementation((options: StreamOptions, cb: StreamCallbacks) => {
+            streamSignal = options.signal;
+            callbacks = cb;
+            return new AbortController();
+        });
+        mockGetSessionDetailAPI.mockImplementation(
+            () =>
+                new Promise<SessionDetailResponse>((resolve) => {
+                    resolveDetail = resolve;
+                }),
+        );
+
+        const { result } = renderHook(() => useChatController(), {
+            wrapper: createWrapper(),
+        });
+
+        await act(async () => {
+            result.current.sendQuery('hello');
+        });
+
+        await act(async () => {
+            callbacks.onMeta!({
+                type: 'meta',
+                session_id: 'stream-s1',
+                session_title: 'Streamed',
+                message_id: 'm1',
+            });
+            callbacks.onChunk!({ type: 'chunk', content: 'partial' });
+            callbacks.onDone!();
+        });
+
+        expect(result.current.isStreaming).toBe(false);
+        expect(result.current.activeSessionId).toBe('stream-s1');
+        expect(mockGetSessionDetailAPI).toHaveBeenCalled();
+        expect(resolveDetail).toBeDefined();
+
+        act(() => {
+            result.current.selectSession({
+                id: 'hist-2',
+                title: 'History 2',
+                user_id: '1',
+                created_at: '',
+                updated_at: '',
+                total_tokens: 10,
+            });
+        });
+
+        expect(streamSignal?.aborted).toBe(true);
+        expect(result.current.activeSessionId).toBe('hist-2');
+
+        await act(async () => {
+            resolveDetail!({
+                session: {
+                    id: 'stream-s1',
+                    title: 'Should not win',
+                    user_id: '1',
+                    created_at: '',
+                    updated_at: '',
+                    total_tokens: 99,
+                },
+                messages: [
+                    {
+                        id: 'old-1',
+                        session_id: 'stream-s1',
+                        role: 'user',
+                        content: 'stale from detail',
+                        status: 'success',
+                        created_at: '',
+                        updated_at: '',
+                    },
+                ],
+                total_messages: 1,
+            });
+        });
+
+        // Late detail must not overwrite the newly selected session.
+        expect(result.current.activeSessionId).toBe('hist-2');
+        expect(result.current.messages.some((m) => m.content === 'stale from detail')).toBe(false);
+    });
+
     it('retryFailedMessage deletes the error message and retries with the original clientRequestId', async () => {
         const capturedOptions: StreamOptions[] = [];
         mockStreamChatQuery.mockImplementation((options: StreamOptions, callbacks: StreamCallbacks) => {
