@@ -1,14 +1,14 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../context/useAuth';
 import { resolveIdempotencyKey } from '../../lib/http/idempotency';
 import { chatKeys } from '../../query/keys/chat';
-import { useSessionDetailQuery } from '../../query/hooks/chat';
 import { getSessionDetailAPI } from '../../api/chat';
 import { streamChatQuery } from '../../streams/chat-stream';
 import { defaultKBQueryOptions, useDefaultKBQuery } from '../../query/hooks/knowledge';
 import { submitRepoReadmeCheckAPI } from '../../api/repo-analysis';
 import { useKbIngestion } from '../knowledge/use-kb-ingestion';
+import { useChatSessionState } from './use-chat-session-state';
 import type { ChatMessage, ChatSession } from '../../types/chat';
 import type { ChatStreamStepEvent } from '../../schemas/chat';
 import {
@@ -68,12 +68,23 @@ export function useChatController(): UseChatControllerReturn {
     const { user, refreshUser } = useAuth();
     const queryClient = useQueryClient();
 
-    const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-    const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const {
+        activeSessionId,
+        activeSession,
+        displayedMessages,
+        isSessionFromHistory,
+        isLoadingHistory,
+        sessionDetailData,
+        selectSession: selectSessionState,
+        enterLiveMode,
+        appendMessage,
+        updateMessages,
+        commitSession,
+        resetSession,
+    } = useChatSessionState();
+
     const [streamingText, setStreamingText] = useState('');
     const [isStreaming, setIsStreaming] = useState(false);
-    const [isSessionFromHistory, setIsSessionFromHistory] = useState(false);
     const [traceSteps, setTraceSteps] = useState<AgentTraceStep[]>([]);
     const [citations, setCitations] = useState<CitationItem[]>([]);
     const [chatMode, setChatMode] = useState<ChatMode>('normal');
@@ -123,16 +134,13 @@ export function useChatController(): UseChatControllerReturn {
     const resetChatSessionState = useCallback(() => {
         abortControllerRef.current?.abort();
         retryCacheRef.current.clear();
-        setIsSessionFromHistory(false);
-        setActiveSessionId(null);
-        setActiveSession(null);
+        resetSession();
         setChatMode('normal');
-        setMessages([]);
         setStreamingText('');
         setIsStreaming(false);
         setTraceSteps([]);
         setCitations([]);
-    }, []);
+    }, [resetSession]);
 
     /** Full identity teardown: session + ingestion runtime. */
     const resetIdentityRuntime = useCallback(() => {
@@ -169,30 +177,17 @@ export function useChatController(): UseChatControllerReturn {
         lastConfirmedUserIdRef.current = nextUserId;
     }, [user?.id, resetIdentityRuntime, resetIngestion]);
 
-    const detailSessionId = isSessionFromHistory ? activeSessionId : null;
-    const { data: sessionDetailData, isLoading: detailLoading } =
-        useSessionDetailQuery(detailSessionId);
-
-    const isLoadingHistory = detailLoading && isSessionFromHistory;
-
-    const displayedActiveSession = isSessionFromHistory && sessionDetailData
-        ? sessionDetailData.session
-        : activeSession;
-    const displayedMessages = useMemo(() => isSessionFromHistory && sessionDetailData
-        ? sessionDetailData.messages || []
-        : messages, [isSessionFromHistory, sessionDetailData, messages]);
-
+    // History detail arrived: controller owns mode / trace / citation only.
+    // Message hydration lives in useChatSessionState.
     useEffect(() => {
         if (!isSessionFromHistory || !sessionDetailData) return;
-        // Historical session selection hydrates local chat state from query data.
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate live state from detail Query
-        setMessages(sessionDetailData.messages || []);
         const lastAssistantMsg = [...(sessionDetailData.messages || [])]
             .reverse()
             .find((m) => m.role === 'assistant');
         const lastMetrics = parseRagMetrics(lastAssistantMsg?.search_context);
         if (sessionDetailData.session) {
             if (lastMetrics?.external_context_used) {
+                // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate mode/trace from detail
                 setChatMode('web_rag');
             } else if (sessionDetailData.session.kb_id) {
                 setChatMode('rag');
@@ -322,7 +317,7 @@ export function useChatController(): UseChatControllerReturn {
         abortControllerRef.current = newController;
 
         pruneRetryCache();
-        setIsSessionFromHistory(false);
+        enterLiveMode();
 
         if (chatMode === 'repo_check') {
             const addUserMessage = options?.addUserMessage ?? true;
@@ -336,7 +331,7 @@ export function useChatController(): UseChatControllerReturn {
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                 };
-                setMessages((prev) => [...prev, userMsg]);
+                appendMessage(userMsg);
             }
             setIsStreaming(false);
             setStreamingText('');
@@ -357,7 +352,7 @@ export function useChatController(): UseChatControllerReturn {
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                 };
-                setMessages((prev) => [...prev, assistantMsg]);
+                appendMessage(assistantMsg);
             } catch (err: unknown) {
                 if (!isCurrentIdentity(generation) || newController.signal.aborted) return;
                 const errorMessage =
@@ -373,7 +368,7 @@ export function useChatController(): UseChatControllerReturn {
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                 };
-                setMessages((prev) => [...prev, assistantMsg]);
+                appendMessage(assistantMsg);
             }
             return;
         }
@@ -395,7 +390,7 @@ export function useChatController(): UseChatControllerReturn {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
             };
-            setMessages((prev) => [...prev, userMsg]);
+            appendMessage(userMsg);
         }
         setIsStreaming(true);
         setStreamingText('');
@@ -421,7 +416,7 @@ export function useChatController(): UseChatControllerReturn {
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                 };
-                setMessages((prev) => [...prev, errorMsg]);
+                appendMessage(errorMsg);
                 retryCacheRef.current.set(failedMessageId, {
                     clientRequestId,
                     query: normalizedText,
@@ -502,8 +497,7 @@ export function useChatController(): UseChatControllerReturn {
                     });
 
                     if (!activeSessionId) {
-                        setActiveSessionId(event.session_id);
-                        setActiveSession({
+                        commitSession({
                             id: event.session_id,
                             title: event.session_title,
                             user_id: String(user?.id ?? ''),
@@ -535,10 +529,10 @@ export function useChatController(): UseChatControllerReturn {
                         created_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),
                     };
-                    setMessages((prev) => [...prev, assistantMsg]);
+                    appendMessage(assistantMsg);
                     setStreamingText('');
                     setIsStreaming(false);
-                    setIsSessionFromHistory(false);
+                    enterLiveMode();
                     setTraceSteps((prev) => {
                         const now = Date.now();
                         return prev.map((step) => {
@@ -564,8 +558,8 @@ export function useChatController(): UseChatControllerReturn {
                                 if (!isCurrentIdentity(generation) || newController.signal.aborted) {
                                     return;
                                 }
-                                setActiveSession(detail.session);
-                                setMessages(detail.messages || []);
+                                commitSession(detail.session);
+                                updateMessages(() => detail.messages || []);
                                 const lastAssistantMsg = [
                                     ...detail.messages,
                                 ]
@@ -626,7 +620,7 @@ export function useChatController(): UseChatControllerReturn {
                         created_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),
                     };
-                    setMessages((prev) => [...prev, errorMsg]);
+                    appendMessage(errorMsg);
                     retryCacheRef.current.set(failedMessageId, {
                         clientRequestId,
                         query: normalizedText,
@@ -635,7 +629,21 @@ export function useChatController(): UseChatControllerReturn {
                 },
             },
         );
-    }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient, chatMode, fetchDefaultKbId, handleStreamStep, isCurrentIdentity]);
+    }, [
+        activeSessionId,
+        appendMessage,
+        chatMode,
+        commitSession,
+        enterLiveMode,
+        fetchDefaultKbId,
+        handleStreamStep,
+        isCurrentIdentity,
+        pruneRetryCache,
+        queryClient,
+        refreshUser,
+        updateMessages,
+        user?.id,
+    ]);
 
     const retryFailedMessage = useCallback((messageId: string) => {
         if (import.meta.env.DEV) console.log('[retry] 点击重试, messageId=', messageId, 'isStreaming=', isStreaming);
@@ -675,7 +683,7 @@ export function useChatController(): UseChatControllerReturn {
             retryCacheRef.current.delete(messageId);
         }
 
-        setMessages((prev) => {
+        updateMessages((prev) => {
             const baseMessages = isSessionFromHistory && sessionDetailData
                 ? sessionDetailData.messages || []
                 : prev;
@@ -687,18 +695,28 @@ export function useChatController(): UseChatControllerReturn {
             addUserMessage: false,
             retryMessageId: messageId,
         });
-    }, [sendQuery, isStreaming, pruneRetryCache, displayedMessages, isSessionFromHistory, sessionDetailData]);
+    }, [
+        displayedMessages,
+        isSessionFromHistory,
+        isStreaming,
+        pruneRetryCache,
+        sendQuery,
+        sessionDetailData,
+        updateMessages,
+    ]);
 
     const selectSession = useCallback((session: ChatSession) => {
-        setIsSessionFromHistory(true);
-        setActiveSessionId(session.id);
-        setActiveSession(session);
+        // Same history session re-selected: skip reset so hydration effects do not need
+        // to re-run (session id / history flag / detail data are unchanged).
+        if (isSessionFromHistory && activeSessionId === session.id) {
+            return;
+        }
+        selectSessionState(session);
         setChatMode(session.kb_id ? 'rag' : 'normal');
         retryCacheRef.current.clear();
-        setMessages([]);
         setTraceSteps([]);
         setCitations([]);
-    }, []);
+    }, [activeSessionId, isSessionFromHistory, selectSessionState]);
 
     const startNewChat = useCallback(() => {
         resetChatSessionState();
@@ -706,7 +724,7 @@ export function useChatController(): UseChatControllerReturn {
 
     return {
         activeSessionId,
-        activeSession: displayedActiveSession,
+        activeSession,
         messages: displayedMessages,
         streamingText,
         isStreaming,

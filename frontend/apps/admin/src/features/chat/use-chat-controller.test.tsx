@@ -638,6 +638,102 @@ describe('useChatController', () => {
         expect(result.current.citations[0].relevanceScore).toBe(0.85);
     });
 
+    it('re-selecting the same historical session is a no-op and preserves hydration for live mode', async () => {
+        const historicalDetail = {
+            session: {
+                id: 'hist-1',
+                title: 'History',
+                user_id: '1',
+                kb_id: 'kb-1',
+                created_at: '',
+                updated_at: '',
+                total_tokens: 50,
+            },
+            messages: [
+                {
+                    id: 'h-m1',
+                    session_id: 'hist-1',
+                    role: 'user' as const,
+                    content: 'old question',
+                    status: 'success' as const,
+                    created_at: '',
+                    updated_at: '',
+                },
+                {
+                    id: 'h-m2',
+                    session_id: 'hist-1',
+                    role: 'assistant' as const,
+                    content: 'old answer',
+                    status: 'success' as const,
+                    search_context: {
+                        citations: [
+                            {
+                                document_name: 'hist-doc.pdf',
+                                chunk_id: 'hc1',
+                                score: 0.85,
+                                summary: 'Historical passage.',
+                            },
+                        ],
+                        metrics: {
+                            external_context_used: true,
+                        },
+                    },
+                    created_at: '',
+                    updated_at: '',
+                },
+            ],
+            total_messages: 2,
+        };
+
+        mockStreamChatQuery.mockReturnValue(new AbortController());
+
+        const { result, rerender } = renderHook(() => useChatController(), {
+            wrapper: createWrapper(),
+        });
+
+        const histSession = {
+            id: 'hist-1',
+            title: 'History',
+            user_id: '1',
+            kb_id: 'kb-1',
+            created_at: '',
+            updated_at: '',
+            total_tokens: 50,
+        };
+
+        act(() => {
+            result.current.selectSession(histSession);
+        });
+        act(() => {
+            mockSessionDetailData = { data: historicalDetail, isLoading: false };
+            rerender();
+        });
+
+        expect(result.current.chatMode).toBe('web_rag');
+        expect(result.current.citations).toHaveLength(1);
+        expect(result.current.messages).toHaveLength(2);
+
+        // Sidebar re-clicks the same session — must not clear hydration.
+        act(() => {
+            result.current.selectSession(histSession);
+        });
+
+        expect(result.current.chatMode).toBe('web_rag');
+        expect(result.current.citations).toHaveLength(1);
+        expect(result.current.citations[0].documentName).toBe('hist-doc.pdf');
+        expect(result.current.messages).toHaveLength(2);
+
+        // Enter live mode via a new send; historical messages must still be present.
+        await act(async () => {
+            result.current.sendQuery('follow up');
+        });
+
+        expect(result.current.messages).toHaveLength(3);
+        expect(result.current.messages[0].content).toBe('old question');
+        expect(result.current.messages[1].content).toBe('old answer');
+        expect(result.current.messages[2].content).toBe('follow up');
+    });
+
     it('retryFailedMessage deletes the error message and retries with the original clientRequestId', async () => {
         const capturedOptions: StreamOptions[] = [];
         mockStreamChatQuery.mockImplementation((options: StreamOptions, callbacks: StreamCallbacks) => {
