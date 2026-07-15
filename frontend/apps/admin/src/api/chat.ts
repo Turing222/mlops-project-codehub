@@ -1,6 +1,6 @@
 import request, { createAuthorizedHeaders } from '../lib/http/client';
 import { createFetchHttpError, notifyHttpError } from '../lib/http/errors';
-import { handleUnauthorized } from '../lib/http/auth';
+import { getAccessToken, handleUnauthorized } from '../lib/http/auth';
 import { resolveIdempotencyKey, IDEMPOTENCY_KEY_HEADER } from '../lib/http/idempotency';
 import { getRequestIdFromHeaders } from '../lib/http/trace';
 import {
@@ -51,6 +51,8 @@ export const sendQueryStreamAPI = async (options: ChatQueryOptions): Promise<Res
         enable_external_context: options.enableExternalContext ?? false,
     });
     const streamUrl = resolveApiUrl(API_URLS.CHAT.QUERY_STREAM);
+    // Capture identity at send time — delayed stream 401 must not kill a newer login.
+    const requestToken = getAccessToken();
     const res = await fetch(streamUrl, {
         method: 'POST',
         headers: createAuthorizedHeaders({
@@ -70,7 +72,7 @@ export const sendQueryStreamAPI = async (options: ChatQueryOptions): Promise<Res
         });
 
         if (error.code === 'unauthorized') {
-            handleUnauthorized();
+            handleUnauthorized(requestToken);
         }
         notifyHttpError(error);
 

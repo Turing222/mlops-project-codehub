@@ -4,13 +4,17 @@ import { userKeys } from '../keys/users';
 import type { UserRegistrationPayload, UserUpdatePayload } from '../../types/user';
 import { mutationRetry } from '../../lib/http/mutation-policy';
 import { createIdempotencyKey } from '../../lib/http/idempotency';
+import { useAuthStore } from '../../stores/auth-store';
+import { useMeQuery } from './auth';
 
 export function useUserSearchQuery(params: { username?: string; email?: string }) {
+  const token = useAuthStore((s) => s.token);
+  const { data: user } = useMeQuery();
   const hasParams = Boolean(params.username || params.email);
   return useQuery({
     queryKey: userKeys.query(params),
     queryFn: () => queryUserAPI(params),
-    enabled: hasParams,
+    enabled: !!token && !!user && hasParams,
   });
 }
 

@@ -1,10 +1,15 @@
-import axios, { AxiosHeaders } from 'axios';
+import axios, { AxiosHeaders, type InternalAxiosRequestConfig } from 'axios';
 
 import { resolveApiUrl } from '../../api/urls';
 import { getAccessToken, handleUnauthorized } from './auth';
 import { normalizeHttpError, notifyHttpError } from './errors';
 import { IDEMPOTENCY_KEY_HEADER, resolveIdempotencyKey } from './idempotency';
 import { createRequestId, REQUEST_ID_HEADER } from './trace';
+
+type AuthAwareRequestConfig = InternalAxiosRequestConfig & {
+    /** Token stamped at request time for delayed-401 identity matching. */
+    authToken?: string | null;
+};
 
 const httpClient = axios.create({
     timeout: 30000,
@@ -36,9 +41,11 @@ export const createAuthorizedHeaders = (
 };
 
 httpClient.interceptors.request.use(
-    (config) => {
+    (config: AuthAwareRequestConfig) => {
         const headers = AxiosHeaders.from(config.headers);
         const token = getAccessToken();
+        // Stamp request-time identity so delayed 401s can be matched correctly.
+        config.authToken = token;
 
         if (config.url) {
             config.url = resolveApiUrl(config.url);
@@ -98,9 +105,11 @@ httpClient.interceptors.response.use(
 
         const normalized = normalizeHttpError(error);
         const isMeRequest = error.config?.url?.endsWith('/users/me');
+        const requestToken =
+            (error.config as AuthAwareRequestConfig | undefined)?.authToken ?? null;
 
         if (normalized.code === 'unauthorized' || (isMeRequest && normalized.code === 'forbidden')) {
-            handleUnauthorized();
+            handleUnauthorized(requestToken);
         }
 
         if (!isMeRequest) {
