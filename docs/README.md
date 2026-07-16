@@ -107,6 +107,13 @@ docs/
 
 | 文档 | 说明 |
 | --- | --- |
+| [2026-07-17-backend-consolidated-upgrade-roadmap.md](assessments/2026-07-17-backend-consolidated-upgrade-roadmap.md) | 汇总五份后端评估的三档升级路线、决策门、依赖、上线门槛与停止边界 |
+| [2026-07-17-identity-governance-test-ci-quality.md](assessments/2026-07-17-identity-governance-test-ci-quality.md) | 登录、Workspace RBAC、审计、Credits、Feature Flags 与测试/CI/代码质量时点评估 |
+| [2026-07-17-deployment-resilience-observability-security.md](assessments/2026-07-17-deployment-resilience-observability-security.md) | EC2 / Pages / K8s、Redis / TaskIQ、降级、告警、CSP、secret 与恢复能力时点评估 |
+| [2026-07-17-product-domain-end-to-end-business-map.md](assessments/2026-07-17-product-domain-end-to-end-business-map.md) | 认证、用户、Workspace、权限、聊天、知识库、仓库分析与积分的当前业务地图及收敛建议 |
+| [2026-07-15-chat-rag-worker-reliability-plan.md](assessments/2026-07-15-chat-rag-worker-reliability-plan.md) | Chat / RAG / Worker 主链路状态一致性、恢复、安全、质量与重构实施路线图 |
+| [2026-07-15-knowledge-ingestion-data-consistency-plan.md](assessments/2026-07-15-knowledge-ingestion-data-consistency-plan.md) | 知识入库、存储、索引血缘、迁移与数据一致性改造计划 |
+| [2026-07-14-agent-scaffold-security.md](assessments/2026-07-14-agent-scaffold-security.md) | 双 Agent 脚手架安全、权限与治理复核 |
 | [2026-07-10-codex-plugin-extraction.md](assessments/2026-07-10-codex-plugin-extraction.md) | Codex Plugin 提取边界、候选分组与迁移建议 |
 | [2026-06-14-frontend-cicd.md](assessments/2026-06-14-frontend-cicd.md) | 前端 CI/CD 评估与改造建议 |
 | [2026-06-14-backend-resilience.md](assessments/2026-06-14-backend-resilience.md) | 后端韧性评估 |
