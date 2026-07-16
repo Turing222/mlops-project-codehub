@@ -29,7 +29,7 @@ const GoogleCallbackPage: React.FC = () => {
             .catch((err) => {
                 setError(err?.message ?? t('auth.google_login_failed'));
             });
-    }, [searchParams, login, navigate]);
+    }, [searchParams, login, navigate, t]);
 
     if (error) {
         return (
