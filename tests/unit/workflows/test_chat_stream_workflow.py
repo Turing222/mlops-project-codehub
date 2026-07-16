@@ -6,13 +6,27 @@
 
 from __future__ import annotations
 
+import uuid
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from backend.application.chat.history_projection import history_to_conversation_messages
+from backend.application.chat.session_orchestrator import (
+    ChatIdempotencyState,
+    ChatPreparedRequest,
+)
+from backend.application.chat.stream_events import (
+    encode_done_event,
+    encode_started_event,
+)
 from backend.application.chat.web_stream_workflow import ChatWorkflow
 from backend.models.enums import MessageStatus
+from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.models.schemas.chat.payloads import (
+    GenerationAttemptPayload,
+    GenerationPayload,
+)
 from backend.services.feature_flag_service import (
     _AI_SYSTEM_FLAG_DEFAULTS,
     FeatureFlagService,
@@ -44,6 +58,28 @@ class FakeUow:
         return False
 
 
+class FakePubSub:
+    def __init__(self) -> None:
+        self.subscribe = AsyncMock()
+        self.unsubscribe = AsyncMock()
+        self.aclose = AsyncMock()
+
+    def listen(self):
+        async def _events():
+            yield {"type": "message", "data": encode_started_event()}
+            yield {"type": "message", "data": encode_done_event()}
+
+        return _events()
+
+
+class FakeStreamRedis:
+    def __init__(self, pubsub: FakePubSub) -> None:
+        self._pubsub = pubsub
+
+    def pubsub(self) -> FakePubSub:
+        return self._pubsub
+
+
 def test_stream_workflow_constructs_without_ai_dependencies() -> None:
     workflow = ChatWorkflow(
         uow=cast(Any, SimpleNamespace()),
@@ -54,6 +90,81 @@ def test_stream_workflow_constructs_without_ai_dependencies() -> None:
     )
 
     assert workflow is not None
+
+
+async def test_stream_workflow_queues_and_dispatches_before_meta() -> None:
+    user_id = uuid.uuid4()
+    session = SimpleNamespace(id=uuid.uuid4(), title="Session")
+    assistant_message = SimpleNamespace(id=uuid.uuid4())
+    generation_request = SimpleNamespace(id=uuid.uuid4(), attempt=1)
+    prepared = ChatPreparedRequest(
+        session=cast(Any, session),
+        generation_request=cast(Any, generation_request),
+        assistant_message=cast(Any, assistant_message),
+        generation_payload=GenerationPayload(
+            session_id=session.id,
+            query_text="hello",
+        ),
+        lock_key="lock:test",
+        lock_token="processing:test",
+        trace_attrs={},
+    )
+    generation_attempt = GenerationAttemptPayload(
+        request_id=generation_request.id,
+        attempt=1,
+        task_id="task-stream",
+        lease_token="lease-stream",
+    )
+    dispatcher = AsyncMock()
+    pubsub = FakePubSub()
+    workflow = ChatWorkflow(
+        uow=cast(Any, SimpleNamespace()),
+        dispatcher=dispatcher,
+        redis_client=cast(Any, FakeStreamRedis(pubsub)),
+        permission_service=cast(Any, SimpleNamespace()),
+        feature_flag_service=_make_mock_feature_flag_service(),
+    )
+    workflow._merge_web_stream_metrics = AsyncMock()  # type: ignore[method-assign]
+
+    with (
+        patch(
+            "backend.application.chat.web_stream_workflow.ChatSessionOrchestrator.resolve_existing_generation_request",
+            AsyncMock(return_value=None),
+        ),
+        patch(
+            "backend.application.chat.web_stream_workflow.ChatSessionOrchestrator.check_idempotency",
+            AsyncMock(
+                return_value=ChatIdempotencyState(
+                    lock_key="lock:test",
+                    lock_token="processing:test",
+                    is_new=True,
+                    value=None,
+                )
+            ),
+        ),
+        patch(
+            "backend.application.chat.web_stream_workflow.ChatSessionOrchestrator.prepare_request",
+            AsyncMock(return_value=prepared),
+        ),
+        patch(
+            "backend.application.chat.web_stream_workflow.ChatSessionOrchestrator.queue_generation_request",
+            AsyncMock(return_value=generation_attempt),
+        ) as queue_request,
+    ):
+        stream = workflow.handle_query_stream(
+            ChatQueryCommand(user_id=user_id, query_text="hello")
+        )
+        first_event = await anext(stream)
+        queue_request.assert_awaited_once()
+        dispatcher.enqueue_stream.assert_awaited_once()
+        remaining_events = [event async for event in stream]
+
+    assert first_event["type"] == "meta"
+    assert remaining_events[-1]["type"] == "done"
+    assert (
+        dispatcher.enqueue_stream.await_args.kwargs["generation_attempt"]
+        == generation_attempt
+    )
 
 
 def test_history_projection_keeps_only_user_and_assistant_messages() -> None:

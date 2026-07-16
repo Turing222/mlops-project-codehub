@@ -38,7 +38,7 @@ from backend.observability.trace_utils import (
     set_span_attributes,
     trace_span,
 )
-from backend.services.chat_service import ChatMessageUpdater, SessionManager
+from backend.services.chat_service import SessionManager
 from backend.services.feature_flag_service import FeatureFlagService
 from backend.services.permission_service import PermissionService
 
@@ -113,6 +113,13 @@ class ChatWorkflow:
             self._feature_flag_service,
             self._session_manager,
         )
+        existing_request = await orchestrator.resolve_existing_generation_request(
+            command=command
+        )
+        if existing_request is not None:
+            yield error_event("该请求已被接受，请刷新页面查看状态")
+            yield done_event()
+            return
         idempotency = await orchestrator.check_idempotency(
             command=command,
             trace_attrs=trace_attrs,
@@ -142,14 +149,7 @@ class ChatWorkflow:
         session = prepared.session
         assistant_msg = prepared.assistant_message
 
-        # 先发送 meta，让前端尽早拿到会话和消息 id。
-        yield meta_event(
-            session_id=str(session.id),
-            session_title=session.title,
-            message_id=str(assistant_msg.id),
-        )
-
-        task_id = str(uuid.uuid4())
+        task_id = uuid.uuid4().hex
         channel = f"stream:{task_id}"
 
         pubsub = None
@@ -166,32 +166,46 @@ class ChatWorkflow:
                 pubsub = self.redis.pubsub()
                 await pubsub.subscribe(channel)
                 worker_wait_started = perf_start()
+                generation_attempt = await orchestrator.queue_generation_request(
+                    prepared=prepared,
+                    user_id=user_id,
+                    task_id=task_id,
+                )
                 await self.dispatcher.enqueue_stream(
-                    prepared.generation_payload.model_dump(mode="json"),
-                    channel,
-                    inject_trace_context(),
-                    str(assistant_msg.id),
-                    str(user_id),
-                    prepared.lock_key,
+                    generation_payload=prepared.generation_payload.model_dump(
+                        mode="json"
+                    ),
+                    channel=channel,
+                    trace_context=inject_trace_context(),
+                    assistant_message_id=str(assistant_msg.id),
+                    user_id=str(user_id),
+                    idempotency_lock_key=prepared.lock_key,
+                    generation_attempt=generation_attempt,
                 )
         except AppException as exc:
             await orchestrator.release_idempotency(idempotency)
+            await self._close_pubsub(pubsub, channel)
+            pubsub = None
             logger.warning("流式任务初始化失败: %s", exc)
             yield error_event(str(exc))
-            async with db_concurrency_slot(prepared.trace_attrs), self.uow:
-                updater = ChatMessageUpdater(self.uow)
-                await updater.update_as_failed(assistant_msg.id)
             yield done_event()
             return
         except Exception as exc:
             await orchestrator.release_idempotency(idempotency)
+            await self._close_pubsub(pubsub, channel)
+            pubsub = None
             logger.error("流式任务初始化异常: %s", str(exc), exc_info=True)
             yield error_event("服务暂时不可用，请稍后重试")
-            async with db_concurrency_slot(prepared.trace_attrs), self.uow:
-                updater = ChatMessageUpdater(self.uow)
-                await updater.update_as_failed(assistant_msg.id)
             yield done_event()
             return
+
+        # Only expose message identity after the durable request is queued and
+        # broker dispatch has returned, so disconnecting after meta cannot skip dispatch.
+        yield meta_event(
+            session_id=str(session.id),
+            session_title=session.title,
+            message_id=str(assistant_msg.id),
+        )
 
         accumulated_content = []
         done_received = False
@@ -374,25 +388,30 @@ class ChatWorkflow:
             yield done_event()
             return
         finally:
-            if pubsub is not None:
-                try:
-                    await pubsub.unsubscribe(channel)
-                except Exception:
-                    logger.debug(
-                        "Redis 取消订阅失败: channel=%s", channel, exc_info=True
-                    )
-
-                close_coro = getattr(pubsub, "aclose", None)
-                if close_coro is not None:
-                    await close_coro()
-                else:
-                    close_fn = getattr(pubsub, "close", None)
-                    if close_fn is not None:
-                        maybe_awaitable = close_fn()
-                        if asyncio.iscoroutine(maybe_awaitable):
-                            await maybe_awaitable
+            await self._close_pubsub(pubsub, channel)
 
         yield done_event()
+
+    @staticmethod
+    async def _close_pubsub(pubsub: object | None, channel: str) -> None:
+        if pubsub is None:
+            return
+        try:
+            unsubscribe = getattr(pubsub, "unsubscribe", None)
+            if unsubscribe is not None:
+                maybe_awaitable = unsubscribe(channel)
+                if asyncio.iscoroutine(maybe_awaitable):
+                    await maybe_awaitable
+        except Exception:
+            logger.debug("Redis 取消订阅失败: channel=%s", channel, exc_info=True)
+        try:
+            close_fn = getattr(pubsub, "aclose", None) or getattr(pubsub, "close", None)
+            if close_fn is not None:
+                maybe_awaitable = close_fn()
+                if asyncio.iscoroutine(maybe_awaitable):
+                    await maybe_awaitable
+        except Exception:
+            logger.debug("Redis PubSub 关闭失败: channel=%s", channel, exc_info=True)
 
     async def _merge_web_stream_metrics(
         self,

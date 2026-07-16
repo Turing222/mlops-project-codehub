@@ -9,16 +9,26 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from typing import cast
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from backend.application.chat.worker_persistence_handler import (
+    GenerationAttemptRejected,
+    WorkerPersistenceHandler,
+)
 from backend.config.settings import settings
-from backend.models.enums import ChatGenerationStatus
-from backend.models.orm.chat import ChatGenerationRequest
+from backend.contracts.interfaces import AbstractUnitOfWork
+from backend.infra.redis import RedisClient
+from backend.models.enums import ChatGenerationStatus, MessageStatus
+from backend.models.orm.chat import ChatGenerationRequest, ChatMessage
+from backend.models.schemas.chat.payloads import GenerationAttemptPayload
 from backend.repositories.chat_repo import ChatRepository
 from tests.helpers.env import require_env
 
@@ -75,7 +85,6 @@ async def pg_session() -> AsyncIterator[AsyncSession]:
                         deleted_at TIMESTAMPTZ NULL
                     )
                     """,
-                    "CREATE TABLE chat_messages (id UUID PRIMARY KEY)",
                     """
                     CREATE TABLE user_workspace_roles (
                         id UUID PRIMARY KEY,
@@ -85,6 +94,7 @@ async def pg_session() -> AsyncIterator[AsyncSession]:
                     """,
                 ):
                     await connection.execute(text(ddl))
+                await connection.run_sync(ChatMessage.__table__.create)
                 await connection.run_sync(ChatGenerationRequest.__table__.create)
 
                 session = AsyncSession(bind=connection, expire_on_commit=False)
@@ -98,6 +108,32 @@ async def pg_session() -> AsyncIterator[AsyncSession]:
             await connection.close()
     finally:
         await engine.dispose()
+
+
+class SessionBoundUow:
+    """Nested-transaction UoW for exercising atomic persistence on one session."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+        self.chat_repo = ChatRepository(session)
+        self._transaction = None
+
+    async def __aenter__(self) -> SessionBoundUow:
+        self._transaction = await self._session.begin_nested()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        assert self._transaction is not None
+        if exc_type is None:
+            await self._transaction.commit()
+        else:
+            await self._transaction.rollback()
+        self._transaction = None
+
+    @asynccontextmanager
+    async def savepoint(self) -> AsyncIterator[SessionBoundUow]:
+        async with self._session.begin_nested():
+            yield self
 
 
 async def _seed_scope(
@@ -148,14 +184,70 @@ async def _seed_scope(
     )
     await session.execute(
         text(
-            "INSERT INTO chat_messages (id) "
-            "VALUES (:user_message_id), (:assistant_message_id)"
+            "INSERT INTO chat_messages (id, session_id, role, content, status) "
+            "VALUES (:user_message_id, :session_id, 'user', 'question', 'success'), "
+            "(:assistant_message_id, :session_id, 'assistant', '', 'thinking')"
         ),
         {
             "user_message_id": user_message_id,
             "assistant_message_id": assistant_message_id,
+            "session_id": session_id,
         },
     )
+
+
+async def _create_running_request(
+    session: AsyncSession,
+    *,
+    client_request_id: str,
+) -> tuple[ChatRepository, ChatGenerationRequest, uuid.UUID, GenerationAttemptPayload]:
+    user_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    user_message_id = uuid.uuid4()
+    assistant_message_id = uuid.uuid4()
+    await _seed_scope(
+        session,
+        user_id=user_id,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        assistant_message_id=assistant_message_id,
+    )
+    repo = ChatRepository(session)
+    request = await repo.create_generation_request(
+        user_id=user_id,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        assistant_message_id=assistant_message_id,
+        client_request_id=client_request_id,
+    )
+    attempt = GenerationAttemptPayload(
+        request_id=request.id,
+        attempt=1,
+        task_id=f"task-{client_request_id}",
+        lease_token=f"lease-{client_request_id}",
+    )
+    now = datetime.now(UTC)
+    assert await repo.try_queue_generation_request(
+        request_id=request.id,
+        user_id=user_id,
+        expected_attempt=attempt.attempt,
+        task_id=attempt.task_id,
+        lease_token=attempt.lease_token,
+        queued_at=now,
+        recovery_due_at=now + timedelta(minutes=1),
+    )
+    assert await repo.try_claim_generation_request(
+        request_id=request.id,
+        user_id=user_id,
+        session_id=session_id,
+        assistant_message_id=assistant_message_id,
+        expected_attempt=attempt.attempt,
+        task_id=attempt.task_id,
+        lease_token=attempt.lease_token,
+        started_at=now,
+        lease_expires_at=now + timedelta(minutes=5),
+    )
+    return repo, request, assistant_message_id, attempt
 
 
 async def test_actor_scoped_client_request_id_is_unique_in_postgres(
@@ -248,14 +340,33 @@ async def test_attempt_and_lease_cas_reject_stale_worker_in_postgres(
     )
     assert not await repo.try_claim_generation_request(
         request_id=request.id,
+        user_id=user_id,
+        session_id=session_id,
+        assistant_message_id=assistant_message_id,
         expected_attempt=1,
+        task_id="task-1",
         lease_token="wrong-lease",
+        started_at=now,
+        lease_expires_at=now + timedelta(minutes=2),
+    )
+    assert not await repo.try_claim_generation_request(
+        request_id=request.id,
+        user_id=user_id,
+        session_id=session_id,
+        assistant_message_id=assistant_message_id,
+        expected_attempt=1,
+        task_id="wrong-task",
+        lease_token="lease-1",
         started_at=now,
         lease_expires_at=now + timedelta(minutes=2),
     )
     assert await repo.try_claim_generation_request(
         request_id=request.id,
+        user_id=user_id,
+        session_id=session_id,
+        assistant_message_id=assistant_message_id,
         expected_attempt=1,
+        task_id="task-1",
         lease_token="lease-1",
         started_at=now,
         lease_expires_at=now + timedelta(minutes=2),
@@ -312,7 +423,11 @@ async def test_attempt_and_lease_cas_reject_stale_worker_in_postgres(
     )
     assert await repo.try_claim_generation_request(
         request_id=request.id,
+        user_id=user_id,
+        session_id=session_id,
+        assistant_message_id=assistant_message_id,
         expected_attempt=2,
+        task_id="task-2",
         lease_token="lease-2",
         started_at=now + timedelta(seconds=31),
         lease_expires_at=now + timedelta(minutes=6),
@@ -339,11 +454,82 @@ async def test_attempt_and_lease_cas_reject_stale_worker_in_postgres(
     assert final.recovery_due_at is None
 
 
+async def test_worker_terminal_success_updates_message_and_request_atomically(
+    pg_session: AsyncSession,
+) -> None:
+    repo, request, assistant_message_id, attempt = await _create_running_request(
+        pg_session,
+        client_request_id="atomic-success",
+    )
+    request_id = request.id
+    handler = WorkerPersistenceHandler(
+        uow=cast(AbstractUnitOfWork, SessionBoundUow(pg_session)),
+        redis_client=cast(RedisClient, AsyncMock()),
+    )
+
+    await handler.persist_success(
+        assistant_message_id=assistant_message_id,
+        user_id=None,
+        content="persisted answer",
+        tokens_input=10,
+        tokens_output=5,
+        search_context=None,
+        start_time=0.0,
+        generation_attempt=attempt,
+    )
+
+    pg_session.expire_all()
+    message = await repo.get_message(assistant_message_id)
+    final = await pg_session.get(ChatGenerationRequest, request_id)
+    assert message is not None
+    assert message.status == MessageStatus.SUCCESS
+    assert message.content == "persisted answer"
+    assert final is not None
+    assert final.status == ChatGenerationStatus.SUCCEEDED
+
+
+async def test_stale_terminal_fence_rolls_back_message_update(
+    pg_session: AsyncSession,
+) -> None:
+    repo, request, assistant_message_id, attempt = await _create_running_request(
+        pg_session,
+        client_request_id="atomic-stale",
+    )
+    request_id = request.id
+    handler = WorkerPersistenceHandler(
+        uow=cast(AbstractUnitOfWork, SessionBoundUow(pg_session)),
+        redis_client=cast(RedisClient, AsyncMock()),
+    )
+    stale_attempt = attempt.model_copy(update={"lease_token": "stale-lease"})
+
+    with pytest.raises(GenerationAttemptRejected):
+        await handler.persist_success(
+            assistant_message_id=assistant_message_id,
+            user_id=None,
+            content="late answer",
+            tokens_input=10,
+            tokens_output=5,
+            search_context=None,
+            start_time=0.0,
+            generation_attempt=stale_attempt,
+        )
+
+    pg_session.expire_all()
+    message = await repo.get_message(assistant_message_id)
+    current = await pg_session.get(ChatGenerationRequest, request_id)
+    assert message is not None
+    assert message.status == MessageStatus.THINKING
+    assert message.content == ""
+    assert current is not None
+    assert current.status == ChatGenerationStatus.RUNNING
+
+
 async def test_actor_queries_require_live_workspace_membership_and_session(
     pg_session: AsyncSession,
 ) -> None:
     user_id = uuid.uuid4()
     other_user_id = uuid.uuid4()
+    session_owner_id = uuid.uuid4()
     workspace_id = uuid.uuid4()
     session_id = uuid.uuid4()
     user_message_id = uuid.uuid4()
@@ -357,8 +543,12 @@ async def test_actor_queries_require_live_workspace_membership_and_session(
         assistant_message_id=assistant_message_id,
     )
     await pg_session.execute(
-        text("INSERT INTO users (id) VALUES (:id)"),
-        {"id": other_user_id},
+        text("INSERT INTO users (id) VALUES (:other_id), (:owner_id)"),
+        {"other_id": other_user_id, "owner_id": session_owner_id},
+    )
+    await pg_session.execute(
+        text("UPDATE chat_sessions SET user_id = :owner_id WHERE id = :id"),
+        {"owner_id": session_owner_id, "id": session_id},
     )
     repo = ChatRepository(pg_session)
     request = await repo.create_generation_request(

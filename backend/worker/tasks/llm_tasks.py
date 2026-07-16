@@ -13,6 +13,7 @@ from backend.application.chat.worker_generation_workflow import (
 from backend.infra.redis import redis_client
 from backend.infra.task_broker import broker
 from backend.models.schemas.chat.payloads import (
+    GenerationAttemptPayload,
     GenerationPayload,
     GenerationResult,
     LLMTaskPayload,
@@ -107,6 +108,7 @@ async def generate_llm_stream_task(*args: object) -> None:
             user_id,
             idempotency_lock_key,
         ) = _unpack_stream_args(args)
+        generation_attempt = None
     else:
         task_payload = LLMTaskPayload.model_validate(args[0])
         generation_payload = task_payload.generation_payload
@@ -115,6 +117,7 @@ async def generate_llm_stream_task(*args: object) -> None:
         assistant_message_id = task_payload.assistant_message_id
         user_id = task_payload.user_id
         idempotency_lock_key = task_payload.idempotency_lock_key
+        generation_attempt = task_payload.generation_attempt
 
     assert channel is not None, "stream task requires a channel"
     with use_trace_context(trace_context):
@@ -138,6 +141,7 @@ async def generate_llm_stream_task(*args: object) -> None:
                 assistant_message_id=assistant_message_id,
                 user_id=user_id,
                 idempotency_lock_key=idempotency_lock_key,
+                generation_attempt=generation_attempt,
             )
             if not result.success:
                 recorder.record(error=result.error)
@@ -167,6 +171,7 @@ async def _generate_llm_stream_task(
     assistant_message_id: str | None = None,
     user_id: str | None = None,
     idempotency_lock_key: str | None = None,
+    generation_attempt: GenerationAttemptPayload | None = None,
 ) -> StreamGenerationResult:
     """执行流式生成，返回 StreamGenerationResult。"""
     logger.info("TaskIQ Worker 开始处理流式请求: %s", channel)
@@ -190,6 +195,7 @@ async def _generate_llm_stream_task(
         assistant_message_id=assistant_uuid,
         user_id=user_uuid,
         idempotency_lock_key=idempotency_lock_key,
+        generation_attempt=generation_attempt,
     )
 
 
@@ -211,6 +217,7 @@ async def generate_llm_nonstream_task(*args: object) -> GenerationResult:
             user_id,
             idempotency_lock_key,
         ) = _unpack_nonstream_args(args)
+        generation_attempt = None
     else:
         task_payload = LLMTaskPayload.model_validate(args[0])
         generation_payload = task_payload.generation_payload
@@ -218,6 +225,7 @@ async def generate_llm_nonstream_task(*args: object) -> GenerationResult:
         assistant_message_id = task_payload.assistant_message_id
         user_id = task_payload.user_id
         idempotency_lock_key = task_payload.idempotency_lock_key
+        generation_attempt = task_payload.generation_attempt
 
     with use_trace_context(trace_context):
         payload = GenerationPayload(**generation_payload)
@@ -239,6 +247,7 @@ async def generate_llm_nonstream_task(*args: object) -> GenerationResult:
                 assistant_message_id=assistant_message_id,
                 user_id=user_id,
                 idempotency_lock_key=idempotency_lock_key,
+                generation_attempt=generation_attempt,
             )
             if result.success:
                 recorder.record(
@@ -258,6 +267,7 @@ async def _generate_llm_nonstream_task(
     assistant_message_id: str | None = None,
     user_id: str | None = None,
     idempotency_lock_key: str | None = None,
+    generation_attempt: GenerationAttemptPayload | None = None,
 ) -> GenerationResult:
     logger.info(
         "TaskIQ Worker 开始处理非流式请求: message_id=%s",
@@ -282,4 +292,5 @@ async def _generate_llm_nonstream_task(
         assistant_message_id=assistant_uuid,
         user_id=user_uuid,
         idempotency_lock_key=idempotency_lock_key,
+        generation_attempt=generation_attempt,
     )

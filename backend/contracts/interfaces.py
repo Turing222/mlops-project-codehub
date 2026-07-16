@@ -17,7 +17,10 @@ from backend.contracts.repository_protocols import (
     UserRepositoryProtocol,
 )
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
-from backend.models.schemas.chat.payloads import GenerationResult
+from backend.models.schemas.chat.payloads import (
+    GenerationAttemptPayload,
+    GenerationResult,
+)
 
 
 class AbstractUnitOfWork(ABC):
@@ -234,6 +237,7 @@ class AbstractTaskDispatcher(ABC):
         assistant_message_id: str | None = None,
         user_id: str | None = None,
         idempotency_lock_key: str | None = None,
+        generation_attempt: GenerationAttemptPayload | None = None,
     ) -> None:
         """投递流式 LLM 生成任务到 TaskIQ worker。"""
         ...
@@ -246,6 +250,7 @@ class AbstractTaskDispatcher(ABC):
         assistant_message_id: str | None = None,
         user_id: str | None = None,
         idempotency_lock_key: str | None = None,
+        generation_attempt: GenerationAttemptPayload | None = None,
     ) -> GenerationResult:
         """投递非流式 LLM 生成任务并等待结果返回。"""
         ...

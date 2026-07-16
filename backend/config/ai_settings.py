@@ -109,6 +109,8 @@ class AISettings(BaseSettings):
     # ── Chat Stream Timeouts ──────────────────────────────────────
     CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS: int = 30
     CHAT_STREAM_MESSAGE_TIMEOUT_SECONDS: int = 10
+    CHAT_GENERATION_QUEUE_RECOVERY_SECONDS: int = Field(default=300, ge=30)
+    CHAT_GENERATION_LEASE_SECONDS: int = Field(default=1800, ge=60)
 
     # ── Chat Memory ───────────────────────────────────────────────
     CHAT_MEMORY_RECENT_ROUNDS: int = 6

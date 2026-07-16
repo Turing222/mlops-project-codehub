@@ -70,6 +70,15 @@ class StreamGenerationResult:
     langfuse_metadata: dict[str, object] | None = None
 
 
+class GenerationAttemptPayload(BaseModel):
+    """Durable request fence carried from Web to one Worker attempt."""
+
+    request_id: uuid.UUID
+    attempt: int = Field(ge=1)
+    task_id: str = Field(min_length=1, max_length=128)
+    lease_token: str = Field(min_length=1, max_length=64)
+
+
 class LLMTaskPayload(BaseModel):
     """Unified LLM generation TaskIQ payload (v2 wire format)."""
 
@@ -79,5 +88,6 @@ class LLMTaskPayload(BaseModel):
     assistant_message_id: str | None = None
     user_id: str | None = None
     idempotency_lock_key: str | None = None
+    generation_attempt: GenerationAttemptPayload | None = None
 
     model_config = {"extra": "forbid"}

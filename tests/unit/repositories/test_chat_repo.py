@@ -341,6 +341,38 @@ async def test_queue_generation_request_uses_actor_attempt_cas(
     assert 3 in compiled.params.values()
 
 
+async def test_claim_generation_request_fences_task_attempt_and_lease(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    request_id = uuid.uuid4()
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = request_id
+    mock_async_session.execute.return_value = result_proxy
+    started_at = datetime.now(UTC)
+
+    claimed = await repo.try_claim_generation_request(
+        request_id=request_id,
+        user_id=uuid.uuid4(),
+        session_id=uuid.uuid4(),
+        assistant_message_id=uuid.uuid4(),
+        expected_attempt=2,
+        task_id="task-2",
+        lease_token="lease-2",
+        started_at=started_at,
+        lease_expires_at=started_at + timedelta(minutes=5),
+    )
+
+    assert claimed is True
+    compiled = mock_async_session.execute.await_args.args[0].compile()
+    sql = str(compiled)
+    assert "chat_generation_requests.task_id" in sql
+    assert "chat_generation_requests.attempt" in sql
+    assert "chat_generation_requests.lease_token" in sql
+    assert "task-2" in compiled.params.values()
+    assert "lease-2" in compiled.params.values()
+
+
 async def test_finalize_generation_request_rejects_invalid_terminal_contract(
     mock_async_session: AsyncMock,
 ) -> None:

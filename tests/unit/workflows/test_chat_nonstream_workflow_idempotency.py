@@ -7,6 +7,7 @@
 
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,7 +17,7 @@ from backend.application.chat.session_orchestrator import (
     ChatSessionOrchestrator,
 )
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
-from backend.models.orm.chat import MessageStatus
+from backend.models.enums import ChatGenerationStatus, MessageStatus
 from backend.models.schemas.chat.commands import ChatQueryCommand
 from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.payloads import GenerationResult
@@ -43,8 +44,12 @@ def _make_mock_feature_flag_service(
 def _build_workflow(
     uow=None, dispatcher=None, redis_client=None
 ) -> ChatNonStreamWorkflow:
+    resolved_uow = uow or MagicMock()
+    resolved_uow.chat_repo.get_generation_request_by_client_request_id_for_actor = (
+        AsyncMock(return_value=None)
+    )
     return ChatNonStreamWorkflow(
-        uow=uow or MagicMock(),
+        uow=resolved_uow,
         dispatcher=dispatcher or AsyncMock(),
         redis_client=redis_client or AsyncMock(),
         permission_service=MagicMock(),
@@ -55,7 +60,10 @@ def _build_workflow(
 async def test_orchestrator_without_injected_session_manager_uses_default() -> None:
     uow = MagicMock()
     user_id = uuid.uuid4()
-    session = MagicMock(id=uuid.uuid4(), title="Fallback Session", kb_id=None)
+    session = MagicMock(
+        id=uuid.uuid4(), title="Fallback Session", kb_id=None, workspace_id=None
+    )
+    user_message = SimpleNamespace(id=uuid.uuid4())
     now = datetime.now(UTC)
     assistant_msg = MagicMock(
         id=uuid.uuid4(),
@@ -72,6 +80,10 @@ async def test_orchestrator_without_injected_session_manager_uses_default() -> N
     uow.knowledge_repo.get_kb_by_name_for_user = AsyncMock(return_value=None)
     uow.chat_repo = AsyncMock()
     uow.chat_repo.get_context_state = AsyncMock(return_value=ContextState())
+    uow.chat_repo.create_generation_request = AsyncMock(
+        return_value=SimpleNamespace(id=uuid.uuid4(), attempt=1)
+    )
+    uow.chat_repo.try_queue_generation_request = AsyncMock(return_value=True)
     uow.credit_repo = AsyncMock()
     credit_account = MagicMock()
     credit_account.balance = 10_000
@@ -94,12 +106,12 @@ async def test_orchestrator_without_injected_session_manager_uses_default() -> N
         ) as ensure_session,
         patch(
             "backend.services.chat_service.SessionManager.create_user_message",
-            AsyncMock(),
-        ),
+            AsyncMock(return_value=user_message),
+        ) as create_user_message,
         patch(
             "backend.services.chat_service.SessionManager.create_assistant_message",
             AsyncMock(return_value=assistant_msg),
-        ),
+        ) as create_assistant_message,
         patch(
             "backend.services.chat_service.SessionManager.get_session_messages",
             AsyncMock(return_value=[]),
@@ -124,6 +136,13 @@ async def test_orchestrator_without_injected_session_manager_uses_default() -> N
     assert prepared.session is session
     assert prepared.assistant_message is assistant_msg
     ensure_session.assert_awaited_once()
+    create_user_message.assert_awaited_once()
+    assert "client_request_id" not in create_assistant_message.await_args.kwargs
+    request_kwargs = uow.chat_repo.create_generation_request.await_args.kwargs
+    assert request_kwargs["user_message_id"] == user_message.id
+    assert request_kwargs["assistant_message_id"] == assistant_msg.id
+    assert request_kwargs["client_request_id"].startswith("server-")
+    assert request_kwargs["reserved_credits"] > 0
 
 
 async def test_idempotency_lock_prevents_duplicate_request() -> None:
@@ -192,6 +211,10 @@ async def test_token_quota_exceeded_raises_error() -> None:
     uow.knowledge_repo.get_kb_by_name_for_user = AsyncMock(return_value=None)
     uow.chat_repo = AsyncMock()
     uow.chat_repo.get_context_state = AsyncMock(return_value=ContextState())
+    uow.chat_repo.create_generation_request = AsyncMock(
+        return_value=SimpleNamespace(id=uuid.uuid4(), attempt=1)
+    )
+    uow.chat_repo.try_queue_generation_request = AsyncMock(return_value=True)
     uow.credit_repo = AsyncMock()
     credit_account = MagicMock()
     credit_account.balance = 0
@@ -245,14 +268,15 @@ async def test_idempotency_replay_with_non_success_message_does_not_prepare_requ
     user_id = uuid.uuid4()
     client_req_id = "test-req-failed"
     mock_redis = AsyncMock()
-    # Redis SET NX returns False when replaying a previously recorded request.
-    mock_redis.set.return_value = False
-    mock_redis.get.return_value = "completed:test-uuid"
     workflow = _build_workflow(uow=uow, redis_client=mock_redis)
 
-    failed_msg = MagicMock(status=MessageStatus.FAILED)
     uow.chat_repo = AsyncMock()
-    uow.chat_repo.get_message_by_client_request_id = AsyncMock(return_value=failed_msg)
+    uow.chat_repo.get_generation_request_by_client_request_id_for_actor = AsyncMock(
+        return_value=SimpleNamespace(
+            status=ChatGenerationStatus.FAILED,
+            assistant_message_id=uuid.uuid4(),
+        )
+    )
     uow.__aenter__.return_value = uow
 
     with (
@@ -280,9 +304,6 @@ async def test_idempotency_replay_with_success_message_returns_cached_answer() -
     client_req_id = "test-req-success"
     now = datetime.now(UTC)
     mock_redis = AsyncMock()
-    # Redis SET NX returns False when replaying a previously recorded request.
-    mock_redis.set.return_value = False
-    mock_redis.get.return_value = str(uuid.uuid4())
     workflow = _build_workflow(uow=uow, redis_client=mock_redis)
 
     success_msg = MagicMock(
@@ -299,7 +320,14 @@ async def test_idempotency_replay_with_success_message_returns_cached_answer() -
     )
     session = MagicMock(id=session_id, title="Cached Session")
     uow.chat_repo = AsyncMock()
-    uow.chat_repo.get_message_by_client_request_id = AsyncMock(return_value=success_msg)
+    uow.chat_repo.get_generation_request_by_client_request_id_for_actor = AsyncMock(
+        return_value=SimpleNamespace(
+            status=ChatGenerationStatus.SUCCEEDED,
+            assistant_message_id=success_msg.id,
+            session_id=session_id,
+        )
+    )
+    uow.chat_repo.get_message = AsyncMock(return_value=success_msg)
     uow.chat_repo.get_session = AsyncMock(return_value=session)
     uow.read_context.return_value = uow
     uow.__aenter__.return_value = uow
@@ -320,9 +348,9 @@ async def test_idempotency_replay_with_success_message_returns_cached_answer() -
     assert result.session_title == "Cached Session"
     assert result.answer.id == success_msg.id
     assert result.answer.content == "cached answer"
-    uow.chat_repo.get_message_by_client_request_id.assert_awaited_once_with(
-        client_req_id,
-        user_id,
+    uow.chat_repo.get_generation_request_by_client_request_id_for_actor.assert_awaited_once_with(
+        user_id=user_id,
+        client_request_id=client_req_id,
     )
     uow.chat_repo.get_session.assert_awaited_once_with(session_id)
     prepare_request.assert_not_awaited()
@@ -352,6 +380,10 @@ async def test_worker_dispatch_on_success() -> None:
     uow.knowledge_repo.get_kb_by_name_for_user = AsyncMock(return_value=None)
     uow.chat_repo = AsyncMock()
     uow.chat_repo.get_context_state = AsyncMock(return_value=ContextState())
+    uow.chat_repo.create_generation_request = AsyncMock(
+        return_value=SimpleNamespace(id=uuid.uuid4(), attempt=1)
+    )
+    uow.chat_repo.try_queue_generation_request = AsyncMock(return_value=True)
     uow.credit_repo = AsyncMock()
     credit_account = MagicMock()
     credit_account.balance = 10_000
@@ -360,7 +392,10 @@ async def test_worker_dispatch_on_success() -> None:
     uow.credit_repo.get_usage_record_by_chat_message_id = AsyncMock(return_value=None)
     uow.__aenter__.return_value = uow
 
-    session = MagicMock(id=uuid.uuid4(), title="Test Session", kb_id=None)
+    session = MagicMock(
+        id=uuid.uuid4(), title="Test Session", kb_id=None, workspace_id=None
+    )
+    user_message = SimpleNamespace(id=uuid.uuid4())
     now = datetime.now(UTC)
     assistant_msg = MagicMock(
         id=uuid.uuid4(),
@@ -376,7 +411,7 @@ async def test_worker_dispatch_on_success() -> None:
         ),
         patch(
             "backend.services.chat_service.SessionManager.create_user_message",
-            AsyncMock(),
+            AsyncMock(return_value=user_message),
         ),
         patch(
             "backend.services.chat_service.SessionManager.create_assistant_message",

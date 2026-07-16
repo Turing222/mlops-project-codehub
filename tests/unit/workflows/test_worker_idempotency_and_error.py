@@ -18,9 +18,12 @@ from backend.application.chat.worker_generation_workflow import (
 )
 from backend.application.chat.worker_persistence_handler import WorkerPersistenceHandler
 from backend.core.exceptions import AppException, app_service_error
-from backend.models.orm.chat import MessageStatus
+from backend.models.enums import ChatGenerationStatus, MessageStatus
 from backend.models.schemas.chat.dto import LLMResultDTO
-from backend.models.schemas.chat.payloads import GenerationPayload
+from backend.models.schemas.chat.payloads import (
+    GenerationAttemptPayload,
+    GenerationPayload,
+)
 from tests.unit.workflows.conftest import FakeChatUow
 
 
@@ -38,6 +41,11 @@ class FakeRedis:
 
     async def delete(self, key: str) -> None:
         self.deleted.append(key)
+
+
+class FailingMarkerRedis(FakeRedis):
+    async def set(self, key: str, value: str, ex: int) -> None:
+        raise ConnectionError("Redis marker unavailable")
 
 
 class FakeRedisClient:
@@ -185,10 +193,109 @@ async def test_nonstream_idempotency_lock_written_on_success(monkeypatch) -> Non
     assert redis.set_calls == [("idempotency:ns", str(assistant_message_id), 3600)]
 
 
-async def test_current_credit_failure_still_returns_success_and_writes_marker(
+async def test_nonstream_redis_marker_failure_does_not_reverse_success(
     monkeypatch,
 ) -> None:
-    """WS2 基线：Credits settlement 失败被吞后，调用方仍写完成 marker。"""
+    redis = FailingMarkerRedis()
+    install_llm_slot_recorder(monkeypatch)
+    uow = FakeChatUow()
+    uow.chat_repo.update_message_status.return_value = object()
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=_make_nonstreaming_llm(
+            LLMResultDTO(content="persisted", completion_tokens=1)
+        ),
+    )
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(session_id=uuid.uuid4(), query_text="hi"),
+        assistant_message_id=uuid.uuid4(),
+        idempotency_lock_key="idempotency:marker-failure",
+    )
+
+    assert result.success is True
+    update_kwargs = uow.chat_repo.update_message_status.await_args.kwargs
+    assert update_kwargs["status"] == MessageStatus.SUCCESS
+
+
+async def test_nonstream_stale_attempt_is_rejected_before_llm(monkeypatch) -> None:
+    redis = FakeRedis()
+    install_llm_slot_recorder(monkeypatch)
+    uow = FakeChatUow()
+    uow.chat_repo.try_claim_generation_request.return_value = False
+    llm_service = _make_nonstreaming_llm(
+        LLMResultDTO(content="must not run", completion_tokens=1)
+    )
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=llm_service,
+    )
+    attempt = GenerationAttemptPayload(
+        request_id=uuid.uuid4(),
+        attempt=2,
+        task_id="stale-task",
+        lease_token="stale-lease",
+    )
+    user_id = uuid.uuid4()
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(session_id=uuid.uuid4(), query_text="hi"),
+        assistant_message_id=uuid.uuid4(),
+        user_id=user_id,
+        generation_attempt=attempt,
+    )
+
+    assert result.success is False
+    assert "执行结果已丢弃" in str(result.error)
+    llm_service.generate_response.assert_not_awaited()
+    uow.chat_repo.update_message_status.assert_not_awaited()
+    claim_kwargs = uow.chat_repo.try_claim_generation_request.await_args.kwargs
+    assert claim_kwargs["task_id"] == attempt.task_id
+    assert claim_kwargs["lease_token"] == attempt.lease_token
+
+
+async def test_nonstream_current_attempt_claims_and_finalizes(monkeypatch) -> None:
+    redis = FakeRedis()
+    install_llm_slot_recorder(monkeypatch)
+    uow = FakeChatUow()
+    uow.chat_repo.try_claim_generation_request.return_value = True
+    uow.chat_repo.try_finalize_generation_request.return_value = True
+    uow.chat_repo.update_message_status.return_value = object()
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=_make_nonstreaming_llm(
+            LLMResultDTO(content="accepted", completion_tokens=1)
+        ),
+    )
+    attempt = GenerationAttemptPayload(
+        request_id=uuid.uuid4(),
+        attempt=1,
+        task_id="current-task",
+        lease_token="current-lease",
+    )
+    user_id = uuid.uuid4()
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(session_id=uuid.uuid4(), query_text="hi"),
+        assistant_message_id=uuid.uuid4(),
+        user_id=user_id,
+        generation_attempt=attempt,
+    )
+
+    assert result.success is True
+    finalize_kwargs = uow.chat_repo.try_finalize_generation_request.await_args.kwargs
+    assert finalize_kwargs["target_status"] == ChatGenerationStatus.SUCCEEDED
+    assert finalize_kwargs["expected_attempt"] == attempt.attempt
+    assert finalize_kwargs["lease_token"] == attempt.lease_token
+
+
+async def test_credit_failure_returns_failure_and_skips_success_marker(
+    monkeypatch,
+) -> None:
+    """Credits settlement failure must remain terminal and visible to callers."""
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)
 
@@ -225,12 +332,11 @@ async def test_current_credit_failure_still_returns_success_and_writes_marker(
             idempotency_lock_key="idempotency:credit-failed",
         )
 
-    assert result.success is True
+    assert result.success is False
+    assert "Credits 余额不足" in str(result.error)
     update_kwargs = uow.chat_repo.update_message_status.await_args.kwargs
     assert update_kwargs["status"] == MessageStatus.FAILED
-    assert redis.set_calls == [
-        ("idempotency:credit-failed", str(assistant_message_id), 3600)
-    ]
+    assert redis.set_calls == []
 
 
 async def test_nonstream_idempotency_lock_skipped_when_key_none(monkeypatch) -> None:

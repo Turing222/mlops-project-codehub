@@ -35,6 +35,7 @@ def _generation_request_actor_scope(user_id: uuid.UUID) -> ColumnElement[bool]:
     personal_scope = and_(
         ChatGenerationRequest.workspace_id.is_(None),
         ChatSession.workspace_id.is_(None),
+        ChatSession.user_id == user_id,
     )
     workspace_scope = and_(
         ChatGenerationRequest.workspace_id.is_not(None),
@@ -46,7 +47,6 @@ def _generation_request_actor_scope(user_id: uuid.UUID) -> ColumnElement[bool]:
         .select_from(ChatSession)
         .where(
             ChatSession.id == ChatGenerationRequest.session_id,
-            ChatSession.user_id == user_id,
             ChatSession.deleted_at.is_(None),
             or_(personal_scope, workspace_scope),
         )
@@ -166,7 +166,11 @@ class ChatRepository:
         self,
         *,
         request_id: uuid.UUID,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+        assistant_message_id: uuid.UUID,
         expected_attempt: int,
+        task_id: str,
         lease_token: str,
         started_at: datetime,
         lease_expires_at: datetime,
@@ -176,8 +180,12 @@ class ChatRepository:
             update(ChatGenerationRequest)
             .where(
                 ChatGenerationRequest.id == request_id,
+                ChatGenerationRequest.user_id == user_id,
+                ChatGenerationRequest.session_id == session_id,
+                ChatGenerationRequest.assistant_message_id == assistant_message_id,
                 ChatGenerationRequest.status == ChatGenerationStatus.QUEUED,
                 ChatGenerationRequest.attempt == expected_attempt,
+                ChatGenerationRequest.task_id == task_id,
                 ChatGenerationRequest.lease_token == lease_token,
             )
             .values(

@@ -11,7 +11,10 @@ from collections.abc import Callable
 from backend.application.chat.worker_persistence_handler import WorkerPersistenceHandler
 from backend.application.chat.worker_stream_publisher import WorkerStreamPublisher
 from backend.config.ai_settings import ai_settings
-from backend.models.schemas.chat.payloads import GenerationResult
+from backend.models.schemas.chat.payloads import (
+    GenerationAttemptPayload,
+    GenerationResult,
+)
 from backend.services.chat_safety_metadata import (
     INJECTION_REFUSAL_MESSAGE,
     SAFETY_REFUSAL_MESSAGE,
@@ -51,6 +54,7 @@ class WorkerGuardrailHandler:
         input_decision: GuardrailDecision,
         start_time: float,
         idempotency_lock_key: str | None,
+        generation_attempt: GenerationAttemptPayload | None = None,
     ) -> None:
         refusal_message = (
             INJECTION_REFUSAL_MESSAGE
@@ -73,6 +77,7 @@ class WorkerGuardrailHandler:
                 input_decision=input_decision,
             ),
             idempotency_lock_key=idempotency_lock_key,
+            generation_attempt=generation_attempt,
         )
 
     async def handle_stream_refusal(
@@ -84,6 +89,7 @@ class WorkerGuardrailHandler:
         search_context: dict | None,
         start_time: float,
         idempotency_lock_key: str | None,
+        generation_attempt: GenerationAttemptPayload | None = None,
     ) -> None:
         planner_refusal = bool(search_context and search_context.get("planner_refusal"))
         refusal_content = (
@@ -108,6 +114,7 @@ class WorkerGuardrailHandler:
                 else build_rag_refusal_metadata()
             ),
             idempotency_lock_key=idempotency_lock_key,
+            generation_attempt=generation_attempt,
         )
 
     # ── Non-Stream Handlers ───────────────────────────────────────
@@ -120,6 +127,7 @@ class WorkerGuardrailHandler:
         input_decision: GuardrailDecision,
         start_time: float,
         idempotency_lock_key: str | None,
+        generation_attempt: GenerationAttemptPayload | None = None,
     ) -> GenerationResult:
         refusal_message = (
             INJECTION_REFUSAL_MESSAGE
@@ -140,6 +148,7 @@ class WorkerGuardrailHandler:
                 input_decision=input_decision,
             ),
             idempotency_lock_key=idempotency_lock_key,
+            generation_attempt=generation_attempt,
         )
         return GenerationResult(
             success=True,
@@ -156,6 +165,7 @@ class WorkerGuardrailHandler:
         search_context: dict | None,
         start_time: float,
         idempotency_lock_key: str | None,
+        generation_attempt: GenerationAttemptPayload | None = None,
     ) -> GenerationResult:
         planner_refusal = bool(search_context and search_context.get("planner_refusal"))
         refusal_content = (
@@ -178,6 +188,7 @@ class WorkerGuardrailHandler:
                 else build_rag_refusal_metadata()
             ),
             idempotency_lock_key=idempotency_lock_key,
+            generation_attempt=generation_attempt,
         )
         return GenerationResult(
             success=True,
@@ -201,6 +212,7 @@ class WorkerGuardrailHandler:
         start_time: float,
         message_metadata: dict[str, object],
         idempotency_lock_key: str | None,
+        generation_attempt: GenerationAttemptPayload | None,
     ) -> None:
         await self._persistence_handler.persist_success(
             assistant_message_id=assistant_message_id,
@@ -212,6 +224,7 @@ class WorkerGuardrailHandler:
             start_time=start_time,
             message_metadata=message_metadata,
             model_name="default",
+            generation_attempt=generation_attempt,
         )
         if idempotency_lock_key is not None and assistant_message_id is not None:
             await self._persistence_handler.write_idempotency_message(

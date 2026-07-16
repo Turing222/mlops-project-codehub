@@ -32,6 +32,7 @@ def _decode_lpush_message(redis_client: FakeRedis) -> dict[str, object]:
 
 async def test_enqueue_stream_passes_params_through() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
+    from backend.models.schemas.chat.payloads import GenerationAttemptPayload
 
     redis_client = FakeRedis()
     dispatcher = TaskDispatcher(redis_client)
@@ -41,6 +42,12 @@ async def test_enqueue_stream_passes_params_through() -> None:
     msg_id = str(uuid.uuid4())
     user_id = str(uuid.uuid4())
     lock_key = "lock:test"
+    generation_attempt = GenerationAttemptPayload(
+        request_id=uuid.uuid4(),
+        attempt=2,
+        task_id="durable-stream-task",
+        lease_token="stream-lease",
+    )
 
     await dispatcher.enqueue_stream(
         generation_payload=payload,
@@ -49,10 +56,12 @@ async def test_enqueue_stream_passes_params_through() -> None:
         assistant_message_id=msg_id,
         user_id=user_id,
         idempotency_lock_key=lock_key,
+        generation_attempt=generation_attempt,
     )
 
     message = _decode_lpush_message(redis_client)
     assert message["task_name"] == TASK_STREAM
+    assert message["task_id"] == generation_attempt.task_id
     args = message["args"]
     assert len(args) == 1
     assert args[0]["generation_payload"] == payload
@@ -61,11 +70,15 @@ async def test_enqueue_stream_passes_params_through() -> None:
     assert args[0]["assistant_message_id"] == msg_id
     assert args[0]["user_id"] == user_id
     assert args[0]["idempotency_lock_key"] == lock_key
+    assert args[0]["generation_attempt"] == generation_attempt.model_dump(mode="json")
 
 
 async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
-    from backend.models.schemas.chat.payloads import GenerationResult
+    from backend.models.schemas.chat.payloads import (
+        GenerationAttemptPayload,
+        GenerationResult,
+    )
 
     expected_result = {"success": True, "content": "answer"}
 
@@ -86,6 +99,12 @@ async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
     msg_id = str(uuid.uuid4())
     user_id = str(uuid.uuid4())
     lock_key = "lock:test"
+    generation_attempt = GenerationAttemptPayload(
+        request_id=uuid.uuid4(),
+        attempt=1,
+        task_id="durable-nonstream-task",
+        lease_token="nonstream-lease",
+    )
 
     result = await dispatcher.enqueue_nonstream(
         generation_payload=payload,
@@ -93,10 +112,12 @@ async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
         assistant_message_id=msg_id,
         user_id=user_id,
         idempotency_lock_key=lock_key,
+        generation_attempt=generation_attempt,
     )
 
     message = _decode_lpush_message(redis_client)
     assert message["task_name"] == TASK_NONSTREAM
+    assert message["task_id"] == generation_attempt.task_id
     args = message["args"]
     assert len(args) == 1
     assert args[0]["generation_payload"] == payload
@@ -105,6 +126,7 @@ async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
     assert args[0]["assistant_message_id"] == msg_id
     assert args[0]["user_id"] == user_id
     assert args[0]["idempotency_lock_key"] == lock_key
+    assert args[0]["generation_attempt"] == generation_attempt.model_dump(mode="json")
     redis_client.get.assert_awaited_once_with(message["task_id"])
     assert isinstance(result, GenerationResult)
     assert result.success is True

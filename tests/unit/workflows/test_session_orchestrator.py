@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.application.chat.session_orchestrator import (
     ChatIdempotencyState,
+    ChatPreparedRequest,
     ChatSessionOrchestrator,
 )
 from backend.core.exceptions import AppException
@@ -83,6 +84,36 @@ def _build_orchestrator() -> tuple[ChatSessionOrchestrator, MagicMock]:
         feature_flag_service,
     )
     return orchestrator, uow
+
+
+async def test_queue_generation_request_commits_attempt_fence_before_dispatch() -> None:
+    orchestrator, uow = _build_orchestrator()
+    request_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    uow.chat_repo.try_queue_generation_request.return_value = True
+    prepared = ChatPreparedRequest(
+        session=MagicMock(),
+        generation_request=MagicMock(id=request_id, attempt=3),
+        assistant_message=MagicMock(),
+        generation_payload=MagicMock(),
+        lock_key="lock:test",
+        lock_token="processing:test",
+        trace_attrs={},
+    )
+
+    attempt = await orchestrator.queue_generation_request(
+        prepared=prepared,
+        user_id=user_id,
+        task_id="task-3",
+    )
+
+    assert attempt.request_id == request_id
+    assert attempt.attempt == 3
+    assert attempt.task_id == "task-3"
+    queue_kwargs = uow.chat_repo.try_queue_generation_request.await_args.kwargs
+    assert queue_kwargs["user_id"] == user_id
+    assert queue_kwargs["lease_token"] == attempt.lease_token
+    assert queue_kwargs["recovery_due_at"] > queue_kwargs["queued_at"]
 
 
 class TestKbIdMismatchRejection:
@@ -376,10 +407,12 @@ class TestKbIdMismatchRejection:
 
 
 class TestIdempotencyLockReleaseOnPrepareFailure:
-    """prepare_request() 因 AppException 失败时，幂等锁必须被释放。"""
+    """prepare_request() 失败时，幂等锁必须被释放。"""
 
-    async def test_current_integrity_error_leaves_new_idempotency_lock(self) -> None:
-        """WS2 基线：唯一索引冲突不会走 AppException 的主动解锁分支。"""
+    async def test_integrity_error_releases_lock_and_returns_stable_conflict(
+        self,
+    ) -> None:
+        """A durable identity race must release Redis and hide SQL details."""
         orchestrator, _ = _build_orchestrator()
         idempotency = ChatIdempotencyState(
             lock_key="idempotency:chat:user-1:request-1",
@@ -404,7 +437,7 @@ class TestIdempotencyLockReleaseOnPrepareFailure:
                 "release_idempotency",
                 AsyncMock(),
             ) as release_idempotency,
-            pytest.raises(IntegrityError),
+            pytest.raises(AppException) as exc_info,
         ):
             await orchestrator.prepare_request(
                 command=ChatQueryCommand(
@@ -417,7 +450,45 @@ class TestIdempotencyLockReleaseOnPrepareFailure:
                 span_prefix="test",
             )
 
-        release_idempotency.assert_not_awaited()
+        assert exc_info.value.code == "CHAT_REQUEST_ALREADY_EXISTS"
+        release_idempotency.assert_awaited_once_with(idempotency)
+
+    async def test_unexpected_error_releases_lock_and_is_reraised(self) -> None:
+        """Unexpected prepare failures must not strand the Redis lock."""
+        orchestrator, _ = _build_orchestrator()
+        idempotency = ChatIdempotencyState(
+            lock_key="idempotency:chat:user-1:request-1",
+            lock_token="processing:abc",
+            is_new=True,
+            value=None,
+        )
+        failure = RuntimeError("database unavailable")
+
+        with (
+            patch.object(
+                orchestrator,
+                "_prepare_request_inner",
+                AsyncMock(side_effect=failure),
+            ),
+            patch.object(
+                orchestrator,
+                "release_idempotency",
+                AsyncMock(),
+            ) as release_idempotency,
+            pytest.raises(RuntimeError, match="database unavailable"),
+        ):
+            await orchestrator.prepare_request(
+                command=ChatQueryCommand(
+                    user_id=uuid.uuid4(),
+                    query_text="retry",
+                    client_request_id="request-1",
+                ),
+                idempotency=idempotency,
+                trace_attrs={},
+                span_prefix="test",
+            )
+
+        release_idempotency.assert_awaited_once_with(idempotency)
 
     async def test_kb_id_mismatch_releases_idempotency_lock(self) -> None:
         """KB_ID_MISMATCH 导致 prepare_request 失败 → release_idempotency 被调用。"""

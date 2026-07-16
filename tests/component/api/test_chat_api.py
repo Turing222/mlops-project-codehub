@@ -17,7 +17,7 @@ from httpx import ASGITransport, AsyncClient
 from backend.api.v1.endpoint import chat_api
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
 from backend.config.settings import settings
-from backend.models.orm.chat import MessageStatus
+from backend.models.enums import ChatGenerationStatus, MessageStatus
 from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 from backend.models.schemas.chat.payloads import GenerationResult
@@ -27,6 +27,7 @@ from backend.services.feature_flag_service import (
 )
 
 pytestmark = pytest.mark.component
+
 
 def _make_mock_feature_flag_service(
     overrides: dict[str, bool] | None = None,
@@ -40,6 +41,7 @@ def _make_mock_feature_flag_service(
     svc = AsyncMock(spec=FeatureFlagService)
     svc.get_system_features = AsyncMock(return_value=flags)
     return svc
+
 
 def make_user(**overrides):
     now = datetime.now(UTC)
@@ -58,12 +60,14 @@ def make_user(**overrides):
     data.update(overrides)
     return SimpleNamespace(**data)
 
+
 def make_session(**overrides):
     now = datetime.now(UTC)
     data = {
         "id": uuid.uuid4(),
         "title": "已有会话",
         "user_id": uuid.uuid4(),
+        "workspace_id": None,
         "kb_id": None,
         "llm_config": {},
         "total_tokens": 0,
@@ -72,6 +76,7 @@ def make_session(**overrides):
     }
     data.update(overrides)
     return SimpleNamespace(**data)
+
 
 def make_message(**overrides):
     now = datetime.now(UTC)
@@ -91,6 +96,7 @@ def make_message(**overrides):
     }
     data.update(overrides)
     return SimpleNamespace(**data)
+
 
 class FakeUserRepo:
     def __init__(self, user):
@@ -123,11 +129,13 @@ class FakeUserRepo:
         self.increment_calls.append(amount)
         return True
 
+
 class FakeChatRepo:
     def __init__(self):
         self.sessions: dict[uuid.UUID, SimpleNamespace] = {}
         self.messages: dict[uuid.UUID, SimpleNamespace] = {}
         self.session_messages: dict[uuid.UUID, list[SimpleNamespace]] = {}
+        self.generation_requests: dict[uuid.UUID, SimpleNamespace] = {}
 
     def seed_session(self, session):
         self.sessions[session.id] = session
@@ -153,6 +161,76 @@ class FakeChatRepo:
 
     async def get_context_state(self, session_id: uuid.UUID) -> ContextState:
         return ContextState()
+
+    async def create_generation_request(
+        self,
+        *,
+        user_id: uuid.UUID,
+        client_request_id: str,
+        session_id: uuid.UUID,
+        workspace_id: uuid.UUID | None = None,
+        user_message_id: uuid.UUID | None = None,
+        assistant_message_id: uuid.UUID | None = None,
+        recovery_due_at=None,
+        reserved_credits: int = 0,
+    ) -> SimpleNamespace:
+        request = SimpleNamespace(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            client_request_id=client_request_id,
+            session_id=session_id,
+            workspace_id=workspace_id,
+            user_message_id=user_message_id,
+            assistant_message_id=assistant_message_id,
+            status=ChatGenerationStatus.PREPARED,
+            attempt=1,
+            recovery_due_at=recovery_due_at,
+            reserved_credits=reserved_credits,
+        )
+        self.generation_requests[request.id] = request
+        return request
+
+    async def get_generation_request_by_client_request_id_for_actor(
+        self,
+        *,
+        user_id: uuid.UUID,
+        client_request_id: str,
+    ) -> SimpleNamespace | None:
+        return next(
+            (
+                request
+                for request in self.generation_requests.values()
+                if request.user_id == user_id
+                and request.client_request_id == client_request_id
+            ),
+            None,
+        )
+
+    async def try_queue_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        user_id: uuid.UUID,
+        expected_attempt: int,
+        task_id: str,
+        lease_token: str,
+        queued_at,
+        recovery_due_at,
+    ) -> bool:
+        request = self.generation_requests.get(request_id)
+        if (
+            request is None
+            or request.user_id != user_id
+            or request.status != ChatGenerationStatus.PREPARED
+            or request.attempt != expected_attempt
+        ):
+            return False
+        request.status = ChatGenerationStatus.QUEUED
+        request.task_id = task_id
+        request.lease_token = lease_token
+        request.queued_at = queued_at
+        request.recovery_due_at = recovery_due_at
+        return True
 
     async def create_message(
         self,
@@ -211,6 +289,7 @@ class FakeChatRepo:
         message.updated_at = datetime.now(UTC)
         return message
 
+
 class FakeKnowledgeRepo:
     """知识库仓储模拟，防止 Workflow 内 getattr 失败。"""
 
@@ -219,6 +298,7 @@ class FakeKnowledgeRepo:
 
     async def get_kb(self, kb_id: uuid.UUID):
         return None
+
 
 class FakeCreditRepo:
     """积分仓储模拟，防止 Workflow 内 CreditService 访问失败。"""
@@ -290,6 +370,7 @@ class FakeCreditRepo:
     async def list_accounts_needing_expiration(self, now=None):
         return []
 
+
 class FakeUnitOfWork:
     def __init__(self, user_repo: FakeUserRepo, chat_repo: FakeChatRepo):
         self.user_repo = user_repo
@@ -318,6 +399,7 @@ class FakeUnitOfWork:
     def savepoint(self):
         return self
 
+
 class RecordingLLMService:
     def __init__(self):
         self.calls: list[LLMQueryDTO] = []
@@ -336,12 +418,14 @@ class RecordingLLMService:
         if False:
             yield query.query_text
 
+
 @pytest.fixture(autouse=True)
 def stable_test_environment():
     with patch(
         "backend.application.chat.web_nonstream_workflow.set_langfuse_trace_metadata",
     ):
         yield
+
 
 @pytest.fixture
 def api_context():
@@ -411,11 +495,13 @@ def api_context():
     yield ctx
     app.dependency_overrides.clear()
 
+
 @pytest.fixture
 async def client(api_context):
     transport = ASGITransport(app=api_context.app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
 
 async def test_query_sent_uses_memory_summary_and_updates_tokens(
     client,
@@ -483,7 +569,8 @@ async def test_query_sent_uses_memory_summary_and_updates_tokens(
     mock_dispatcher = api_context.workflow.dispatcher
     mock_dispatcher.enqueue_nonstream.assert_awaited_once()
     dispatch_args = mock_dispatcher.enqueue_nonstream.call_args
-    generation_payload = dispatch_args[0][0]
+    generation_payload = dispatch_args.kwargs["generation_payload"]
+    assert dispatch_args.kwargs["generation_attempt"].task_id
     assert generation_payload["query_text"] == "第三轮问题"
     assert generation_payload["session_id"] == str(session.id)
 
@@ -493,6 +580,7 @@ async def test_query_sent_uses_memory_summary_and_updates_tokens(
     assert sum(msg["content"] == "第三轮问题" for msg in history) == 1
     assert {"role": "user", "content": "第二轮问题"} in history
     assert {"role": "assistant", "content": "第二轮回答"} in history
+
 
 async def test_query_sent_rejects_blank_query(client):
     response = await client.post(

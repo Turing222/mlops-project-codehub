@@ -10,6 +10,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.application.chat.timing import (
@@ -19,7 +20,11 @@ from backend.application.chat.timing import (
     tokens_per_second,
 )
 from backend.application.chat.worker_guardrail_handler import WorkerGuardrailHandler
-from backend.application.chat.worker_persistence_handler import WorkerPersistenceHandler
+from backend.application.chat.worker_persistence_handler import (
+    GenerationAttemptRejected,
+    TerminalSettlementError,
+    WorkerPersistenceHandler,
+)
 from backend.application.chat.worker_rag_orchestrator import (
     PreparedGenerationContext,
     StepCallback,
@@ -40,6 +45,7 @@ from backend.infra.redis import RedisClient
 from backend.models.schemas.chat.dto import LLMQueryDTO
 from backend.models.schemas.chat.payloads import (
     FeatureFlags,
+    GenerationAttemptPayload,
     GenerationPayload,
     GenerationResult,
     StreamGenerationResult,
@@ -185,6 +191,33 @@ class LLMGenerationWorkerWorkflow:
 
     # ── Shared Internal Helpers ───────────────────────────────────
 
+    async def _claim_generation_attempt(
+        self,
+        generation_attempt: GenerationAttemptPayload | None,
+        *,
+        user_id: uuid.UUID | None,
+        session_id: uuid.UUID,
+        assistant_message_id: uuid.UUID | None,
+    ) -> bool:
+        if generation_attempt is None:
+            return True
+        if user_id is None or assistant_message_id is None:
+            return False
+        started_at = datetime.now(UTC)
+        async with self.uow:
+            return await self.uow.chat_repo.try_claim_generation_request(
+                request_id=generation_attempt.request_id,
+                user_id=user_id,
+                session_id=session_id,
+                assistant_message_id=assistant_message_id,
+                expected_attempt=generation_attempt.attempt,
+                task_id=generation_attempt.task_id,
+                lease_token=generation_attempt.lease_token,
+                started_at=started_at,
+                lease_expires_at=started_at
+                + timedelta(seconds=ai_settings.CHAT_GENERATION_LEASE_SECONDS),
+            )
+
     async def _prepare_generation(
         self,
         payload: GenerationPayload,
@@ -298,24 +331,54 @@ class LLMGenerationWorkerWorkflow:
         *,
         assistant_message_id: uuid.UUID | None,
         idempotency_lock_key: str | None,
+        generation_attempt: GenerationAttemptPayload | None,
         channel: str | None = None,
     ) -> GenerationResult:
         """Common error handling: persist failure, optionally publish, return result."""
-        if isinstance(exc, AppException):
+        should_persist_failure = True
+        if isinstance(exc, TerminalSettlementError):
+            error_content = exc.error_message
+            error_code = exc.error_code
+            should_persist_failure = False
+        elif isinstance(exc, GenerationAttemptRejected):
+            error_content = "请求状态已变化，本次执行结果已丢弃"
+            error_code = "CHAT_GENERATION_ATTEMPT_REJECTED"
+            should_persist_failure = False
+        elif isinstance(exc, AppException):
             logger.warning("TaskIQ 调用 LLM 业务异常: %s", exc)
             error_content = str(exc)
+            error_code = exc.code
         else:
             logger.exception("TaskIQ 调用 LLM 系统异常")
             error_content = "服务暂时不可用，请稍后重试"
+            error_code = "CHAT_GENERATION_FAILED"
 
-        await self.persistence_handler.persist_failure(
-            assistant_message_id=assistant_message_id,
-            error_content=error_content,
-            idempotency_lock_key=idempotency_lock_key,
-        )
+        if should_persist_failure:
+            try:
+                await self.persistence_handler.persist_failure(
+                    assistant_message_id=assistant_message_id,
+                    error_content=error_content,
+                    idempotency_lock_key=idempotency_lock_key,
+                    generation_attempt=generation_attempt,
+                    error_code=error_code,
+                )
+            except GenerationAttemptRejected:
+                error_content = "请求状态已变化，本次执行结果已丢弃"
+            except Exception:
+                logger.exception(
+                    "Chat terminal failure persistence failed: message_id=%s",
+                    assistant_message_id,
+                )
 
         if channel is not None:
-            await self.stream_publisher.publish_error(channel, error_content)
+            try:
+                await self.stream_publisher.publish_error(channel, error_content)
+            except Exception:
+                logger.warning(
+                    "Chat terminal Redis error publish failed: channel=%s",
+                    channel,
+                    exc_info=True,
+                )
 
         return GenerationResult(success=False, error=error_content)
 
@@ -360,6 +423,7 @@ class LLMGenerationWorkerWorkflow:
         start_time: float,
         message_metadata: dict | None,
         idempotency_lock_key: str | None,
+        generation_attempt: GenerationAttemptPayload | None,
         model_name: str = "default",
     ) -> None:
         """Persist success state and write idempotency marker if applicable."""
@@ -373,6 +437,7 @@ class LLMGenerationWorkerWorkflow:
             start_time=start_time,
             message_metadata=message_metadata,
             model_name=model_name,
+            generation_attempt=generation_attempt,
         )
         if idempotency_lock_key is not None and assistant_message_id is not None:
             await self.persistence_handler.write_idempotency_message(
@@ -461,6 +526,7 @@ class LLMGenerationWorkerWorkflow:
         assistant_message_id: uuid.UUID | None = None,
         user_id: uuid.UUID | None = None,
         idempotency_lock_key: str | None = None,
+        generation_attempt: GenerationAttemptPayload | None = None,
     ) -> StreamGenerationResult:
         """Generate a streaming answer, publish chunks, and persist final state.
 
@@ -474,6 +540,15 @@ class LLMGenerationWorkerWorkflow:
         worker_started = perf_start()
 
         try:
+            if not await self._claim_generation_attempt(
+                generation_attempt,
+                user_id=user_id,
+                session_id=payload.session_id,
+                assistant_message_id=assistant_message_id,
+            ):
+                raise GenerationAttemptRejected(
+                    "generation request claim rejected by attempt fence"
+                )
             await self.stream_publisher.publish_started(channel)
             input_decision = evaluate_input_guardrail(payload.query_text)
             if input_decision.triggered:
@@ -490,6 +565,7 @@ class LLMGenerationWorkerWorkflow:
                     input_decision=input_decision,
                     start_time=start_time,
                     idempotency_lock_key=idempotency_lock_key,
+                    generation_attempt=generation_attempt,
                 )
                 return StreamGenerationResult(
                     success=True,
@@ -503,6 +579,7 @@ class LLMGenerationWorkerWorkflow:
                     },
                 )
             try:
+
                 async def on_step(
                     step: str,
                     status: str,
@@ -535,6 +612,7 @@ class LLMGenerationWorkerWorkflow:
                     search_context=sig.search_context,
                     start_time=start_time,
                     idempotency_lock_key=idempotency_lock_key,
+                    generation_attempt=generation_attempt,
                 )
                 return StreamGenerationResult(
                     success=True,
@@ -776,6 +854,7 @@ class LLMGenerationWorkerWorkflow:
                         },
                     ),
                     idempotency_lock_key=idempotency_lock_key,
+                    generation_attempt=generation_attempt,
                     model_name=selected_llm.model_name,
                 )
 
@@ -812,12 +891,20 @@ class LLMGenerationWorkerWorkflow:
                 exc,
                 assistant_message_id=assistant_message_id,
                 idempotency_lock_key=idempotency_lock_key,
+                generation_attempt=generation_attempt,
                 channel=channel,
             )
             return StreamGenerationResult(success=False, error=result.error)
         finally:
             if not done_published:
-                await self.stream_publisher.publish_done(channel)
+                try:
+                    await self.stream_publisher.publish_done(channel)
+                except Exception:
+                    logger.warning(
+                        "Chat terminal Redis done publish failed: channel=%s",
+                        channel,
+                        exc_info=True,
+                    )
 
     # ── Non-Streaming ──────────────────────────────────────────────
 
@@ -828,12 +915,22 @@ class LLMGenerationWorkerWorkflow:
         assistant_message_id: uuid.UUID | None = None,
         user_id: uuid.UUID | None = None,
         idempotency_lock_key: str | None = None,
+        generation_attempt: GenerationAttemptPayload | None = None,
     ) -> GenerationResult:
         """Generate a non-streaming answer, persist final state, and return result."""
         start_time = time.time()
         worker_started = perf_start()
 
         try:
+            if not await self._claim_generation_attempt(
+                generation_attempt,
+                user_id=user_id,
+                session_id=payload.session_id,
+                assistant_message_id=assistant_message_id,
+            ):
+                raise GenerationAttemptRejected(
+                    "generation request claim rejected by attempt fence"
+                )
             input_decision = evaluate_input_guardrail(payload.query_text)
             if input_decision.triggered:
                 return await self.guardrail_handler.handle_nonstream_input_block(
@@ -842,6 +939,7 @@ class LLMGenerationWorkerWorkflow:
                     input_decision=input_decision,
                     start_time=start_time,
                     idempotency_lock_key=idempotency_lock_key,
+                    generation_attempt=generation_attempt,
                 )
             try:
                 prepared = self._coerce_prepared_generation(
@@ -854,6 +952,7 @@ class LLMGenerationWorkerWorkflow:
                     search_context=sig.search_context,
                     start_time=start_time,
                     idempotency_lock_key=idempotency_lock_key,
+                    generation_attempt=generation_attempt,
                 )
 
             llm_query = prepared.llm_query
@@ -903,6 +1002,8 @@ class LLMGenerationWorkerWorkflow:
                     assistant_message_id=assistant_message_id,
                     error_content=error_msg,
                     idempotency_lock_key=idempotency_lock_key,
+                    generation_attempt=generation_attempt,
+                    error_code="LLM_GENERATION_FAILED",
                 )
                 return GenerationResult(success=False, error=error_msg)
 
@@ -978,6 +1079,7 @@ class LLMGenerationWorkerWorkflow:
                     },
                 ),
                 idempotency_lock_key=idempotency_lock_key,
+                generation_attempt=generation_attempt,
                 model_name=selected_llm.model_name,
             )
 
@@ -1011,4 +1113,5 @@ class LLMGenerationWorkerWorkflow:
                 exc,
                 assistant_message_id=assistant_message_id,
                 idempotency_lock_key=idempotency_lock_key,
+                generation_attempt=generation_attempt,
             )

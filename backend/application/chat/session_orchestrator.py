@@ -10,9 +10,11 @@ from __future__ import annotations
 import math
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import redis.asyncio as redis
+from sqlalchemy.exc import IntegrityError
 
 from backend.application.chat.history_projection import history_to_conversation_messages
 from backend.config.credit_settings import credit_settings
@@ -20,10 +22,14 @@ from backend.config.llm import get_llm_model_config
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.concurrency import db_concurrency_slot
-from backend.core.exceptions import AppException, app_bad_request
+from backend.core.exceptions import AppException, app_bad_request, app_service_error
 from backend.infra.redis import safe_release_lock
 from backend.models.schemas.chat.commands import ChatQueryCommand
-from backend.models.schemas.chat.payloads import FeatureFlags, GenerationPayload
+from backend.models.schemas.chat.payloads import (
+    FeatureFlags,
+    GenerationAttemptPayload,
+    GenerationPayload,
+)
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chat_service import SessionManager
 from backend.services.credit_service import CreditService
@@ -32,7 +38,11 @@ from backend.services.permission_service import PermissionService
 from backend.utils.token_estimation import estimate_messages_tokens, estimate_tokens
 
 if TYPE_CHECKING:
-    from backend.models.orm.chat import ChatMessage, ChatSession
+    from backend.models.orm.chat import (
+        ChatGenerationRequest,
+        ChatMessage,
+        ChatSession,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +64,7 @@ class ChatPreparedRequest:
     """Web workflow 投递 Worker 前所需的共享上下文。"""
 
     session: ChatSession
+    generation_request: ChatGenerationRequest
     assistant_message: ChatMessage
     generation_payload: GenerationPayload
     lock_key: str | None
@@ -79,6 +90,20 @@ class ChatSessionOrchestrator:
         self._session_manager = session_manager or SessionManager(
             uow, permission_service
         )
+
+    async def resolve_existing_generation_request(
+        self,
+        *,
+        command: ChatQueryCommand,
+    ) -> ChatGenerationRequest | None:
+        """Resolve accepted identity from PostgreSQL before consulting Redis."""
+        if command.client_request_id is None:
+            return None
+        async with self.uow.read_context():
+            return await self.uow.chat_repo.get_generation_request_by_client_request_id_for_actor(
+                user_id=command.user_id,
+                client_request_id=command.client_request_id,
+            )
 
     async def check_idempotency(
         self,
@@ -129,6 +154,16 @@ class ChatSessionOrchestrator:
                 span_prefix=span_prefix,
             )
         except AppException:
+            await self.release_idempotency(idempotency)
+            raise
+        except IntegrityError as exc:
+            await self.release_idempotency(idempotency)
+            raise app_service_error(
+                "该请求已被接受，请刷新页面查看状态",
+                code="CHAT_REQUEST_ALREADY_EXISTS",
+                details={"client_request_id": command.client_request_id},
+            ) from exc
+        except Exception:
             await self.release_idempotency(idempotency)
             raise
 
@@ -189,15 +224,33 @@ class ChatSessionOrchestrator:
                         effective_kb_id = session.kb_id
                     else:
                         effective_kb_id = resolved_kb_id or session.kb_id
-                    await session_manager.create_user_message(
+                    user_message = await session_manager.create_user_message(
                         session_id=session.id,
                         content=command.query_text,
                         user_id=command.user_id,
                     )
                     assistant_message = await session_manager.create_assistant_message(
                         session_id=session.id,
-                        client_request_id=command.client_request_id,
                         user_id=command.user_id,
+                    )
+                    durable_client_request_id = command.client_request_id or (
+                        f"server-{uuid.uuid4().hex}"
+                    )
+                    prepared_at = datetime.now(UTC)
+                    generation_request = (
+                        await self.uow.chat_repo.create_generation_request(
+                            user_id=command.user_id,
+                            workspace_id=session.workspace_id,
+                            session_id=session.id,
+                            user_message_id=user_message.id,
+                            assistant_message_id=assistant_message.id,
+                            client_request_id=durable_client_request_id,
+                            recovery_due_at=prepared_at
+                            + timedelta(
+                                seconds=settings.CHAT_GENERATION_QUEUE_RECOVERY_SECONDS
+                            ),
+                            reserved_credits=estimated_cost,
+                        )
                     )
 
                     history_messages = await session_manager.get_session_messages(
@@ -212,12 +265,14 @@ class ChatSessionOrchestrator:
                         span,
                         {
                             "chat.session_id": session.id,
+                            "chat.generation_request_id": generation_request.id,
                             "chat.assistant_message_id": assistant_message.id,
                             "chat.history.message_count": len(history_messages),
                             "chat.context_state.present": context_state is not None,
                         },
                     )
                 trace_attrs["chat.session_id"] = session.id
+                trace_attrs["chat.generation_request_id"] = generation_request.id
                 trace_attrs["chat.assistant_message_id"] = assistant_message.id
 
         conversation_history = history_to_conversation_messages(history_messages)
@@ -264,12 +319,47 @@ class ChatSessionOrchestrator:
         )
         return ChatPreparedRequest(
             session=session,
+            generation_request=generation_request,
             assistant_message=assistant_message,
             generation_payload=generation_payload,
             lock_key=idempotency.lock_key,
             lock_token=idempotency.lock_token,
             trace_attrs=trace_attrs,
         )
+
+    async def queue_generation_request(
+        self,
+        *,
+        prepared: ChatPreparedRequest,
+        user_id: uuid.UUID,
+        task_id: str,
+    ) -> GenerationAttemptPayload:
+        """Fence one committed PREPARED request before broker dispatch."""
+        queued_at = datetime.now(UTC)
+        attempt = GenerationAttemptPayload(
+            request_id=prepared.generation_request.id,
+            attempt=prepared.generation_request.attempt,
+            task_id=task_id,
+            lease_token=uuid.uuid4().hex,
+        )
+        async with db_concurrency_slot(prepared.trace_attrs), self.uow:
+            queued = await self.uow.chat_repo.try_queue_generation_request(
+                request_id=attempt.request_id,
+                user_id=user_id,
+                expected_attempt=attempt.attempt,
+                task_id=attempt.task_id,
+                lease_token=attempt.lease_token,
+                queued_at=queued_at,
+                recovery_due_at=queued_at
+                + timedelta(seconds=settings.CHAT_GENERATION_QUEUE_RECOVERY_SECONDS),
+            )
+        if not queued:
+            raise app_service_error(
+                "请求状态已变化，请刷新页面后重试",
+                code="CHAT_REQUEST_STATE_CONFLICT",
+                details={"generation_request_id": str(attempt.request_id)},
+            )
+        return attempt
 
     async def release_idempotency(self, idempotency: ChatIdempotencyState) -> None:
         if idempotency.lock_key is None or idempotency.lock_token is None:
