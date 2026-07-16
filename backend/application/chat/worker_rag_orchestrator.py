@@ -9,9 +9,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from backend.application.chat.stream_events import StepStatus
-
 from backend.ai.core.chat_context_builder import ChatContextBuilder
+from backend.application.chat.stream_events import StepStatus
 from backend.application.chat.timing import elapsed_ms, merge_metrics, perf_start
 from backend.config.ai_settings import ai_settings
 from backend.contracts.interfaces import (
