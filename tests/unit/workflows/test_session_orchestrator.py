@@ -9,6 +9,7 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from backend.application.chat.session_orchestrator import (
     ChatIdempotencyState,
@@ -376,6 +377,47 @@ class TestKbIdMismatchRejection:
 
 class TestIdempotencyLockReleaseOnPrepareFailure:
     """prepare_request() 因 AppException 失败时，幂等锁必须被释放。"""
+
+    async def test_current_integrity_error_leaves_new_idempotency_lock(self) -> None:
+        """WS2 基线：唯一索引冲突不会走 AppException 的主动解锁分支。"""
+        orchestrator, _ = _build_orchestrator()
+        idempotency = ChatIdempotencyState(
+            lock_key="idempotency:chat:user-1:request-1",
+            lock_token="processing:abc",
+            is_new=True,
+            value=None,
+        )
+        conflict = IntegrityError(
+            "INSERT INTO chat_messages (client_request_id) VALUES (:request_id)",
+            {"request_id": "request-1"},
+            RuntimeError("duplicate client_request_id"),
+        )
+
+        with (
+            patch.object(
+                orchestrator,
+                "_prepare_request_inner",
+                AsyncMock(side_effect=conflict),
+            ),
+            patch.object(
+                orchestrator,
+                "release_idempotency",
+                AsyncMock(),
+            ) as release_idempotency,
+            pytest.raises(IntegrityError),
+        ):
+            await orchestrator.prepare_request(
+                command=ChatQueryCommand(
+                    user_id=uuid.uuid4(),
+                    query_text="retry",
+                    client_request_id="request-1",
+                ),
+                idempotency=idempotency,
+                trace_attrs={},
+                span_prefix="test",
+            )
+
+        release_idempotency.assert_not_awaited()
 
     async def test_kb_id_mismatch_releases_idempotency_lock(self) -> None:
         """KB_ID_MISMATCH 导致 prepare_request 失败 → release_idempotency 被调用。"""

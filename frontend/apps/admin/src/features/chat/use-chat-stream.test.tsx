@@ -273,7 +273,7 @@ describe('useChatStream', () => {
     expect(actions.appendMessage).toHaveBeenCalledTimes(2);
   });
 
-  it('retry cache hit reuses clientRequestId; miss uses prior user message', async () => {
+  it('pre-meta error retry cache reuses the original clientRequestId', async () => {
     const captured: StreamOptions[] = [];
     mockStreamChatQuery.mockImplementation((options: StreamOptions, cb: StreamCallbacks) => {
       captured.push(options);
@@ -296,6 +296,7 @@ describe('useChatStream', () => {
     await act(async () => {
       result.current.retryFailedMessage(failedId);
     });
+    expect(actions.commitSession).not.toHaveBeenCalled();
     expect(captured[1].clientRequestId).toBe(firstId);
     expect(captured[1].query).toBe('query one');
   });
@@ -354,6 +355,7 @@ describe('useChatStream', () => {
 
     expect(captured).toHaveLength(2);
     expect(captured[1].query).toBe('from history');
+    expect(captured[1].clientRequestId).toBeDefined();
     expect(captured[1].clientRequestId).not.toBe(originalClientId);
     vi.useRealTimers();
   });

@@ -167,6 +167,27 @@ describe('streamChatQuery', () => {
         );
     });
 
+    it('reports a pre-meta disconnect without yielding server request identity', async () => {
+        mockSendQueryStreamAPI.mockResolvedValue(createFakeSSEResponse([]));
+        const callbacks = createCallbacks();
+
+        streamChatQuery({ query: 'test', clientRequestId: 'client-1' }, callbacks);
+
+        await vi.waitFor(() => {
+            expect(callbacks.onError).toHaveBeenCalledOnce();
+        });
+        expect(callbacks.onMeta).not.toHaveBeenCalled();
+        expect(callbacks.onError.mock.calls[0][0].message).toBe('流式响应异常结束');
+        expect(reportFrontendErrorEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                metadata: expect.objectContaining({
+                    phase: 'truncated',
+                    clientRequestId: 'client-1',
+                }),
+            }),
+        );
+    });
+
     it('handles meta then chunk then [DONE] in order', async () => {
         const chunks = [
             'data: {"type":"meta","session_id":"s1","session_title":"T"}\n\n',

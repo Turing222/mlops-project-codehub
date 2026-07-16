@@ -156,6 +156,32 @@ async def test_create_message_passes_extended_fields_returns_created(
     assert kwargs["message_metadata"] == {"source": "test"}
 
 
+async def test_get_message_by_client_request_id_scopes_query_to_user(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    expected = MagicMock()
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = expected
+    mock_async_session.execute.return_value = result_proxy
+    user_id = uuid.uuid4()
+
+    result = await repo.get_message_by_client_request_id(
+        client_request_id="shared-request-id",
+        user_id=user_id,
+    )
+
+    assert result is expected
+    statement = mock_async_session.execute.await_args.args[0]
+    compiled = statement.compile()
+    sql = str(compiled)
+    assert "JOIN chat_sessions" in sql
+    assert "chat_messages.client_request_id" in sql
+    assert "chat_sessions.user_id" in sql
+    assert "shared-request-id" in compiled.params.values()
+    assert user_id in compiled.params.values()
+
+
 async def test_get_user_sessions_builds_ordered_paginated_query(
     mock_async_session: AsyncMock,
 ) -> None:
