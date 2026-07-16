@@ -5,11 +5,12 @@
 
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint
+from sqlalchemy import CheckConstraint, Text
 
 from backend.models.orm.access import Workspace
 from backend.models.orm.chat import ChatMessage, ChatSession
 from backend.models.orm.credits import CreditAccount, CreditTransaction
+from backend.models.orm.knowledge import File as KnowledgeFile
 from backend.models.orm.task import TaskJob
 
 
@@ -41,6 +42,15 @@ def test_chat_sessions_has_user_updated_composite_index() -> None:
     index = _index_by_name(ChatSession).get("ix_chat_sessions_user_updated")
     assert index is not None
     assert [column.name for column in index.columns] == ["user_id", "updated_at"]
+
+
+def test_knowledge_file_storage_paths_use_unbounded_text() -> None:
+    table = KnowledgeFile.__table__
+
+    assert isinstance(table.columns["file_path"].type, Text)
+    assert table.columns["file_path"].nullable is False
+    assert isinstance(table.columns["storage_key"].type, Text)
+    assert table.columns["storage_key"].nullable is True
 
 
 def test_current_chat_client_request_id_unique_index_is_global() -> None:

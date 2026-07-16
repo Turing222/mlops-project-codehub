@@ -1,6 +1,6 @@
 slug: storage-column-types
 title: Migrate Storage Path Columns to Text
-status: active
+status: done
 
 goal: Replace bounded storage path columns with PostgreSQL Text while preserving a safe, reversible migration path.
 
@@ -18,34 +18,34 @@ workstreams:
     deps: []
   - id: 2
     title: Implement the ORM and Alembic type changes.
-    status: pending
+    status: done
     kind: serial
     deps: [1]
   - id: 3
     title: Add focused tests and validate upgrade and downgrade behavior.
-    status: pending
+    status: done
     kind: serial
     deps: [2]
   - id: 4
     title: Prepare rollout guidance and complete the handoff.
-    status: pending
+    status: done
     kind: serial
     deps: [3]
 
 current_checkpoint:
-  name: migration-scope-aligned
-  state: planned
-  summary: The existing String(1024) columns and intended Text migration are confirmed; implementation has not started.
+  name: storage-text-migration-validated
+  state: validated
+  summary: The ORM now uses Text for both storage path columns, revision 7e4a9d2c1b60 extends the single Alembic head with guarded upgrade and downgrade contracts, and rollout guidance records lock and rollback constraints. Ten focused tests and 958 backend unit tests passed, along with Ruff, marker audit, static Alembic validation, and offline PostgreSQL upgrade and downgrade SQL generation. No local or production database was migrated during this checkpoint.
 
 open_decisions: []
 
 next_choices:
   - id: A
-    label: Implement the migration
-    note: Update the ORM, create the Alembic revision, and add focused migration coverage.
+    label: Resume Chat WS3
+    note: Use revision 7e4a9d2c1b60 as the resolved migration base for the durable Chat request schema; this is the recommended next solo checkpoint.
   - id: B
-    label: Defer implementation
-    note: Keep the work item active until a production rollout window is selected.
+    label: Schedule production rollout
+    note: Apply the migration only in a backed-up low-traffic window with lock monitoring and post-upgrade schema verification.
 
 attached_artifacts:
   task_plan: task-plan.md

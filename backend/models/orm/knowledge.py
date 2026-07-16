@@ -78,7 +78,7 @@ class File(Base, BaseIdModel, AuditMixin):
         ForeignKey("knowledge_bases.id", ondelete="CASCADE"), index=True
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
     storage_backend: Mapped[str] = mapped_column(
         String(20),
         default="local",
@@ -86,7 +86,7 @@ class File(Base, BaseIdModel, AuditMixin):
         nullable=False,
     )
     storage_bucket: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    storage_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[FileStatus] = mapped_column(String(20), default=FileStatus.UPLOADED)

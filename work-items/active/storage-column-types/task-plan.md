@@ -52,3 +52,11 @@
 ## Open Decisions 说明
 
 - 当前没有阻塞实现的 open decision；生产执行窗口在 WS4 中结合实际环境确认。
+
+## Rollout 与回退
+
+- 上线前创建可恢复的数据库快照，并在低流量窗口执行；`ALTER COLUMN TYPE` 即使只发生快速类型转换，也需要取得表级排他锁，若无法及时取得锁应中止发布而不是无限等待。
+- 先执行 migration，再开放可能超过 1024 字符的新写入。旧版 `String(1024)` ORM 与 PostgreSQL `Text` schema 兼容，但在 DB upgrade 前不能依赖 ORM 绕过原列限制。
+- upgrade 后检查 Alembic head，并通过 `information_schema.columns` 确认 `file_path`、`storage_key` 均为 `text`，同时确认 `file_path` 仍为非空、`storage_key` 仍可空。
+- downgrade 前暂停相关写入并检查两列 `char_length(...) <= 1024`。migration 内置防截断 guard；发现超长值时回退必须停止，保留 `Text` 或先制定数据修正方案，不能静默截断 object key。
+- 本开发 checkpoint 只验证 revision chain、离线 upgrade/downgrade SQL 和单元契约，没有对本机或生产数据库执行 migration；实际发布及快照恢复验证属于部署窗口操作。
