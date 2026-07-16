@@ -12,9 +12,9 @@ import uuid
 from collections.abc import Collection, Sequence
 from typing import Any, Protocol
 
-from backend.models.enums import MessageStatus, WorkspaceRole
+from backend.models.enums import ChatGenerationStatus, MessageStatus, WorkspaceRole
 from backend.models.orm.access import UserWorkspaceRole, Workspace
-from backend.models.orm.chat import ChatMessage, ChatSession
+from backend.models.orm.chat import ChatGenerationRequest, ChatMessage, ChatSession
 from backend.models.orm.chunk import DocumentChunk
 from backend.models.orm.credits import CreditAccount, CreditTransaction, UsageRecord
 from backend.models.orm.knowledge import File, FileStatus, FileVisibility, KnowledgeBase
@@ -105,6 +105,82 @@ class AuditRepositoryProtocol(Protocol):
 
 
 class ChatRepositoryProtocol(Protocol):
+    async def create_generation_request(
+        self,
+        *,
+        user_id: uuid.UUID,
+        client_request_id: str,
+        session_id: uuid.UUID,
+        workspace_id: uuid.UUID | None = None,
+        user_message_id: uuid.UUID | None = None,
+        assistant_message_id: uuid.UUID | None = None,
+        recovery_due_at: datetime.datetime | None = None,
+        reserved_credits: int = 0,
+    ) -> ChatGenerationRequest: ...
+
+    async def get_generation_request_for_actor(
+        self, *, request_id: uuid.UUID, user_id: uuid.UUID
+    ) -> ChatGenerationRequest | None: ...
+
+    async def get_generation_request_by_client_request_id_for_actor(
+        self, *, user_id: uuid.UUID, client_request_id: str
+    ) -> ChatGenerationRequest | None: ...
+
+    async def try_queue_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        user_id: uuid.UUID,
+        expected_attempt: int,
+        task_id: str,
+        lease_token: str,
+        queued_at: datetime.datetime,
+        recovery_due_at: datetime.datetime,
+    ) -> bool: ...
+
+    async def try_claim_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        expected_attempt: int,
+        lease_token: str,
+        started_at: datetime.datetime,
+        lease_expires_at: datetime.datetime,
+    ) -> bool: ...
+
+    async def try_heartbeat_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        expected_attempt: int,
+        lease_token: str,
+        heartbeat_at: datetime.datetime,
+        lease_expires_at: datetime.datetime,
+    ) -> bool: ...
+
+    async def try_finalize_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        expected_attempt: int,
+        lease_token: str,
+        target_status: ChatGenerationStatus,
+        finished_at: datetime.datetime,
+        assistant_message_id: uuid.UUID | None = None,
+        retryable: bool = False,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> bool: ...
+
+    async def try_retry_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        user_id: uuid.UUID,
+        expected_attempt: int,
+        recovery_due_at: datetime.datetime,
+    ) -> int | None: ...
+
     async def get_session(self, session_id: uuid.UUID) -> ChatSession | None: ...
 
     async def get_context_state(self, session_id: uuid.UUID) -> ContextState: ...

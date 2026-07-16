@@ -14,6 +14,16 @@ class MessageStatus(StrEnum):
     FAILED = "failed"
 
 
+class ChatGenerationStatus(StrEnum):
+    """Durable lifecycle states for one logical Chat generation request."""
+
+    PREPARED = "prepared"
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 class WorkspaceRole(StrEnum):
     OWNER = "owner"
     ADMIN = "admin"

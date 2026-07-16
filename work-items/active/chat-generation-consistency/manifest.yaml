@@ -25,7 +25,7 @@ workstreams:
     deps: [1]
   - id: 3
     title: PR 1 add the durable generation request schema and repository CAS contracts.
-    status: pending
+    status: done
     kind: serial
     deps: [2]
   - id: 4
@@ -45,9 +45,9 @@ workstreams:
     deps: [5]
 
 current_checkpoint:
-  name: ws3-schema-ready
+  name: ws3-request-state-model-validated
   state: validated
-  summary: WS2 failure baselines remain validated, and the storage-column-types prerequisite is now implemented and validated as Alembic head 7e4a9d2c1b60 without running it against a real database. Chat WS3 may create the next additive revision from that head; full flow-fast remains blocked by the previously recorded unrelated quality debt.
+  summary: Additive revision 5f4c2a9d8e71 now provides the durable Chat request state, actor-scoped identity, attempt and lease fencing, terminal invariants, and recovery fields. Focused unit tests, the full unit suite, isolated real PostgreSQL uniqueness/CAS/authorization contracts, and a base-to-head/downgrade/re-upgrade rehearsal passed; existing Web, Worker, Credits, retry API, and frontend paths remain unchanged for WS4 and WS5.
 
 open_decisions:
   - id: quality-baseline-disposition
@@ -55,8 +55,8 @@ open_decisions:
 
 next_choices:
   - id: A
-    label: Start WS3 schema and CAS contracts
-    note: Add the durable request ORM, the next additive Alembic revision, repository CAS methods, and PostgreSQL contract tests; this is the recommended next checkpoint.
+    label: Start WS4 atomic path switch
+    note: Commit the validated WS3 baseline, then switch Web and Worker to request/attempt/lease fencing and atomic message, Credits, and terminal settlement without adding retry APIs or frontend changes yet.
   - id: B
     label: Clear repository quality debt
     note: Fix the recorded flow-fast blockers as a separate T1-1 cleanup before PR 1 needs a green merge baseline.
