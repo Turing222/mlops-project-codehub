@@ -7,6 +7,13 @@
 - [Architecture](architecture.md): 前端目标架构、技术栈、目录职责和核心边界。
 - [Migration Plan](migration-plan.md): 从当前实现迁到目标架构的阶段计划。
 
+## 执行计划
+
+前端架构治理已按以下顺序串行完成；两个阶段的完成门均已通过，本轮在 PR6 后停手：
+
+1. [基础边界（PR1–PR3）](plans/frontend-architecture-cleanup/01-foundation-boundaries-plan.md)（已完成）：认证身份生命周期、Knowledge Query、Repo recent-runs。
+2. [Chat Controller 拆分（PR4–PR6）](plans/frontend-architecture-cleanup/02-chat-controller-decomposition-plan.md)（已完成）：依次抽取 ingestion、session、stream，并在 PR6 后停手。
+
 ## Standards
 
 - [API](standards/api.md): API 封装、schema、错误、trace 和幂等约定。
