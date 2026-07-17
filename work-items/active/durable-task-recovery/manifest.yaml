@@ -1,0 +1,75 @@
+slug: durable-task-recovery
+title: Durable Task Recovery and Redis Isolation
+status: active
+
+goal: Make accepted Chat and Knowledge work converge after dispatch, Redis, and worker failures through domain-specific durable state, bounded recovery, and an isolated persistent task broker.
+
+completion_chain:
+  - Chat and Knowledge failure boundaries, recovery budgets, terminal policies, and stale-attempt fencing are explicit and covered by regression tests.
+  - A Chat reconciler handles due PREPARED and QUEUED requests through CAS while expired RUNNING work reaches a bounded recoverable failure instead of being replayed blindly.
+  - Knowledge upload persists its business record, TaskJob, and TaskOutbox atomically, then relays and claims work idempotently with structured reconciliation.
+  - Evictable cache traffic is separated from a noeviction, AOF-backed, volume-persisted task broker and result backend with an explicit result TTL.
+  - Dispatch gaps, duplicate delivery, full Redis restart, and worker termination converge to one business terminal outcome without duplicate Credits settlement or chunk writes.
+  - Structured recovery events and identifiers required by T1-5 are recorded without implementing the alerting platform in this work item.
+
+workstreams:
+  - id: 1
+    title: Freeze T1-4 recovery contracts and characterize the current crash windows.
+    status: done
+    kind: blocking
+    deps: []
+  - id: 2
+    title: Add failing boundary tests for Chat, Knowledge, and Redis recovery.
+    status: done
+    kind: serial
+    deps: [1]
+  - id: 3
+    title: Implement Chat CAS recovery and the generation-request reconciler.
+    status: in_progress
+    kind: serial
+    deps: [2]
+  - id: 4
+    title: Implement Knowledge durable ingestion, outbox relay, and conditional claim.
+    status: pending
+    kind: serial
+    deps: [3]
+  - id: 5
+    title: Isolate cache Redis from the persistent task broker and result backend.
+    status: pending
+    kind: serial
+    deps: [4]
+  - id: 6
+    title: Validate restart, duplicate-delivery, and worker-termination convergence.
+    status: pending
+    kind: serial
+    deps: [3, 4, 5]
+  - id: 7
+    title: Record the T1-5 observability handoff and close T1-4.
+    status: pending
+    kind: serial
+    deps: [6]
+
+current_checkpoint:
+  name: t1-4-chat-recovery-implementation
+  state: in_progress
+  summary: >-
+    The WS2 baseline is committed and validated. WS3 starts with additive Chat
+    dispatch accounting and repository due-scan and fencing CAS contracts,
+    followed by worker heartbeat, the generation-request reconciler, scheduler
+    registration, and focused convergence validation. Knowledge and Redis
+    production paths remain unchanged until their later workstreams.
+
+open_decisions: []
+
+next_choices:
+  - id: A
+    label: Add Chat persistence contracts
+    note: Add the minimal dispatch budget field, due-scan queries, and CAS recovery tests before wiring the reconciler or scheduler.
+  - id: B
+    label: Pause after the baseline
+    note: Preserve the committed WS2 evidence if another first-tier incident must preempt the Chat recovery implementation.
+
+attached_artifacts:
+  task_plan: task-plan.md
+  reviews: []
+  debug: []
