@@ -8,4 +8,5 @@ __all__ = [
     "expire_credits_task",
     "generate_llm_stream_task",
     "ingest_knowledge_file_task",
+    "reconcile_chat_generations_task",
 ]

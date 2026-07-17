@@ -17,13 +17,20 @@ from backend.application.chat.session_orchestrator import (
     ChatSessionOrchestrator,
 )
 from backend.core.exceptions import AppException
-from backend.models.enums import ChatGenerationStatus, MessageStatus
+from backend.models.enums import (
+    ChatGenerationDispatchMode,
+    ChatGenerationStatus,
+    MessageStatus,
+)
 from backend.models.schemas.chat.commands import (
     ChatQueryCommand,
     RetryChatGenerationCommand,
 )
 from backend.models.schemas.chat.context_state import ContextState
-from backend.models.schemas.chat.payloads import GENERATION_REQUEST_CONTEXT_KEY
+from backend.models.schemas.chat.payloads import (
+    GENERATION_REQUEST_CONTEXT_KEY,
+    GenerationDispatchContext,
+)
 from backend.services.feature_flag_service import (
     _AI_SYSTEM_FLAG_DEFAULTS,
     FeatureFlagService,
@@ -193,6 +200,11 @@ async def test_prepare_retry_request_rebuilds_context_and_advances_attempt() -> 
         {"role": "user", "content": "retry this"}
     ]
     uow.chat_repo.try_retry_generation_request.assert_awaited_once()
+    retry_context = GenerationDispatchContext.model_validate(
+        uow.chat_repo.try_retry_generation_request.await_args.kwargs["dispatch_context"]
+    )
+    assert retry_context.mode == ChatGenerationDispatchMode.STREAM
+    assert retry_context.generation_payload.query_text == "retry this"
     uow.chat_repo.reset_assistant_message_for_retry.assert_awaited_once_with(
         message_id=assistant_message_id
     )

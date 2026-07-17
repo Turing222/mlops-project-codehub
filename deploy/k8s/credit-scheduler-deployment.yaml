@@ -37,9 +37,10 @@ spec:
             - backend.worker.scheduler_entrypoint:build_scheduler
             - backend.worker.tasks.credit_tasks
             - backend.worker.tasks.knowledge_tasks
+            - backend.worker.tasks.chat_recovery_tasks
           env:
             - name: TASKIQ_SCHEDULER_MODULES
-              value: "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks"
+              value: "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.chat_recovery_tasks"
           envFrom:
             - configMapRef:
                 name: dewflow-config

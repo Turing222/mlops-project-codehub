@@ -19,6 +19,7 @@ from backend.contracts.repository_protocols import (
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 from backend.models.schemas.chat.payloads import (
     GenerationAttemptPayload,
+    GenerationDispatchContext,
     GenerationResult,
 )
 
@@ -253,6 +254,19 @@ class AbstractTaskDispatcher(ABC):
         generation_attempt: GenerationAttemptPayload | None = None,
     ) -> GenerationResult:
         """投递非流式 LLM 生成任务并等待结果返回。"""
+        ...
+
+    @abstractmethod
+    async def enqueue_generation_recovery(
+        self,
+        *,
+        dispatch_context: GenerationDispatchContext,
+        assistant_message_id: str,
+        user_id: str,
+        generation_attempt: GenerationAttemptPayload,
+        trace_context: dict[str, str] | None = None,
+    ) -> None:
+        """Fire-and-forget one persisted Chat attempt from a recovery worker."""
         ...
 
     @abstractmethod

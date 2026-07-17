@@ -114,6 +114,7 @@ class ChatRepositoryProtocol(Protocol):
         workspace_id: uuid.UUID | None = None,
         user_message_id: uuid.UUID | None = None,
         assistant_message_id: uuid.UUID | None = None,
+        dispatch_context: dict[str, Any] | None = None,
         recovery_due_at: datetime.datetime | None = None,
         reserved_credits: int = 0,
     ) -> ChatGenerationRequest: ...
@@ -130,6 +131,10 @@ class ChatRepositoryProtocol(Protocol):
         self, *, session_id: uuid.UUID, user_id: uuid.UUID
     ) -> Sequence[ChatGenerationRequest]: ...
 
+    async def get_due_generation_requests(
+        self, *, due_at: datetime.datetime, limit: int = 100
+    ) -> Sequence[ChatGenerationRequest]: ...
+
     async def try_queue_generation_request(
         self,
         *,
@@ -140,6 +145,34 @@ class ChatRepositoryProtocol(Protocol):
         lease_token: str,
         queued_at: datetime.datetime,
         recovery_due_at: datetime.datetime,
+    ) -> bool: ...
+
+    async def try_reserve_generation_request_redispatch(
+        self,
+        *,
+        request_id: uuid.UUID,
+        expected_attempt: int,
+        task_id: str,
+        lease_token: str,
+        expected_dispatch_attempts: int,
+        max_dispatch_attempts: int,
+        due_before: datetime.datetime,
+        next_recovery_due_at: datetime.datetime,
+    ) -> int | None: ...
+
+    async def try_fail_due_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        expected_status: ChatGenerationStatus,
+        expected_attempt: int,
+        expected_dispatch_attempts: int,
+        task_id: str | None,
+        lease_token: str | None,
+        due_before: datetime.datetime,
+        finished_at: datetime.datetime,
+        error_code: str,
+        error_message: str,
     ) -> bool: ...
 
     async def try_claim_generation_request(
@@ -186,6 +219,7 @@ class ChatRepositoryProtocol(Protocol):
         request_id: uuid.UUID,
         user_id: uuid.UUID,
         expected_attempt: int,
+        dispatch_context: dict[str, Any],
         recovery_due_at: datetime.datetime,
     ) -> int | None: ...
 

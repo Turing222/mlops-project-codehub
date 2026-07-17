@@ -177,6 +177,7 @@ class FakeChatRepo:
         workspace_id: uuid.UUID | None = None,
         user_message_id: uuid.UUID | None = None,
         assistant_message_id: uuid.UUID | None = None,
+        dispatch_context: dict[str, object] | None = None,
         recovery_due_at=None,
         reserved_credits: int = 0,
     ) -> SimpleNamespace:
@@ -190,6 +191,8 @@ class FakeChatRepo:
             assistant_message_id=assistant_message_id,
             status=ChatGenerationStatus.PREPARED,
             attempt=1,
+            dispatch_attempts=0,
+            dispatch_context=dispatch_context,
             task_id=None,
             lease_token=None,
             retryable=False,

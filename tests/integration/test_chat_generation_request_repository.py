@@ -19,6 +19,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from backend.application.chat.generation_recovery import (
+    ChatGenerationRecoveryService,
+)
 from backend.application.chat.worker_persistence_handler import (
     GenerationAttemptRejected,
     WorkerPersistenceHandler,
@@ -28,7 +31,11 @@ from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.infra.redis import RedisClient
 from backend.models.enums import ChatGenerationStatus, MessageStatus
 from backend.models.orm.chat import ChatGenerationRequest, ChatMessage
-from backend.models.schemas.chat.payloads import GenerationAttemptPayload
+from backend.models.schemas.chat.payloads import (
+    GenerationAttemptPayload,
+    GenerationDispatchContext,
+    GenerationPayload,
+)
 from backend.repositories.chat_repo import ChatRepository
 from tests.helpers.env import require_env
 
@@ -135,6 +142,10 @@ class SessionBoundUow:
         async with self._session.begin_nested():
             yield self
 
+    @asynccontextmanager
+    async def read_context(self) -> AsyncIterator[SessionBoundUow]:
+        yield self
+
 
 async def _seed_scope(
     session: AsyncSession,
@@ -194,6 +205,63 @@ async def _seed_scope(
             "session_id": session_id,
         },
     )
+
+
+async def _create_queued_request(
+    session: AsyncSession,
+    *,
+    client_request_id: str,
+    recovery_due_at: datetime,
+) -> tuple[
+    ChatRepository,
+    ChatGenerationRequest,
+    uuid.UUID,
+    uuid.UUID,
+    GenerationAttemptPayload,
+]:
+    user_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    user_message_id = uuid.uuid4()
+    assistant_message_id = uuid.uuid4()
+    await _seed_scope(
+        session,
+        user_id=user_id,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        assistant_message_id=assistant_message_id,
+    )
+    repo = ChatRepository(session)
+    request = await repo.create_generation_request(
+        user_id=user_id,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        assistant_message_id=assistant_message_id,
+        client_request_id=client_request_id,
+        dispatch_context=GenerationDispatchContext(
+            mode="stream",
+            generation_payload=GenerationPayload(
+                session_id=session_id,
+                query_text="question",
+            ),
+        ).model_dump(mode="json"),
+        recovery_due_at=recovery_due_at - timedelta(minutes=1),
+    )
+    attempt = GenerationAttemptPayload(
+        request_id=request.id,
+        attempt=1,
+        task_id=f"task-{client_request_id}",
+        lease_token=f"lease-{client_request_id}",
+    )
+    assert await repo.try_queue_generation_request(
+        request_id=request.id,
+        user_id=user_id,
+        expected_attempt=attempt.attempt,
+        task_id=attempt.task_id,
+        lease_token=attempt.lease_token,
+        queued_at=recovery_due_at - timedelta(minutes=2),
+        recovery_due_at=recovery_due_at,
+    )
+    return repo, request, user_id, assistant_message_id, attempt
 
 
 async def _create_running_request(
@@ -411,6 +479,7 @@ async def test_attempt_and_lease_cas_reject_stale_worker_in_postgres(
             request_id=request.id,
             user_id=user_id,
             expected_attempt=1,
+            dispatch_context={"schema_version": 1, "mode": "stream"},
             recovery_due_at=now + timedelta(minutes=4),
         )
         == 2
@@ -468,9 +537,298 @@ async def test_attempt_and_lease_cas_reject_stale_worker_in_postgres(
     assert final is not None
     assert final.status == ChatGenerationStatus.SUCCEEDED
     assert final.attempt == 2
+    assert final.dispatch_attempts == 1
     assert final.retryable is False
     assert final.error_code is None
     assert final.recovery_due_at is None
+
+
+async def test_due_queued_redispatch_is_reserved_once_in_postgres(
+    pg_session: AsyncSession,
+) -> None:
+    now = datetime.now(UTC)
+    repo, request, user_id, _, attempt = await _create_queued_request(
+        pg_session,
+        client_request_id="due-redispatch",
+        recovery_due_at=now - timedelta(seconds=1),
+    )
+    request_id = request.id
+    next_due = now + timedelta(minutes=5)
+
+    due_requests = await repo.get_due_generation_requests(due_at=now, limit=10)
+    assert [item.id for item in due_requests] == [request_id]
+    assert (
+        await repo.try_reserve_generation_request_redispatch(
+            request_id=request_id,
+            expected_attempt=attempt.attempt,
+            task_id=attempt.task_id,
+            lease_token=attempt.lease_token,
+            expected_dispatch_attempts=1,
+            max_dispatch_attempts=3,
+            due_before=now,
+            next_recovery_due_at=next_due,
+        )
+        == 2
+    )
+    assert (
+        await repo.try_reserve_generation_request_redispatch(
+            request_id=request_id,
+            expected_attempt=attempt.attempt,
+            task_id=attempt.task_id,
+            lease_token=attempt.lease_token,
+            expected_dispatch_attempts=1,
+            max_dispatch_attempts=3,
+            due_before=now,
+            next_recovery_due_at=next_due,
+        )
+        is None
+    )
+
+    pg_session.expire_all()
+    current = await repo.get_generation_request_for_actor(
+        request_id=request_id,
+        user_id=user_id,
+    )
+    assert current is not None
+    assert current.status == ChatGenerationStatus.QUEUED
+    assert current.attempt == 1
+    assert current.dispatch_attempts == 2
+    assert current.task_id == attempt.task_id
+    assert current.lease_token == attempt.lease_token
+    assert current.recovery_due_at == next_due
+
+
+async def test_recovery_service_queues_due_prepared_request_in_postgres(
+    pg_session: AsyncSession,
+) -> None:
+    now = datetime.now(UTC)
+    user_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    user_message_id = uuid.uuid4()
+    assistant_message_id = uuid.uuid4()
+    await _seed_scope(
+        pg_session,
+        user_id=user_id,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        assistant_message_id=assistant_message_id,
+    )
+    repo = ChatRepository(pg_session)
+    request = await repo.create_generation_request(
+        user_id=user_id,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        assistant_message_id=assistant_message_id,
+        client_request_id="prepared-service-recovery",
+        dispatch_context=GenerationDispatchContext(
+            mode="stream",
+            generation_payload=GenerationPayload(
+                session_id=session_id,
+                query_text="question",
+            ),
+        ).model_dump(mode="json"),
+        recovery_due_at=now - timedelta(seconds=1),
+    )
+    request_id = request.id
+    dispatcher = AsyncMock()
+    service = ChatGenerationRecoveryService(
+        uow=cast(AbstractUnitOfWork, SessionBoundUow(pg_session)),
+        dispatcher=dispatcher,
+        recovery_seconds=300,
+        max_dispatch_attempts=3,
+        batch_size=10,
+    )
+
+    result = await service.reconcile_due_requests(now=now)
+
+    assert result.prepared_dispatched_count == 1
+    pg_session.expire_all()
+    current = await pg_session.get(ChatGenerationRequest, request_id)
+    assert current is not None
+    assert current.status == ChatGenerationStatus.QUEUED
+    assert current.dispatch_attempts == 1
+    assert current.task_id is not None
+    assert current.lease_token is not None
+    dispatch_attempt = dispatcher.enqueue_generation_recovery.await_args.kwargs[
+        "generation_attempt"
+    ]
+    assert dispatch_attempt.task_id == current.task_id
+    assert dispatch_attempt.lease_token == current.lease_token
+
+
+async def test_recovery_service_fails_exhausted_queue_and_message_in_postgres(
+    pg_session: AsyncSession,
+) -> None:
+    now = datetime.now(UTC)
+    _, request, _, assistant_message_id, attempt = await _create_queued_request(
+        pg_session,
+        client_request_id="service-exhausted",
+        recovery_due_at=now - timedelta(minutes=2),
+    )
+    request_id = request.id
+    await pg_session.execute(
+        text(
+            "UPDATE chat_generation_requests "
+            "SET dispatch_attempts = 3, recovery_due_at = :due_at "
+            "WHERE id = :request_id"
+        ),
+        {"due_at": now - timedelta(seconds=1), "request_id": request_id},
+    )
+    pg_session.expire_all()
+    dispatcher = AsyncMock()
+    service = ChatGenerationRecoveryService(
+        uow=cast(AbstractUnitOfWork, SessionBoundUow(pg_session)),
+        dispatcher=dispatcher,
+        recovery_seconds=300,
+        max_dispatch_attempts=3,
+        batch_size=10,
+    )
+
+    result = await service.reconcile_due_requests(now=now)
+
+    assert result.failed_count == 1
+    pg_session.expire_all()
+    final_request = await pg_session.get(ChatGenerationRequest, request_id)
+    final_message = await pg_session.get(ChatMessage, assistant_message_id)
+    assert final_request is not None
+    assert final_request.status == ChatGenerationStatus.FAILED
+    assert final_request.retryable is True
+    assert final_request.task_id == attempt.task_id
+    assert final_message is not None
+    assert final_message.status == MessageStatus.FAILED
+    dispatcher.enqueue_generation_recovery.assert_not_awaited()
+
+
+async def test_exhausted_queued_recovery_fences_late_delivery_in_postgres(
+    pg_session: AsyncSession,
+) -> None:
+    now = datetime.now(UTC)
+    (
+        repo,
+        request,
+        user_id,
+        assistant_message_id,
+        attempt,
+    ) = await _create_queued_request(
+        pg_session,
+        client_request_id="exhausted-redispatch",
+        recovery_due_at=now - timedelta(minutes=2),
+    )
+    request_id = request.id
+    session_id = request.session_id
+    assert (
+        await repo.try_reserve_generation_request_redispatch(
+            request_id=request_id,
+            expected_attempt=1,
+            task_id=attempt.task_id,
+            lease_token=attempt.lease_token,
+            expected_dispatch_attempts=1,
+            max_dispatch_attempts=3,
+            due_before=now - timedelta(minutes=1),
+            next_recovery_due_at=now - timedelta(seconds=30),
+        )
+        == 2
+    )
+    assert (
+        await repo.try_reserve_generation_request_redispatch(
+            request_id=request_id,
+            expected_attempt=1,
+            task_id=attempt.task_id,
+            lease_token=attempt.lease_token,
+            expected_dispatch_attempts=2,
+            max_dispatch_attempts=3,
+            due_before=now,
+            next_recovery_due_at=now + timedelta(minutes=1),
+        )
+        == 3
+    )
+    assert (
+        await repo.try_reserve_generation_request_redispatch(
+            request_id=request_id,
+            expected_attempt=1,
+            task_id=attempt.task_id,
+            lease_token=attempt.lease_token,
+            expected_dispatch_attempts=3,
+            max_dispatch_attempts=3,
+            due_before=now + timedelta(minutes=2),
+            next_recovery_due_at=now + timedelta(minutes=7),
+        )
+        is None
+    )
+    assert await repo.try_fail_due_generation_request(
+        request_id=request_id,
+        expected_status=ChatGenerationStatus.QUEUED,
+        expected_attempt=1,
+        expected_dispatch_attempts=3,
+        task_id=attempt.task_id,
+        lease_token=attempt.lease_token,
+        due_before=now + timedelta(minutes=2),
+        finished_at=now + timedelta(minutes=2),
+        error_code="CHAT_DISPATCH_RETRY_EXHAUSTED",
+        error_message="生成任务派发失败，请重试",
+    )
+    assert not await repo.try_claim_generation_request(
+        request_id=request_id,
+        user_id=user_id,
+        session_id=session_id,
+        assistant_message_id=assistant_message_id,
+        expected_attempt=1,
+        task_id=attempt.task_id,
+        lease_token=attempt.lease_token,
+        started_at=now + timedelta(minutes=3),
+        lease_expires_at=now + timedelta(minutes=8),
+    )
+
+    pg_session.expire_all()
+    final = await repo.get_generation_request_for_actor(
+        request_id=request_id,
+        user_id=user_id,
+    )
+    assert final is not None
+    assert final.status == ChatGenerationStatus.FAILED
+    assert final.retryable is True
+    assert final.dispatch_attempts == 3
+    assert final.error_code == "CHAT_DISPATCH_RETRY_EXHAUSTED"
+    assert final.recovery_due_at is None
+
+
+async def test_expired_running_recovery_fences_late_terminal_in_postgres(
+    pg_session: AsyncSession,
+) -> None:
+    repo, request, _, attempt = await _create_running_request(
+        pg_session,
+        client_request_id="expired-running",
+    )
+    request_id = request.id
+    finished_at = datetime.now(UTC) + timedelta(minutes=10)
+
+    assert await repo.try_fail_due_generation_request(
+        request_id=request_id,
+        expected_status=ChatGenerationStatus.RUNNING,
+        expected_attempt=attempt.attempt,
+        expected_dispatch_attempts=1,
+        task_id=attempt.task_id,
+        lease_token=attempt.lease_token,
+        due_before=finished_at,
+        finished_at=finished_at,
+        error_code="CHAT_GENERATION_LEASE_EXPIRED",
+        error_message="生成任务执行超时，请重试",
+    )
+    assert not await repo.try_finalize_generation_request(
+        request_id=request_id,
+        expected_attempt=attempt.attempt,
+        lease_token=attempt.lease_token,
+        target_status=ChatGenerationStatus.SUCCEEDED,
+        finished_at=finished_at + timedelta(seconds=1),
+    )
+
+    pg_session.expire_all()
+    final = await pg_session.get(ChatGenerationRequest, request_id)
+    assert final is not None
+    assert final.status == ChatGenerationStatus.FAILED
+    assert final.retryable is True
+    assert final.error_code == "CHAT_GENERATION_LEASE_EXPIRED"
+    assert final.dispatch_attempts == 1
 
 
 async def test_worker_terminal_success_updates_message_and_request_atomically(

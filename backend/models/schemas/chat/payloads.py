@@ -6,10 +6,11 @@
 
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from backend.models.enums import ChatGenerationDispatchMode
 from backend.models.schemas.chat.context_routing import ContextMode
 from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.dto import ConversationMessage
@@ -53,6 +54,15 @@ class GenerationRequestContext(BaseModel):
     context_mode: ContextMode | None = None
     billing_model_name: str = "default"
     extra_body: dict[str, object] | None = None
+
+
+class GenerationDispatchContext(BaseModel):
+    """Durable inputs needed to redispatch one unchanged business attempt."""
+
+    schema_version: Literal[1] = 1
+    mode: ChatGenerationDispatchMode
+    generation_payload: GenerationPayload
+    idempotency_lock_key: str | None = None
 
 
 class GenerationResult(BaseModel):

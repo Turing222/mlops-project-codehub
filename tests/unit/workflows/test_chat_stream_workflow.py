@@ -173,8 +173,7 @@ async def test_stream_workflow_queues_and_dispatches_before_meta() -> None:
     )
 
 
-async def test_current_dispatch_failure_leaves_request_queued() -> None:
-    """WS2 baseline: queue CAS succeeds before an unavailable broker is observed."""
+async def test_dispatch_failure_reports_durable_recovery_pending() -> None:
     user_id = uuid.uuid4()
     session = SimpleNamespace(id=uuid.uuid4(), title="Session")
     assistant_message = SimpleNamespace(id=uuid.uuid4())
@@ -251,7 +250,7 @@ async def test_current_dispatch_failure_leaves_request_queued() -> None:
     dispatcher.enqueue_stream.assert_awaited_once()
     assert generation_request.status == ChatGenerationStatus.QUEUED
     assert events[0]["type"] == "error"
-    assert events[0]["error_code"] == "CHAT_DISPATCH_FAILED"
+    assert events[0]["error_code"] == "CHAT_DISPATCH_RECOVERY_PENDING"
     assert events[0]["retryable"] is False
     assert events[-1] == {"type": "done"}
 

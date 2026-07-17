@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from backend.ai.core.chat_context_builder import ChatContextBuilder
+from backend.application.chat.generation_heartbeat import GenerationLeaseHeartbeat
 from backend.application.chat.timing import (
     elapsed_ms,
     merge_metrics,
@@ -164,11 +165,13 @@ class LLMGenerationWorkerWorkflow:
         stream_publisher: WorkerStreamPublisher | None = None,
         guardrail_handler: WorkerGuardrailHandler | None = None,
         llm_service_resolver: Callable[[str | None], AbstractLLMService] | None = None,
+        heartbeat_uow_factory: Callable[[], AbstractUnitOfWork] | None = None,
     ) -> None:
         self._redis_client = redis_client
         self.uow = uow
         self.llm_service = llm_service
         self.llm_service_resolver = llm_service_resolver
+        self.heartbeat_uow_factory = heartbeat_uow_factory
         self.rag_orchestrator = rag_orchestrator or WorkerRAGOrchestrator(
             rag_service=rag_service,
             rag_planning_service=rag_planning_service,
@@ -187,6 +190,15 @@ class LLMGenerationWorkerWorkflow:
             persistence_handler=self.persistence_handler,
             stream_publisher=self.stream_publisher,
             count_output_tokens=self._count_output_tokens,
+        )
+
+    def _build_heartbeat(
+        self,
+        generation_attempt: GenerationAttemptPayload | None,
+    ) -> GenerationLeaseHeartbeat:
+        return GenerationLeaseHeartbeat(
+            uow_factory=self.heartbeat_uow_factory,
+            generation_attempt=generation_attempt,
         )
 
     # ── Shared Internal Helpers ───────────────────────────────────
@@ -551,6 +563,7 @@ class LLMGenerationWorkerWorkflow:
         output_blocked = False
         start_time = time.time()
         worker_started = perf_start()
+        heartbeat = self._build_heartbeat(generation_attempt)
 
         try:
             if not await self._claim_generation_attempt(
@@ -561,6 +574,10 @@ class LLMGenerationWorkerWorkflow:
             ):
                 raise GenerationAttemptRejected(
                     "generation request claim rejected by attempt fence"
+                )
+            if not await heartbeat.start():
+                raise GenerationAttemptRejected(
+                    "generation request heartbeat rejected by attempt fence"
                 )
             await self.stream_publisher.publish_started(channel)
             input_decision = evaluate_input_guardrail(payload.query_text)
@@ -909,6 +926,7 @@ class LLMGenerationWorkerWorkflow:
             )
             return StreamGenerationResult(success=False, error=result.error)
         finally:
+            await heartbeat.stop()
             if not done_published:
                 try:
                     await self.stream_publisher.publish_done(channel)
@@ -933,6 +951,7 @@ class LLMGenerationWorkerWorkflow:
         """Generate a non-streaming answer, persist final state, and return result."""
         start_time = time.time()
         worker_started = perf_start()
+        heartbeat = self._build_heartbeat(generation_attempt)
 
         try:
             if not await self._claim_generation_attempt(
@@ -943,6 +962,10 @@ class LLMGenerationWorkerWorkflow:
             ):
                 raise GenerationAttemptRejected(
                     "generation request claim rejected by attempt fence"
+                )
+            if not await heartbeat.start():
+                raise GenerationAttemptRejected(
+                    "generation request heartbeat rejected by attempt fence"
                 )
             input_decision = evaluate_input_guardrail(payload.query_text)
             if input_decision.triggered:
@@ -1128,3 +1151,5 @@ class LLMGenerationWorkerWorkflow:
                 idempotency_lock_key=idempotency_lock_key,
                 generation_attempt=generation_attempt,
             )
+        finally:
+            await heartbeat.stop()

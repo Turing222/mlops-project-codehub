@@ -187,6 +187,18 @@ class ChatGenerationRequest(Base, BaseIdModel, AuditMixin):
         server_default=text("1"),
         nullable=False,
     )
+    dispatch_attempts: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+        nullable=False,
+        comment="Broker dispatch reservations for the current business attempt",
+    )
+    dispatch_context: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Validated Worker inputs for durable redispatch; no secrets",
+    )
     lease_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     reserved_credits: Mapped[int] = mapped_column(
         Integer,
@@ -242,6 +254,10 @@ class ChatGenerationRequest(Base, BaseIdModel, AuditMixin):
             name="status_values",
         ),
         CheckConstraint("attempt >= 1", name="attempt_positive"),
+        CheckConstraint(
+            "dispatch_attempts >= 0",
+            name="dispatch_attempts_non_negative",
+        ),
         CheckConstraint(
             "reserved_credits >= 0",
             name="reserved_credits_non_negative",

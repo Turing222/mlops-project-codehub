@@ -19,7 +19,11 @@ from backend.core.exceptions import (
     AppException,
     app_service_error,
 )
-from backend.models.enums import ChatGenerationStatus, MessageStatus
+from backend.models.enums import (
+    ChatGenerationDispatchMode,
+    ChatGenerationStatus,
+    MessageStatus,
+)
 from backend.models.schemas.chat.api import (
     ChatQueryResponse,
     MessageResponse,
@@ -168,6 +172,7 @@ class ChatNonStreamWorkflow:
             idempotency=idempotency,
             trace_attrs=trace_attrs,
             span_prefix="chat.nonstream",
+            dispatch_mode=ChatGenerationDispatchMode.NONSTREAM,
         )
         session = prepared.session
         assistant_msg = prepared.assistant_message
@@ -203,8 +208,12 @@ class ChatNonStreamWorkflow:
         except Exception as exc:
             await orchestrator.release_idempotency(idempotency)
             raise app_service_error(
-                "LLM 服务调用失败，请稍后重试",
-                code="LLM_SERVICE_ERROR",
+                "请求已接受，正在恢复派发，请稍后刷新",
+                code="CHAT_DISPATCH_RECOVERY_PENDING",
+                details={
+                    "generation_request_id": str(prepared.generation_request.id),
+                    "attempt": prepared.generation_request.attempt,
+                },
             ) from exc
 
         if not result or not result.success:

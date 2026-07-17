@@ -78,6 +78,7 @@ class ChatRepository:
         workspace_id: uuid.UUID | None = None,
         user_message_id: uuid.UUID | None = None,
         assistant_message_id: uuid.UUID | None = None,
+        dispatch_context: dict[str, object] | None = None,
         recovery_due_at: datetime | None = None,
         reserved_credits: int = 0,
     ) -> ChatGenerationRequest:
@@ -90,8 +91,10 @@ class ChatRepository:
                 "user_message_id": user_message_id,
                 "assistant_message_id": assistant_message_id,
                 "client_request_id": client_request_id,
+                "dispatch_context": dispatch_context,
                 "status": ChatGenerationStatus.PREPARED,
                 "attempt": 1,
+                "dispatch_attempts": 0,
                 "retryable": False,
                 "recovery_due_at": recovery_due_at,
                 "reserved_credits": reserved_credits,
@@ -140,6 +143,37 @@ class ChatRepository:
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
+    async def get_due_generation_requests(
+        self,
+        *,
+        due_at: datetime,
+        limit: int = 100,
+    ) -> Sequence[ChatGenerationRequest]:
+        """Return a bounded deterministic snapshot of due nonterminal requests."""
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        stmt = (
+            select(ChatGenerationRequest)
+            .where(
+                ChatGenerationRequest.status.in_(
+                    (
+                        ChatGenerationStatus.PREPARED,
+                        ChatGenerationStatus.QUEUED,
+                        ChatGenerationStatus.RUNNING,
+                    )
+                ),
+                ChatGenerationRequest.recovery_due_at.is_not(None),
+                ChatGenerationRequest.recovery_due_at <= due_at,
+            )
+            .order_by(
+                ChatGenerationRequest.recovery_due_at.asc(),
+                ChatGenerationRequest.id.asc(),
+            )
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
     async def try_queue_generation_request(
         self,
         *,
@@ -164,12 +198,122 @@ class ChatRepository:
                 status=ChatGenerationStatus.QUEUED,
                 task_id=task_id,
                 lease_token=lease_token,
+                dispatch_attempts=ChatGenerationRequest.dispatch_attempts + 1,
                 queued_at=queued_at,
                 recovery_due_at=recovery_due_at,
                 retryable=False,
                 error_code=None,
                 error_message=None,
                 finished_at=None,
+            )
+            .returning(ChatGenerationRequest.id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    async def try_reserve_generation_request_redispatch(
+        self,
+        *,
+        request_id: uuid.UUID,
+        expected_attempt: int,
+        task_id: str,
+        lease_token: str,
+        expected_dispatch_attempts: int,
+        max_dispatch_attempts: int,
+        due_before: datetime,
+        next_recovery_due_at: datetime,
+    ) -> int | None:
+        """Reserve one QUEUED redispatch without creating a business attempt."""
+        if expected_dispatch_attempts < 1:
+            raise ValueError("expected_dispatch_attempts must be positive")
+        if max_dispatch_attempts < 1:
+            raise ValueError("max_dispatch_attempts must be positive")
+        stmt = (
+            update(ChatGenerationRequest)
+            .where(
+                ChatGenerationRequest.id == request_id,
+                ChatGenerationRequest.status == ChatGenerationStatus.QUEUED,
+                ChatGenerationRequest.attempt == expected_attempt,
+                ChatGenerationRequest.task_id == task_id,
+                ChatGenerationRequest.lease_token == lease_token,
+                ChatGenerationRequest.dispatch_attempts == expected_dispatch_attempts,
+                ChatGenerationRequest.dispatch_attempts < max_dispatch_attempts,
+                ChatGenerationRequest.recovery_due_at.is_not(None),
+                ChatGenerationRequest.recovery_due_at <= due_before,
+            )
+            .values(
+                dispatch_attempts=ChatGenerationRequest.dispatch_attempts + 1,
+                recovery_due_at=next_recovery_due_at,
+            )
+            .returning(ChatGenerationRequest.dispatch_attempts)
+        )
+        result = await self.session.execute(stmt)
+        dispatch_attempts = result.scalar_one_or_none()
+        return int(dispatch_attempts) if dispatch_attempts is not None else None
+
+    async def try_fail_due_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        expected_status: ChatGenerationStatus,
+        expected_attempt: int,
+        expected_dispatch_attempts: int,
+        task_id: str | None,
+        lease_token: str | None,
+        due_before: datetime,
+        finished_at: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> bool:
+        """Fence one due nonterminal request into an explicit retryable failure."""
+        if expected_status not in {
+            ChatGenerationStatus.PREPARED,
+            ChatGenerationStatus.QUEUED,
+            ChatGenerationStatus.RUNNING,
+        }:
+            raise ValueError("expected_status must be nonterminal")
+        if not error_code.strip():
+            raise ValueError("error_code must not be blank")
+        conditions: list[ColumnElement[bool]] = [
+            ChatGenerationRequest.id == request_id,
+            ChatGenerationRequest.status == expected_status,
+            ChatGenerationRequest.attempt == expected_attempt,
+            ChatGenerationRequest.dispatch_attempts == expected_dispatch_attempts,
+            ChatGenerationRequest.recovery_due_at.is_not(None),
+            ChatGenerationRequest.recovery_due_at <= due_before,
+        ]
+        if expected_status == ChatGenerationStatus.PREPARED:
+            if task_id is not None or lease_token is not None:
+                raise ValueError("a PREPARED request has no task or lease fence")
+            conditions.extend(
+                (
+                    ChatGenerationRequest.task_id.is_(None),
+                    ChatGenerationRequest.lease_token.is_(None),
+                )
+            )
+        else:
+            if task_id == "" or lease_token == "":
+                raise ValueError("active request fences must not be blank")
+            conditions.extend(
+                (
+                    ChatGenerationRequest.task_id.is_(None)
+                    if task_id is None
+                    else ChatGenerationRequest.task_id == task_id,
+                    ChatGenerationRequest.lease_token.is_(None)
+                    if lease_token is None
+                    else ChatGenerationRequest.lease_token == lease_token,
+                )
+            )
+        stmt = (
+            update(ChatGenerationRequest)
+            .where(*conditions)
+            .values(
+                status=ChatGenerationStatus.FAILED,
+                retryable=True,
+                error_code=error_code,
+                error_message=error_message,
+                recovery_due_at=None,
+                finished_at=finished_at,
             )
             .returning(ChatGenerationRequest.id)
         )
@@ -304,6 +448,7 @@ class ChatRepository:
         request_id: uuid.UUID,
         user_id: uuid.UUID,
         expected_attempt: int,
+        dispatch_context: dict[str, object],
         recovery_due_at: datetime,
     ) -> int | None:
         """Create the next attempt only from actor-owned retryable FAILED state."""
@@ -319,6 +464,8 @@ class ChatRepository:
             .values(
                 status=ChatGenerationStatus.PREPARED,
                 attempt=ChatGenerationRequest.attempt + 1,
+                dispatch_attempts=0,
+                dispatch_context=dispatch_context,
                 task_id=None,
                 lease_token=None,
                 retryable=False,

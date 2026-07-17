@@ -111,6 +111,9 @@ class AISettings(BaseSettings):
     CHAT_STREAM_MESSAGE_TIMEOUT_SECONDS: int = 10
     CHAT_GENERATION_QUEUE_RECOVERY_SECONDS: int = Field(default=300, ge=30)
     CHAT_GENERATION_LEASE_SECONDS: int = Field(default=1800, ge=60)
+    CHAT_GENERATION_HEARTBEAT_SECONDS: int = Field(default=60, ge=10, le=600)
+    CHAT_GENERATION_MAX_DISPATCH_ATTEMPTS: int = Field(default=3, ge=1, le=10)
+    CHAT_GENERATION_RECOVERY_BATCH_SIZE: int = Field(default=100, ge=1, le=500)
 
     # ── Chat Memory ───────────────────────────────────────────────
     CHAT_MEMORY_RECENT_ROUNDS: int = 6

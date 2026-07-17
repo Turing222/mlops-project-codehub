@@ -13,7 +13,8 @@ def test_validate_scheduler_schedules_discovers_required_tasks(monkeypatch) -> N
 
     monkeypatch.setenv(
         "TASKIQ_SCHEDULER_MODULES",
-        "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks",
+        "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks "
+        "backend.worker.tasks.chat_recovery_tasks",
     )
 
     scheduler_entrypoint.validate_scheduler_schedules()
@@ -26,7 +27,8 @@ def test_validate_scheduler_schedules_reports_missing_required_task(
 
     monkeypatch.setenv(
         "TASKIQ_SCHEDULER_MODULES",
-        "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks",
+        "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks "
+        "backend.worker.tasks.chat_recovery_tasks",
     )
     monkeypatch.setattr(
         scheduler_entrypoint,
@@ -38,12 +40,14 @@ def test_validate_scheduler_schedules_reports_missing_required_task(
         scheduler_entrypoint.validate_scheduler_schedules()
 
 
-def test_current_scheduler_has_no_chat_generation_recovery_schedule() -> None:
-    """WS2 baseline: due PREPARED and QUEUED requests have no periodic scanner."""
+def test_scheduler_requires_chat_generation_recovery_schedule() -> None:
     from backend.worker import scheduler_entrypoint
 
-    assert all(
-        "chat_generation" not in task_name
-        for task_name, _ in scheduler_entrypoint.REQUIRED_SCHEDULE_KEYS
+    assert (
+        "reconcile_chat_generations",
+        "reconcile_chat_generations_every_minute",
+    ) in scheduler_entrypoint.REQUIRED_SCHEDULE_KEYS
+    assert (
+        "backend.worker.tasks.chat_recovery_tasks"
+        in scheduler_entrypoint.DEFAULT_SCHEDULER_MODULES
     )
-    assert "chat" not in scheduler_entrypoint.DEFAULT_SCHEDULER_MODULES

@@ -68,6 +68,7 @@ async def test_create_generation_request_maps_frozen_identity_fields(
     user_message_id = uuid.uuid4()
     assistant_message_id = uuid.uuid4()
     recovery_due_at = datetime.now(UTC)
+    dispatch_context = {"schema_version": 1, "mode": "stream"}
     expected = MagicMock()
     repo.generation_request_crud.create.return_value = expected
 
@@ -78,6 +79,7 @@ async def test_create_generation_request_maps_frozen_identity_fields(
         user_message_id=user_message_id,
         assistant_message_id=assistant_message_id,
         client_request_id="request-1",
+        dispatch_context=dispatch_context,
         recovery_due_at=recovery_due_at,
         reserved_credits=25,
     )
@@ -91,8 +93,10 @@ async def test_create_generation_request_maps_frozen_identity_fields(
         "user_message_id": user_message_id,
         "assistant_message_id": assistant_message_id,
         "client_request_id": "request-1",
+        "dispatch_context": dispatch_context,
         "status": ChatGenerationStatus.PREPARED,
         "attempt": 1,
+        "dispatch_attempts": 0,
         "retryable": False,
         "recovery_due_at": recovery_due_at,
         "reserved_credits": 25,
@@ -331,6 +335,45 @@ async def test_get_generation_requests_for_session_scopes_current_actor(
     assert "chat_sessions.deleted_at IS NULL" in sql
 
 
+async def test_get_due_generation_requests_is_bounded_and_deterministic(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    expected = [MagicMock(), MagicMock()]
+    result_proxy = MagicMock()
+    result_proxy.scalars.return_value.all.return_value = expected
+    mock_async_session.execute.return_value = result_proxy
+    due_at = datetime.now(UTC)
+
+    result = await repo.get_due_generation_requests(due_at=due_at, limit=25)
+
+    assert result == expected
+    compiled = mock_async_session.execute.await_args.args[0].compile()
+    sql = str(compiled)
+    assert "chat_generation_requests.status IN" in sql
+    assert "chat_generation_requests.recovery_due_at IS NOT NULL" in sql
+    assert "chat_generation_requests.recovery_due_at <=" in sql
+    assert "ORDER BY chat_generation_requests.recovery_due_at ASC" in sql
+    assert "chat_generation_requests.id ASC" in sql
+    assert "LIMIT" in sql
+    assert due_at in compiled.params.values()
+    assert 25 in compiled.params.values()
+
+
+async def test_get_due_generation_requests_rejects_unbounded_limit(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+
+    with pytest.raises(ValueError, match="between 1 and 500"):
+        await repo.get_due_generation_requests(
+            due_at=datetime.now(UTC),
+            limit=501,
+        )
+
+    mock_async_session.execute.assert_not_awaited()
+
+
 async def test_queue_generation_request_uses_actor_attempt_cas(
     mock_async_session: AsyncMock,
 ) -> None:
@@ -358,9 +401,79 @@ async def test_queue_generation_request_uses_actor_attempt_cas(
     assert "chat_generation_requests.status" in sql
     assert "chat_generation_requests.attempt" in sql
     assert "chat_generation_requests.user_id" in sql
+    assert "chat_generation_requests.dispatch_attempts +" in sql
     assert "RETURNING chat_generation_requests.id" in sql
     assert ChatGenerationStatus.PREPARED in compiled.params.values()
     assert 3 in compiled.params.values()
+
+
+async def test_reserve_redispatch_fences_due_and_dispatch_count(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = 2
+    mock_async_session.execute.return_value = result_proxy
+    due_before = datetime.now(UTC)
+
+    dispatch_attempts = await repo.try_reserve_generation_request_redispatch(
+        request_id=uuid.uuid4(),
+        expected_attempt=1,
+        task_id="task-1",
+        lease_token="lease-1",
+        expected_dispatch_attempts=1,
+        max_dispatch_attempts=3,
+        due_before=due_before,
+        next_recovery_due_at=due_before + timedelta(minutes=5),
+    )
+
+    assert dispatch_attempts == 2
+    compiled = mock_async_session.execute.await_args.args[0].compile()
+    sql = str(compiled)
+    assert "chat_generation_requests.status" in sql
+    assert "chat_generation_requests.task_id" in sql
+    assert "chat_generation_requests.lease_token" in sql
+    assert "chat_generation_requests.dispatch_attempts =" in sql
+    assert "chat_generation_requests.dispatch_attempts <" in sql
+    assert "chat_generation_requests.recovery_due_at <=" in sql
+    assert "RETURNING chat_generation_requests.dispatch_attempts" in sql
+    assert ChatGenerationStatus.QUEUED in compiled.params.values()
+    assert due_before in compiled.params.values()
+
+
+async def test_fail_due_generation_request_fences_active_identity(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    request_id = uuid.uuid4()
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = request_id
+    mock_async_session.execute.return_value = result_proxy
+    now = datetime.now(UTC)
+
+    failed = await repo.try_fail_due_generation_request(
+        request_id=request_id,
+        expected_status=ChatGenerationStatus.RUNNING,
+        expected_attempt=2,
+        expected_dispatch_attempts=3,
+        task_id="task-2",
+        lease_token="lease-2",
+        due_before=now,
+        finished_at=now,
+        error_code="CHAT_GENERATION_LEASE_EXPIRED",
+        error_message="生成任务执行超时，请重试",
+    )
+
+    assert failed is True
+    compiled = mock_async_session.execute.await_args.args[0].compile()
+    sql = str(compiled)
+    assert "chat_generation_requests.task_id" in sql
+    assert "chat_generation_requests.lease_token" in sql
+    assert "chat_generation_requests.dispatch_attempts" in sql
+    assert "chat_generation_requests.recovery_due_at <=" in sql
+    assert "RETURNING chat_generation_requests.id" in sql
+    assert ChatGenerationStatus.RUNNING in compiled.params.values()
+    assert ChatGenerationStatus.FAILED in compiled.params.values()
 
 
 async def test_claim_generation_request_fences_task_attempt_and_lease(
@@ -435,6 +548,7 @@ async def test_retry_generation_request_returns_incremented_attempt(
         request_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
         expected_attempt=3,
+        dispatch_context={"schema_version": 1, "mode": "stream"},
         recovery_due_at=datetime.now(UTC) + timedelta(minutes=1),
     )
 

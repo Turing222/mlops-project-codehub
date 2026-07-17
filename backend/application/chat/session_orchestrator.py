@@ -29,7 +29,7 @@ from backend.core.exceptions import (
     app_service_error,
 )
 from backend.infra.redis import safe_release_lock
-from backend.models.enums import ChatGenerationStatus
+from backend.models.enums import ChatGenerationDispatchMode, ChatGenerationStatus
 from backend.models.schemas.chat.commands import (
     ChatQueryCommand,
     RetryChatGenerationCommand,
@@ -38,6 +38,7 @@ from backend.models.schemas.chat.payloads import (
     GENERATION_REQUEST_CONTEXT_KEY,
     FeatureFlags,
     GenerationAttemptPayload,
+    GenerationDispatchContext,
     GenerationPayload,
     GenerationRequestContext,
 )
@@ -123,6 +124,9 @@ class ChatSessionOrchestrator:
         trace_attrs: dict[str, object],
     ) -> ChatPreparedRequest:
         """CAS one retryable failure and rebuild its original Worker payload."""
+        feature_flags = await _resolve_generation_feature_flags(
+            self._feature_flag_service
+        )
         async with db_concurrency_slot(trace_attrs):  # noqa: SIM117
             async with self.uow:
                 generation_request = (
@@ -200,11 +204,35 @@ class ChatSessionOrchestrator:
                     limit=settings.CHAT_MEMORY_FETCH_LIMIT,
                 )
                 context_state = await self.uow.chat_repo.get_context_state(session.id)
+                conversation_history = history_to_conversation_messages(
+                    [
+                        message
+                        for message in history_messages
+                        if message.id != assistant_message.id
+                    ]
+                )
+                generation_payload = GenerationPayload(
+                    session_id=session.id,
+                    query_text=user_message.content,
+                    conversation_history=conversation_history,
+                    kb_id=session.kb_id,
+                    context_state=context_state,
+                    enable_external_context=request_context.enable_external_context,
+                    context_mode=request_context.context_mode,
+                    billing_model_name=request_context.billing_model_name,
+                    extra_body=request_context.extra_body,
+                    feature_flags=feature_flags,
+                )
+                dispatch_context = GenerationDispatchContext(
+                    mode=ChatGenerationDispatchMode.STREAM,
+                    generation_payload=generation_payload,
+                )
                 retry_started_at = datetime.now(UTC)
                 next_attempt = await self.uow.chat_repo.try_retry_generation_request(
                     request_id=generation_request.id,
                     user_id=command.user_id,
                     expected_attempt=command.expected_attempt,
+                    dispatch_context=dispatch_context.model_dump(mode="json"),
                     recovery_due_at=retry_started_at
                     + timedelta(
                         seconds=settings.CHAT_GENERATION_QUEUE_RECOVERY_SECONDS
@@ -236,27 +264,6 @@ class ChatSessionOrchestrator:
                 "chat.assistant_message_id": assistant_message.id,
                 "chat.generation_attempt": next_attempt,
             }
-        )
-        conversation_history = history_to_conversation_messages(
-            [
-                message
-                for message in history_messages
-                if message.id != assistant_message.id
-            ]
-        )
-        generation_payload = GenerationPayload(
-            session_id=session.id,
-            query_text=user_message.content,
-            conversation_history=conversation_history,
-            kb_id=session.kb_id,
-            context_state=context_state,
-            enable_external_context=request_context.enable_external_context,
-            context_mode=request_context.context_mode,
-            billing_model_name=request_context.billing_model_name,
-            extra_body=request_context.extra_body,
-            feature_flags=await _resolve_generation_feature_flags(
-                self._feature_flag_service
-            ),
         )
         return ChatPreparedRequest(
             session=session,
@@ -308,6 +315,7 @@ class ChatSessionOrchestrator:
         idempotency: ChatIdempotencyState,
         trace_attrs: dict[str, object],
         span_prefix: str,
+        dispatch_mode: ChatGenerationDispatchMode = ChatGenerationDispatchMode.STREAM,
     ) -> ChatPreparedRequest:
         try:
             return await self._prepare_request_inner(
@@ -315,6 +323,7 @@ class ChatSessionOrchestrator:
                 idempotency=idempotency,
                 trace_attrs=trace_attrs,
                 span_prefix=span_prefix,
+                dispatch_mode=dispatch_mode,
             )
         except AppException:
             await self.release_idempotency(idempotency)
@@ -337,7 +346,11 @@ class ChatSessionOrchestrator:
         idempotency: ChatIdempotencyState,
         trace_attrs: dict[str, object],
         span_prefix: str,
+        dispatch_mode: ChatGenerationDispatchMode,
     ) -> ChatPreparedRequest:
+        feature_flags = await _resolve_generation_feature_flags(
+            self._feature_flag_service
+        )
         async with db_concurrency_slot(trace_attrs):  # noqa: SIM117
             async with self.uow:
                 # Credit pre-check BEFORE session/message creation to avoid
@@ -410,6 +423,33 @@ class ChatSessionOrchestrator:
                     durable_client_request_id = command.client_request_id or (
                         f"server-{uuid.uuid4().hex}"
                     )
+                    history_messages = await session_manager.get_session_messages(
+                        session_id=session.id,
+                        limit=settings.CHAT_MEMORY_FETCH_LIMIT,
+                    )
+                    context_state = await self.uow.chat_repo.get_context_state(
+                        session.id
+                    )
+                    conversation_history = history_to_conversation_messages(
+                        history_messages
+                    )
+                    generation_payload = GenerationPayload(
+                        session_id=session.id,
+                        query_text=command.query_text,
+                        conversation_history=conversation_history,
+                        kb_id=effective_kb_id,
+                        context_state=context_state,
+                        enable_external_context=command.enable_external_context,
+                        context_mode=command.context_mode,
+                        billing_model_name=billing_model_name,
+                        extra_body=command.extra_body,
+                        feature_flags=feature_flags,
+                    )
+                    dispatch_context = GenerationDispatchContext(
+                        mode=dispatch_mode,
+                        generation_payload=generation_payload,
+                        idempotency_lock_key=idempotency.lock_key,
+                    )
                     prepared_at = datetime.now(UTC)
                     generation_request = (
                         await self.uow.chat_repo.create_generation_request(
@@ -419,20 +459,13 @@ class ChatSessionOrchestrator:
                             user_message_id=user_message.id,
                             assistant_message_id=assistant_message.id,
                             client_request_id=durable_client_request_id,
+                            dispatch_context=dispatch_context.model_dump(mode="json"),
                             recovery_due_at=prepared_at
                             + timedelta(
                                 seconds=settings.CHAT_GENERATION_QUEUE_RECOVERY_SECONDS
                             ),
                             reserved_credits=estimated_cost,
                         )
-                    )
-
-                    history_messages = await session_manager.get_session_messages(
-                        session_id=session.id,
-                        limit=settings.CHAT_MEMORY_FETCH_LIMIT,
-                    )
-                    context_state = await self.uow.chat_repo.get_context_state(
-                        session.id
                     )
 
                     set_span_attributes(
@@ -449,8 +482,6 @@ class ChatSessionOrchestrator:
                 trace_attrs["chat.generation_request_id"] = generation_request.id
                 trace_attrs["chat.assistant_message_id"] = assistant_message.id
 
-        conversation_history = history_to_conversation_messages(history_messages)
-
         with trace_span(f"{span_prefix}.prepare_worker_payload", trace_attrs) as span:
             set_span_attributes(
                 span,
@@ -462,21 +493,6 @@ class ChatSessionOrchestrator:
                 },
             )
 
-        generation_payload = GenerationPayload(
-            session_id=session.id,
-            query_text=command.query_text,
-            conversation_history=conversation_history,
-            kb_id=effective_kb_id,
-            context_state=context_state,
-            enable_external_context=command.enable_external_context,
-            context_mode=command.context_mode,
-            billing_model_name=billing_model_name,
-            extra_body=command.extra_body,
-        )
-
-        generation_payload.feature_flags = await _resolve_generation_feature_flags(
-            self._feature_flag_service
-        )
         return ChatPreparedRequest(
             session=session,
             generation_request=generation_request,

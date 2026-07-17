@@ -128,7 +128,7 @@ RUN /app/.venv/bin/python -c "import backend; print('✅ Worker image: backend m
 # Task modules are driven by TASKIQ_MODULES so a single image serves the
 # standard task list and any future scheduled tasks without code changes.
 CMD ["sh", "-c", "exec taskiq worker backend.infra.task_broker:broker \
-    ${TASKIQ_MODULES:-backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks} \
+    ${TASKIQ_MODULES:-backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks backend.worker.tasks.chat_recovery_tasks} \
     --workers ${TASKIQ_WORKERS:-2} \
     --wait-tasks-timeout ${TASKIQ_WAIT_TASKS_TIMEOUT:-105} \
     --shutdown-timeout ${TASKIQ_SHUTDOWN_TIMEOUT:-10}"]

@@ -177,14 +177,16 @@ async def _generate_llm_stream_task(
     logger.info("TaskIQ Worker 开始处理流式请求: %s", channel)
 
     llm_service = get_worker_llm_service()
+    session_factory = get_worker_session_factory()
     workflow = LLMGenerationWorkerWorkflow(
-        uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
+        uow=SQLAlchemyUnitOfWork(session_factory),
         redis_client=redis_client,
         llm_service=llm_service,
         llm_service_resolver=get_worker_llm_service_for_provider,
         rag_service=get_worker_rag_service(),
         rag_planning_service=get_worker_rag_planning_service(),
         external_context_provider=get_worker_external_context_provider(),
+        heartbeat_uow_factory=lambda: SQLAlchemyUnitOfWork(session_factory),
     )
     assistant_uuid = uuid.UUID(assistant_message_id) if assistant_message_id else None
     user_uuid = uuid.UUID(user_id) if user_id else None
@@ -275,14 +277,16 @@ async def _generate_llm_nonstream_task(
     )
 
     llm_service = get_worker_llm_service()
+    session_factory = get_worker_session_factory()
     workflow = LLMGenerationWorkerWorkflow(
-        uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
+        uow=SQLAlchemyUnitOfWork(session_factory),
         redis_client=redis_client,
         llm_service=llm_service,
         llm_service_resolver=get_worker_llm_service_for_provider,
         rag_service=get_worker_rag_service(),
         rag_planning_service=get_worker_rag_planning_service(),
         external_context_provider=get_worker_external_context_provider(),
+        heartbeat_uow_factory=lambda: SQLAlchemyUnitOfWork(session_factory),
     )
     assistant_uuid = uuid.UUID(assistant_message_id) if assistant_message_id else None
     user_uuid = uuid.UUID(user_id) if user_id else None

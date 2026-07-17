@@ -106,6 +106,21 @@ Focused baseline 共 40 个相关测试通过，其中 8 个为本工作项新�
 - 第三 checkpoint 增加 Worker heartbeat，并让过期 `RUNNING` 先失效旧 lease、再进入可显式 retry 的失败终态；不得自动重新调用 LLM。
 - 最后注册 scheduler、翻转 WS2 的三个 Chat `current_*` 断言，并运行真实 PostgreSQL / Redis focused matrix。WS3 不修改 Knowledge outbox 或 Redis 拓扑。
 
+## WS3 验证证据
+
+2026-07-17 已完成 Chat recovery checkpoint：
+
+- `chat_generation_requests.dispatch_attempts` 使用独立非负计数，现有已派发记录回填为 `1`；显式业务 retry 重置计数，首次 queue 与后续 broker 补派发分别递增，不改变业务 `attempt`。
+- PostgreSQL 同时保存 versioned `dispatch_context`。Web 在提交 `PREPARED` 时已持久化 stream / nonstream 模式与 Worker payload，因此 DB commit 后、首次 queue 前退出仍可恢复；非流式补派发使用 fire-and-forget dispatcher，不在 recovery Worker 内等待另一个 Worker 的 result。
+- repository 提供有界且确定排序的 due scan，并用 `status + attempt + task_id + lease_token + dispatch_attempts + recovery_due_at` 精确 CAS 保护补派发或预算耗尽失败。重复 scanner、晚到 delivery 与晚到 terminal write 均不能越过 fence。
+- scheduler 每分钟触发 generation reconciler。到期 `PREPARED` 生成稳定 attempt fence 后派发；`QUEUED` 保持同一 `attempt`、`task_id`、`lease_token` 有预算补发；到期 `RUNNING` 只写 `FAILED + retryable=true`，不自动重放可能已调用 LLM 的 attempt。
+- Worker claim 后通过独立 UoW 立即并周期续租；heartbeat 失败或旧 lease 晚到仍由 terminal settlement CAS 拒绝越权写 message 和 Credits。
+- migration revision `8c1d7e4a9b20` 以 `5f4c2a9d8e71` 为父 revision；一次性 PostgreSQL 已验证空库 `upgrade head -> downgrade 5f4c2a9d8e71 -> upgrade head`。
+- 真实 PostgreSQL / Redis 覆盖 PREPARED service 接管、QUEUED 单 scanner CAS、预算耗尽时 request/message 原子失败、RUNNING 过期 fence、稳定 TaskIQ wire identity，共 `11 passed`；完整 backend unit 为 `1011 passed / 9 skipped`，component 为 `42 passed`。
+- Ruff、Alembic 单 head / orphan、config、import boundary、layer dependency、test marker 与类型检查均通过；类型检查仍只报告仓库既有的 16 个 diagnostics。`qa-no-while-true` 仍仅被既有 `scripts/qa/check_serena_mcp.py:52` 阻断。
+
+该证据关闭 WS3 的 Chat recovery checkpoint，不代表 Knowledge ingestion 已持久化，也不代表 Redis broker 已完成隔离或重启演练；这些边界分别由 WS4、WS5、WS6 验收。
+
 ## 暂缓 / 不纳入范围
 
 - RabbitMQ、Redis Streams、Kafka、通用 DLQ、KEDA 或跨域通用 workflow / saga 框架。

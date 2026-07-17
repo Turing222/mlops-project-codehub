@@ -17,10 +17,17 @@ from backend.application.chat.session_orchestrator import (
     ChatSessionOrchestrator,
 )
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
-from backend.models.enums import ChatGenerationStatus, MessageStatus
+from backend.models.enums import (
+    ChatGenerationDispatchMode,
+    ChatGenerationStatus,
+    MessageStatus,
+)
 from backend.models.schemas.chat.commands import ChatQueryCommand
 from backend.models.schemas.chat.context_state import ContextState
-from backend.models.schemas.chat.payloads import GenerationResult
+from backend.models.schemas.chat.payloads import (
+    GenerationDispatchContext,
+    GenerationResult,
+)
 from backend.services.feature_flag_service import (
     _AI_SYSTEM_FLAG_DEFAULTS,
     FeatureFlagService,
@@ -131,6 +138,7 @@ async def test_orchestrator_without_injected_session_manager_uses_default() -> N
             ),
             trace_attrs={},
             span_prefix="chat.test",
+            dispatch_mode=ChatGenerationDispatchMode.NONSTREAM,
         )
 
     assert prepared.session is session
@@ -143,6 +151,11 @@ async def test_orchestrator_without_injected_session_manager_uses_default() -> N
     assert request_kwargs["assistant_message_id"] == assistant_msg.id
     assert request_kwargs["client_request_id"].startswith("server-")
     assert request_kwargs["reserved_credits"] > 0
+    dispatch_context = GenerationDispatchContext.model_validate(
+        request_kwargs["dispatch_context"]
+    )
+    assert dispatch_context.mode == ChatGenerationDispatchMode.NONSTREAM
+    assert dispatch_context.generation_payload.query_text == "hello"
 
 
 async def test_idempotency_lock_prevents_duplicate_request() -> None:

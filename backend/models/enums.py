@@ -24,6 +24,13 @@ class ChatGenerationStatus(StrEnum):
     FAILED = "failed"
 
 
+class ChatGenerationDispatchMode(StrEnum):
+    """Worker delivery mode persisted for durable redispatch."""
+
+    STREAM = "stream"
+    NONSTREAM = "nonstream"
+
+
 class WorkspaceRole(StrEnum):
     OWNER = "owner"
     ADMIN = "admin"

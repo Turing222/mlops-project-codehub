@@ -76,7 +76,7 @@ def test_generation_request_orm_exposes_identity_and_recovery_fields() -> None:
     assert "ix_chat_generation_requests_recovery_due" in index_names
 
 
-def test_generation_request_migration_extends_storage_head() -> None:
+def test_generation_request_migration_extends_storage_migration() -> None:
     migration = _load_migration()
 
     assert migration.revision == "5f4c2a9d8e71"

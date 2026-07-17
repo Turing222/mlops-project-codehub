@@ -133,6 +133,63 @@ async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
     assert result.content == "answer"
 
 
+@pytest.mark.parametrize(
+    ("mode", "expected_task_name", "expected_channel"),
+    [
+        ("stream", TASK_STREAM, "stream:recovery-task"),
+        ("nonstream", TASK_NONSTREAM, None),
+    ],
+)
+async def test_enqueue_generation_recovery_is_fire_and_forget(
+    mode: str,
+    expected_task_name: str,
+    expected_channel: str | None,
+) -> None:
+    from backend.infra.task_dispatcher import TaskDispatcher
+    from backend.models.schemas.chat.payloads import (
+        GenerationAttemptPayload,
+        GenerationDispatchContext,
+        GenerationPayload,
+    )
+
+    redis_client = FakeRedis()
+    dispatcher = TaskDispatcher(redis_client)
+    request_id = uuid.uuid4()
+    attempt = GenerationAttemptPayload(
+        request_id=request_id,
+        attempt=2,
+        task_id="recovery-task",
+        lease_token="recovery-lease",
+    )
+    context = GenerationDispatchContext.model_validate(
+        {
+            "mode": mode,
+            "generation_payload": GenerationPayload(
+                session_id=uuid.uuid4(),
+                query_text="recover me",
+            ),
+            "idempotency_lock_key": "idempotency:recovery",
+        }
+    )
+
+    await dispatcher.enqueue_generation_recovery(
+        dispatch_context=context,
+        assistant_message_id=str(uuid.uuid4()),
+        user_id=str(uuid.uuid4()),
+        generation_attempt=attempt,
+        trace_context={"traceparent": "00-recovery"},
+    )
+
+    message = _decode_lpush_message(redis_client)
+    assert message["task_name"] == expected_task_name
+    assert message["task_id"] == attempt.task_id
+    task_payload = message["args"][0]
+    assert task_payload["channel"] == expected_channel
+    assert task_payload["generation_attempt"] == attempt.model_dump(mode="json")
+    assert task_payload["idempotency_lock_key"] == "idempotency:recovery"
+    redis_client.get.assert_not_awaited()
+
+
 async def test_enqueue_ingestion_passes_params_through() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 

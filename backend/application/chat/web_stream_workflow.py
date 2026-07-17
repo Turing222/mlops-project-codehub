@@ -35,6 +35,7 @@ from backend.contracts.interfaces import (
 from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import AppException, app_not_found, app_service_error
 from backend.infra.redis import safe_release_lock
+from backend.models.enums import ChatGenerationDispatchMode
 from backend.models.orm.chat import ChatGenerationRequest
 from backend.models.orm.user import User
 from backend.models.schemas.chat.api import GenerationRequestStatusResponse
@@ -299,6 +300,7 @@ class ChatWorkflow:
                     idempotency=idempotency,
                     trace_attrs=trace_attrs,
                     span_prefix="chat.stream",
+                    dispatch_mode=ChatGenerationDispatchMode.STREAM,
                 )
             except AppException as exc:
                 yield error_event(
@@ -366,8 +368,8 @@ class ChatWorkflow:
             pubsub = None
             logger.error("流式任务初始化异常: %s", str(exc), exc_info=True)
             yield error_event(
-                "服务暂时不可用，请稍后重试",
-                error_code="CHAT_DISPATCH_FAILED",
+                "请求已接受，正在恢复派发，请稍后刷新",
+                error_code="CHAT_DISPATCH_RECOVERY_PENDING",
                 retryable=False,
                 generation_request_id=str(prepared.generation_request.id),
                 attempt=prepared.generation_request.attempt,

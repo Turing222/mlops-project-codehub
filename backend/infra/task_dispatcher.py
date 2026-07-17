@@ -16,8 +16,10 @@ import redis.asyncio as redis
 
 from backend.config.ai_settings import ai_settings
 from backend.contracts.interfaces import AbstractTaskDispatcher
+from backend.models.enums import ChatGenerationDispatchMode
 from backend.models.schemas.chat.payloads import (
     GenerationAttemptPayload,
+    GenerationDispatchContext,
     GenerationResult,
     LLMTaskPayload,
 )
@@ -148,6 +150,34 @@ class TaskDispatcher(AbstractTaskDispatcher):
             task_id, timeout=ai_settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS + 300
         )
         return GenerationResult.model_validate(result)
+
+    async def enqueue_generation_recovery(
+        self,
+        *,
+        dispatch_context: GenerationDispatchContext,
+        assistant_message_id: str,
+        user_id: str,
+        generation_attempt: GenerationAttemptPayload,
+        trace_context: dict[str, str] | None = None,
+    ) -> None:
+        """Redispatch without waiting for a result in the recovery worker."""
+        is_stream = dispatch_context.mode == ChatGenerationDispatchMode.STREAM
+        payload = LLMTaskPayload(
+            generation_payload=dispatch_context.generation_payload.model_dump(
+                mode="json"
+            ),
+            channel=f"stream:{generation_attempt.task_id}" if is_stream else None,
+            trace_context=trace_context,
+            assistant_message_id=assistant_message_id,
+            user_id=user_id,
+            idempotency_lock_key=dispatch_context.idempotency_lock_key,
+            generation_attempt=generation_attempt,
+        )
+        await self._send_task(
+            TASK_STREAM if is_stream else TASK_NONSTREAM,
+            payload.model_dump(mode="json"),
+            task_id=generation_attempt.task_id,
+        )
 
     async def enqueue_ingestion(
         self,

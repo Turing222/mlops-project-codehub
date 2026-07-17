@@ -25,7 +25,7 @@ workstreams:
     deps: [1]
   - id: 3
     title: Implement Chat CAS recovery and the generation-request reconciler.
-    status: in_progress
+    status: done
     kind: serial
     deps: [2]
   - id: 4
@@ -50,24 +50,25 @@ workstreams:
     deps: [6]
 
 current_checkpoint:
-  name: t1-4-chat-recovery-implementation
-  state: in_progress
+  name: t1-4-chat-recovery-validated
+  state: validated
   summary: >-
-    The WS2 baseline is committed and validated. WS3 starts with additive Chat
-    dispatch accounting and repository due-scan and fencing CAS contracts,
-    followed by worker heartbeat, the generation-request reconciler, scheduler
-    registration, and focused convergence validation. Knowledge and Redis
-    production paths remain unchanged until their later workstreams.
+    WS3 is complete: persisted dispatch context and accounting support bounded
+    PREPARED and QUEUED redispatch through exact CAS, expired RUNNING attempts
+    fail without LLM replay, Workers renew leases through an independent UoW,
+    and production schedulers load the reconciler. Unit, component, real
+    PostgreSQL and Redis contracts, and migration rollback all pass. Knowledge
+    and Redis isolation remain pending in WS4 and WS5.
 
 open_decisions: []
 
 next_choices:
   - id: A
-    label: Add Chat persistence contracts
-    note: Add the minimal dispatch budget field, due-scan queries, and CAS recovery tests before wiring the reconciler or scheduler.
+    label: Start Knowledge outbox
+    note: Implement WS4 atomic File, TaskJob, and TaskOutbox creation before changing Redis topology.
   - id: B
-    label: Pause after the baseline
-    note: Preserve the committed WS2 evidence if another first-tier incident must preempt the Chat recovery implementation.
+    label: Pause after Chat recovery
+    note: Preserve the independently validated WS3 commit if another first-tier incident must preempt Knowledge ingestion work.
 
 attached_artifacts:
   task_plan: task-plan.md
