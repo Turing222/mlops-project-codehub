@@ -18,7 +18,8 @@
 
 EC2 默认部署栈包含：
 
-- `redis`
+- `redis-cache`
+- `redis-taskiq`（`noeviction` + AOF + 持久卷）
 - `db_migrator`
 - `api`
 - `api-nginx`
@@ -27,6 +28,7 @@ EC2 默认部署栈包含：
 其中：
 
 - `api` / `db_migrator` / `task_worker` 共享同一套后端运行时配置。
+- cache 与 TaskIQ broker/result 使用不同 Redis 容器；前者允许 `allkeys-lru`，后者通过 `TASKIQ_RESULT_TTL_SECONDS` 有界保留结果。
 - `POSTGRES_SERVER` 指向 RDS / 外部 PostgreSQL；默认 compose 不再启动自管 Postgres。
 - `STORAGE_BACKEND=s3` 时，优先让 boto3 走 **EC2 instance profile / 默认 credential chain**，不要在部署文件中长期写死 AWS AK/SK。
 - `deploy/docker-compose.yml` 不支持 `STORAGE_BACKEND=local`；local storage 只用于 `docker-compose.db.yml` 的本地 / CI smoke 场景。

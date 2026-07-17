@@ -9,7 +9,7 @@
 - **当前主路径**：单台 EC2 + Docker Compose；本目录不是当前 production acceptance path。
 - **当前用途**：Kubernetes 参考清单、扩缩容讨论和本地/预演环境验证。
 - **使用方式**：需要继续推进 k8s 时，再按实际集群、域名、TLS 和监控方案细化；不要把这里的示例直接当成当前正式部署合同。
-- **外部依赖前置**：主 overlay 不创建 PostgreSQL / Redis；应用前必须先提供可解析的 `postgres` / `redis` Service，或把 `configmap.yaml` 中的 `POSTGRES_SERVER` / `REDIS_HOST` 改成实际 RDS / ElastiCache endpoint。
+- **外部依赖前置**：主 overlay 不创建 PostgreSQL / Redis；应用前必须先提供可解析的 `postgres`、`redis-cache` 与 `redis-taskiq` Service，或把 `configmap.yaml` 中的对应 host 改成实际 RDS / ElastiCache endpoint。缓存与 TaskIQ broker/result 必须是不同 Redis 实例。
 - **镜像占位**：清单中的 `dewflow-backend:2.0.0-*` 和 `dewflow-frontend:2.0.0` 只是示例 tag；实际部署前必须替换为 `make release-image-env` 和前端发布流程产出的不可变镜像 tag。
 
 ## 已知实验缺口
@@ -39,7 +39,7 @@ Worker 压力来自后台任务积压，示例策略为：
 
 - `minReplicaCount: 1`
 - `maxReplicaCount: 8`
-- Redis db=1
+- 独立 TaskIQ Redis db=0
 - TaskIQ list 名称：`taskiq`
 - 队列长度达到 10 时触发扩容
 
@@ -70,7 +70,7 @@ Worker 压力来自后台任务积压，示例策略为：
    # docker push <registry>/dewflow-frontend:<tag>
    ```
 
-3. 提供外部 PostgreSQL / Redis 连接入口。主 overlay 默认解析 `postgres.dewflow.svc.cluster.local` 和 `redis.dewflow.svc.cluster.local`；可以手工创建 Service / ExternalName，也可以直接把 `configmap.yaml` 改为实际托管服务 endpoint。
+3. 提供外部 PostgreSQL / Redis 连接入口。主 overlay 默认解析 `postgres.dewflow.svc.cluster.local`、`redis-cache.dewflow.svc.cluster.local` 和 `redis-taskiq.dewflow.svc.cluster.local`；可以手工创建 Service / ExternalName，也可以直接把 `configmap.yaml` 改为实际托管服务 endpoint。TaskIQ 实例需使用 `noeviction`、AOF 与持久卷。
 
 4. 复制并根据实际域名配置 Ingress 示例（不包含在 Kustomize 资源内，需手动维护）：
    ```bash

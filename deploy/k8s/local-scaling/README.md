@@ -17,7 +17,7 @@
 ## 资源预算
 
 本演示把 Worker 命令 patch 成 `sleep`，只验证扩缩容控制链路，避免本地机器跑完整 AI 任务。
-因为不部署 API，任务不会通过 HTTP 入口投递；验证时需要手动向 Redis db=1 的 `taskiq` list 写入测试数据。
+因为不部署 API，任务不会通过 HTTP 入口投递；验证时需要手动向专用 TaskIQ Redis db=0 的 `taskiq` list 写入测试数据。
 
 | 组件 | 副本 | 单副本上限 | 估算峰值 |
 |---|---:|---:|---:|
@@ -51,21 +51,21 @@ kind load docker-image dewflow-backend:2.0.0-ai
 cp deploy/k8s/local-scaling/secret.local.example.yaml /tmp/dewflow-secret.local.yaml
 kubectl apply -k deploy/k8s/local-scaling
 kubectl apply -f /tmp/dewflow-secret.local.yaml
-kubectl -n dewflow wait --for=condition=available deploy/redis --timeout=120s
+kubectl -n dewflow wait --for=condition=available deploy/redis-taskiq --timeout=120s
 kubectl -n dewflow wait --for=condition=available deploy/dewflow-worker --timeout=120s
 ```
 
 制造队列积压：
 
 ```bash
-kubectl -n dewflow exec deploy/redis -- sh -c '
+kubectl -n dewflow exec deploy/redis-taskiq -- sh -c '
   for i in $(seq 1 12); do
-    redis-cli -a "$REDIS_PASSWORD" -n 1 lpush taskiq "demo-$i" >/dev/null;
+    redis-cli -a "$REDIS_PASSWORD" -n 0 lpush taskiq "demo-$i" >/dev/null;
   done
 '
 ```
 
-这一步等价于模拟 TaskIQ 投递了 12 个等待任务。KEDA 会读取 Redis db=1 的 `taskiq` list 长度，并按 `listLength: 3` 把 Worker 扩到最多 3 个副本。
+这一步等价于模拟 TaskIQ 投递了 12 个等待任务。KEDA 会读取专用 Redis db=0 的 `taskiq` list 长度，并按 `listLength: 3` 把 Worker 扩到最多 3 个副本。
 
 观察扩容：
 
@@ -78,14 +78,14 @@ kubectl -n dewflow get deploy dewflow-worker -w
 清空队列，等待缩容：
 
 ```bash
-kubectl -n dewflow exec deploy/redis -- \
-  redis-cli -a "$REDIS_PASSWORD" -n 1 del taskiq
+kubectl -n dewflow exec deploy/redis-taskiq -- \
+  redis-cli -a "$REDIS_PASSWORD" -n 0 del taskiq
 kubectl -n dewflow get deploy dewflow-worker -w
 ```
 
 ## 当前阈值
 
-- Redis db：`1`
+- Redis db：`0`（独立 TaskIQ 实例）
 - Redis list：`taskiq`
 - 扩容阈值：`listLength: 3`
 - 最大副本：`3`

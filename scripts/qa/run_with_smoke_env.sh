@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Source .env.smoke and export infrastructure variables, then exec the
 # given command.  Used by flow-local so integration tests can connect
-# to the Docker smoke stack (postgres, redis) using the same config
+# to the Docker smoke stack (postgres, cache Redis, TaskIQ Redis) using the same config
 # the containers use.
 set -euo pipefail
 
@@ -31,7 +31,8 @@ _smoke_env_value() {
 
 # Load infrastructure variables from .env.smoke.
 for var in POSTGRES_USER POSTGRES_DB POSTGRES_SERVER POSTGRES_PORT \
-           REDIS_HOST REDIS_PORT REDIS_HOST_PORT CURRENT_UID CURRENT_GID; do
+           REDIS_HOST REDIS_PORT REDIS_HOST_PORT TASKIQ_REDIS_HOST \
+           TASKIQ_REDIS_PORT TASKIQ_REDIS_HOST_PORT CURRENT_UID CURRENT_GID; do
     val="$(_smoke_env_value "$var")"
     if [[ -n "$val" ]]; then
         export "$var=$val"
@@ -42,8 +43,11 @@ done
 if [[ "${POSTGRES_SERVER:-}" == "postgres" ]]; then
     export POSTGRES_SERVER=localhost
 fi
-if [[ "${REDIS_HOST:-}" == "redis" ]]; then
+if [[ "${REDIS_HOST:-}" == "redis" || "${REDIS_HOST:-}" == "redis-cache" ]]; then
     export REDIS_HOST=localhost
+fi
+if [[ "${TASKIQ_REDIS_HOST:-}" == "redis-taskiq" ]]; then
+    export TASKIQ_REDIS_HOST=localhost
 fi
 
 # Read passwords from Docker secret files.
@@ -82,8 +86,11 @@ if [[ -n "$redis_pass" ]]; then
     export REDIS_PASSWORD="$redis_pass"
     redis_enc="$(_url_encode "$redis_pass")"
     redis_port="${REDIS_HOST_PORT:-${REDIS_PORT:-6379}}"
+    taskiq_redis_host="${TASKIQ_REDIS_HOST:-localhost}"
+    taskiq_redis_port="${TASKIQ_REDIS_HOST_PORT:-${TASKIQ_REDIS_PORT:-6380}}"
     export TEST_REDIS_URL="redis://:${redis_enc}@${REDIS_HOST}:${redis_port}/0"
-    export TEST_TASKIQ_REDIS_URL="redis://:${redis_enc}@${REDIS_HOST}:${redis_port}/1"
+    export TEST_TASKIQ_REDIS_URL="redis://:${redis_enc}@${taskiq_redis_host}:${taskiq_redis_port}/0"
+    export TASKIQ_REDIS_URL="$TEST_TASKIQ_REDIS_URL"
 fi
 
 # S3 / MinIO — compose defaults to minioadmin/minioadmin on port 9000.

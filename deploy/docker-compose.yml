@@ -87,6 +87,11 @@ x-backend-aws-env: &backend-aws-env
   S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
   POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-verify-full}
   POSTGRES_SSL_ROOT_CERT_FILE: ${POSTGRES_SSL_ROOT_CERT_FILE:-}
+  REDIS_HOST: ${REDIS_HOST:-redis-cache}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  TASKIQ_REDIS_HOST: ${TASKIQ_REDIS_HOST:-redis-taskiq}
+  TASKIQ_REDIS_PORT: ${TASKIQ_REDIS_PORT:-6379}
+  TASKIQ_RESULT_TTL_SECONDS: ${TASKIQ_RESULT_TTL_SECONDS:-3600}
   ENABLE_OTEL_METRICS: ${ENABLE_OTEL_METRICS:-false}
   ENABLE_OTEL_TRACES: ${ENABLE_OTEL_TRACES:-false}
   OTEL_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-}
@@ -95,10 +100,10 @@ x-backend-aws-env: &backend-aws-env
 
 services:
 
-  redis:
+  redis-cache:
     <<: *default-security
     image: redis:7.4.9-alpine
-    container_name: redis
+    container_name: redis-cache
     restart: unless-stopped
     env_file: *deploy-env-file
     secrets:
@@ -110,6 +115,33 @@ services:
     logging: *default-logging
     command: >
       sh -c 'umask 077 && printf "maxmemory 384mb\nmaxmemory-policy allkeys-lru\nrequirepass %s\n" "$$(cat /run/secrets/REDIS_PASSWORD)" > /tmp/redis.conf && exec redis-server /tmp/redis.conf'
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/REDIS_PASSWORD)\" ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      app_net:
+        aliases:
+          - redis
+
+  redis-taskiq:
+    <<: *default-security
+    image: redis:7.4.9-alpine
+    container_name: redis-taskiq
+    restart: unless-stopped
+    env_file: *deploy-env-file
+    secrets:
+      - REDIS_PASSWORD
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging: *default-logging
+    command: >
+      sh -c 'umask 077 && printf "appendonly yes\nappendfsync everysec\nmaxmemory 384mb\nmaxmemory-policy noeviction\nrequirepass %s\n" "$$(cat /run/secrets/REDIS_PASSWORD)" > /tmp/redis.conf && exec redis-server /tmp/redis.conf'
+    volumes:
+      - taskiq_redis_data:/data
     healthcheck:
       test: [ "CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/REDIS_PASSWORD)\" ping" ]
       interval: 10s
@@ -140,7 +172,9 @@ services:
         reservations:
           memory: 256M
     depends_on:
-      redis:
+      redis-cache:
+        condition: service_healthy
+      redis-taskiq:
         condition: service_healthy
       db_migrator:
         condition: service_completed_successfully
@@ -293,7 +327,9 @@ services:
     restart: unless-stopped
     logging: *default-logging
     depends_on:
-      redis:
+      redis-cache:
+        condition: service_healthy
+      redis-taskiq:
         condition: service_healthy
       db_migrator:
         condition: service_completed_successfully
@@ -330,7 +366,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     depends_on:
-      redis:
+      redis-taskiq:
         condition: service_healthy
       db_migrator:
         condition: service_completed_successfully
@@ -355,6 +391,8 @@ networks:
 volumes:
   bifrost_data:
     name: bifrost_data_volume
+  taskiq_redis_data:
+    name: taskiq_redis_data_volume
 
 secrets:
   SECRET_KEY:

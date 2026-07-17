@@ -135,6 +135,19 @@ Focused baseline 共 40 个相关测试通过，其中 8 个为本工作项新�
 
 该证据关闭 WS4 的 Knowledge durable ingestion checkpoint，不代表 cache Redis 与 task broker 已隔离，也不代表真实 restart / SIGKILL 故障矩阵已完成；这些边界分别由 WS5、WS6 验收。
 
+## WS5 验证证据
+
+2026-07-17 已完成 Redis responsibility isolation checkpoint：
+
+- `Settings` 不再把未配置的 TaskIQ URL 回退到 cache Redis db=1；默认 cache 为 `localhost:6379/0`，TaskIQ 为独立 `localhost:6380/0`，部署可通过 `TASKIQ_REDIS_HOST / PORT` 或完整 `TASKIQ_REDIS_URL` 指向独立实例。
+- production 与 smoke Compose 均拆为 `redis-cache` 和 `redis-taskiq`。cache 保留 `allkeys-lru`、无 AOF、无数据卷；TaskIQ 使用 `noeviction`、`appendonly yes`、`appendfsync everysec`、独立 `/data` volume 与 healthcheck。API / Worker 同时等待两者健康，scheduler 只依赖 TaskIQ Redis。
+- `RedisAsyncResultBackend` 明确使用 `TASKIQ_RESULT_TTL_SECONDS=3600`，真实 TaskIQ Worker 已验证结果 key 带有正 TTL；这限制 result key 增长，不改变 ListQueueBroker 的破坏性 pop 语义。
+- smoke 环境、host-side 测试 URL、GitHub Actions 两个 Redis service、EC2 env 模板和 Kubernetes/KEDA 参考清单均使用独立 TaskIQ endpoint；KEDA 在专用实例 db=0 读取 `taskiq` list。
+- 两个真实 Redis 容器分别验证 cache `allkeys-lru + appendonly=no` 与 TaskIQ `noeviction + appendonly=yes + everysec`；TaskIQ `/data` 使用命名卷，写入并完成 AOF fsync 后删除、重建容器，验证数据仍可恢复。cache SMS/Lua 与 Pub/Sub 集成 `2 passed`，真实 TaskIQ worker/result TTL 集成 `1 passed`。
+- production / smoke Compose 均通过完整解析；focused config/dispatcher 为 `47 passed / 2 skipped`，完整 backend unit 为 `1024 passed / 9 skipped`，component 为 `42 passed`。config 7 项、Ruff、docs、test marker 与 diff hygiene 通过；类型检查仍只报告仓库既有的 16 个 diagnostics。
+
+该证据关闭 WS5 的 Redis 职责隔离 checkpoint，不代表业务请求在全量 Redis restart、重复 delivery 或 Worker SIGKILL 后已完成端到端收敛；这些破坏性场景统一由 WS6 验收。
+
 ## 暂缓 / 不纳入范围
 
 - RabbitMQ、Redis Streams、Kafka、通用 DLQ、KEDA 或跨域通用 workflow / saga 框架。

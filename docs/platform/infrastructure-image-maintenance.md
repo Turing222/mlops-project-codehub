@@ -18,7 +18,7 @@
 
 | 组件 | 镜像 tag | 定义位置 |
 | --- | --- | --- |
-| Redis（生产 / 本地 / CI） | `redis:7.4.9-alpine` | `deploy/docker-compose.yml`, `docker-compose.db.yml`, `deploy/k8s/local-scaling/redis.yaml`, CI workflows |
+| Redis cache / TaskIQ（生产 / 本地 / CI） | `redis:7.4.9-alpine` | `deploy/docker-compose.yml`, `docker-compose.db.yml`, `deploy/k8s/local-scaling/redis.yaml`, CI workflows |
 | pgvector + PostgreSQL 17（本地 / CI） | `pgvector/pgvector:0.8.2-pg17-bookworm` | `docker-compose.db.yml`, `deploy/docker-compose.local-postgres.yml`, CI workflows |
 | MinIO（本地 smoke / 演练） | `quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z` | `docker-compose.db.yml`, `deploy/docker-compose.local-s3.yml` |
 | MinIO client | `quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z` | `docker-compose.db.yml`, `deploy/docker-compose.local-s3.yml` |

@@ -10,7 +10,7 @@ import ssl
 from functools import lru_cache
 from pathlib import Path
 from typing import Self
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import quote
 
 from pydantic import Field, field_validator, model_validator
 from sqlalchemy.engine import URL, make_url
@@ -61,6 +61,9 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: str | None = None
+    TASKIQ_REDIS_HOST: str = "localhost"
+    TASKIQ_REDIS_PORT: int = Field(default=6380, ge=1, le=65535)
+    TASKIQ_RESULT_TTL_SECONDS: int = Field(default=3600, ge=60, le=604800)
 
     # ── Storage ───────────────────────────────────────────────────
     STORAGE_BACKEND: str = "local"
@@ -159,13 +162,11 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     def taskiq_redis_url(self) -> str:
         if self.TASKIQ_REDIS_URL:
             return self.TASKIQ_REDIS_URL
-        if self.REDIS_URL:
-            return self._replace_redis_db(self.REDIS_URL, db=1)
         return self._build_redis_url(
-            host=self.REDIS_HOST,
-            port=self.REDIS_PORT,
+            host=self.TASKIQ_REDIS_HOST,
+            port=self.TASKIQ_REDIS_PORT,
             password=self.REDIS_PASSWORD,
-            db=1,
+            db=0,
         )
 
     @staticmethod
@@ -178,13 +179,6 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     ) -> str:
         auth = f":{quote(password, safe='')}@" if password else ""
         return f"redis://{auth}{host}:{port}/{db}"
-
-    @staticmethod
-    def _replace_redis_db(url: str, db: int) -> str:
-        parsed = urlsplit(url)
-        return urlunsplit(
-            (parsed.scheme, parsed.netloc, f"/{db}", parsed.query, parsed.fragment)
-        )
 
     # ── Validators ────────────────────────────────────────────────
 
