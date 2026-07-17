@@ -184,12 +184,17 @@ class TaskDispatcher(AbstractTaskDispatcher):
         file_id: str,
         task_id: str | None = None,
         trace_context: dict[str, str] | None = None,
+        *,
+        outbox_id: str | None = None,
+        message_id: str | None = None,
     ) -> None:
         await self._send_task(
             TASK_INGESTION,
             file_id,
             task_id,
             trace_context,
+            outbox_id,
+            task_id=message_id,
         )
 
     async def enqueue_repo_analysis(

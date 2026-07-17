@@ -19,6 +19,14 @@ class KnowledgeUploadResponse(BaseModel):
     deduplicated: bool = Field(default=False, description="是否复用已就绪的同内容文件")
 
 
+class KnowledgeIngestionDispatchPayload(BaseModel):
+    """Validated, secret-free payload persisted in ``task_outbox``."""
+
+    file_id: uuid.UUID
+    task_id: uuid.UUID
+    trace_context: dict[str, str] | None = None
+
+
 class KnowledgeFileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

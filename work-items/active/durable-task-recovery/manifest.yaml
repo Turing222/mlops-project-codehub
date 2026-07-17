@@ -30,7 +30,7 @@ workstreams:
     deps: [2]
   - id: 4
     title: Implement Knowledge durable ingestion, outbox relay, and conditional claim.
-    status: pending
+    status: done
     kind: serial
     deps: [3]
   - id: 5
@@ -50,25 +50,27 @@ workstreams:
     deps: [6]
 
 current_checkpoint:
-  name: t1-4-chat-recovery-validated
+  name: t1-4-knowledge-durable-ingestion-validated
   state: validated
   summary: >-
-    WS3 is complete: persisted dispatch context and accounting support bounded
-    PREPARED and QUEUED redispatch through exact CAS, expired RUNNING attempts
-    fail without LLM replay, Workers renew leases through an independent UoW,
-    and production schedulers load the reconciler. Unit, component, real
-    PostgreSQL and Redis contracts, and migration rollback all pass. Knowledge
-    and Redis isolation remain pending in WS4 and WS5.
+    WS4 is complete: Knowledge upload atomically persists File, TaskJob, and
+    TaskOutbox; post-commit fast publish and the scheduled relay use a stable
+    outbox message identity with bounded publish leases; Workers conditionally
+    claim an attempt, renew their lease, and fence late terminal or chunk writes;
+    and the pairwise reconciler repairs orphan, dispatch-gap, READY, FAILED, and
+    expired-processing states. Unit, component, real PostgreSQL and Redis
+    contracts, and migration rollback all pass. Redis responsibility isolation
+    and the full restart/termination matrix remain pending in WS5 and WS6.
 
 open_decisions: []
 
 next_choices:
   - id: A
-    label: Start Knowledge outbox
-    note: Implement WS4 atomic File, TaskJob, and TaskOutbox creation before changing Redis topology.
+    label: Start Redis isolation
+    note: Implement WS5 cache/task broker separation now that both durable domain checkpoints are validated.
   - id: B
-    label: Pause after Chat recovery
-    note: Preserve the independently validated WS3 commit if another first-tier incident must preempt Knowledge ingestion work.
+    label: Pause after Knowledge recovery
+    note: Preserve the independently validated WS3 and WS4 commits if another first-tier incident must preempt Redis isolation.
 
 attached_artifacts:
   task_plan: task-plan.md

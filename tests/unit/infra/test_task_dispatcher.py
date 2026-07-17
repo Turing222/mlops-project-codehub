@@ -197,17 +197,21 @@ async def test_enqueue_ingestion_passes_params_through() -> None:
     dispatcher = TaskDispatcher(redis_client)
     file_id = str(uuid.uuid4())
     task_id = str(uuid.uuid4())
+    outbox_id = str(uuid.uuid4())
     trace_ctx = {"traceparent": "00-test"}
 
     await dispatcher.enqueue_ingestion(
         file_id=file_id,
         task_id=task_id,
         trace_context=trace_ctx,
+        outbox_id=outbox_id,
+        message_id=outbox_id,
     )
 
     message = _decode_lpush_message(redis_client)
     assert message["task_name"] == TASK_INGESTION
-    assert message["args"] == [file_id, task_id, trace_ctx]
+    assert message["task_id"] == outbox_id
+    assert message["args"] == [file_id, task_id, trace_ctx, outbox_id]
 
 
 async def test_enqueue_repo_analysis_passes_params_through() -> None:

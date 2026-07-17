@@ -121,6 +121,20 @@ Focused baseline 共 40 个相关测试通过，其中 8 个为本工作项新�
 
 该证据关闭 WS3 的 Chat recovery checkpoint，不代表 Knowledge ingestion 已持久化，也不代表 Redis broker 已完成隔离或重启演练；这些边界分别由 WS4、WS5、WS6 验收。
 
+## WS4 验证证据
+
+2026-07-17 已完成 Knowledge durable ingestion checkpoint：
+
+- migration revision `2a7c9e4d1b63` 以 `8c1d7e4a9b20` 为父 revision；`TaskJob` 增加结构化 `knowledge_file_id / knowledge_base_id`、worker `attempt_count`、heartbeat 与 lease，`task_outbox` 固定 `(task_id, event_type)` 唯一业务事件、publish attempt / due / lease / error 与 `PENDING -> PUBLISHING -> PUBLISHED / DEAD` 状态。
+- Web 上传只使用一个共享 UoW 提交 `File + TaskJob + TaskOutbox`，commit 后才做 best-effort 快速 publish。Redis 或快速 publish 失败不会把已接受文件写成伪失败；事务体内失败会补偿新对象，commit 回执不确定时保留对象以避免删除可能已经提交的业务数据。
+- relay 每分钟通过 `FOR UPDATE SKIP LOCKED` 有界 claim，使用 outbox UUID 作为稳定 TaskIQ message identity；Redis 写入失败释放为下次 due，确认前退出由 publish lease 过期接管，预算耗尽进入可告警、可人工 replay 的 `DEAD`。
+- Knowledge Worker 只允许 `PENDING -> PROCESSING` 条件 claim，claim 时递增业务 attempt 并写 lease；独立 heartbeat 与解析/索引事务内的 attempt 续租共同 fence 旧 Worker。完成、失败和 chunks cleanup 都不能越过当前 attempt，重复 broker 消息对 `PROCESSING / COMPLETED / FAILED / CANCELED` 直接 ack。
+- 原来分别 bulk 标记 File/Task 失败的入口已移除。reconciler 按结构化 FK 逐对处理 `UPLOADED` 孤儿、`PENDING` 无 active outbox、`READY` 未完成 task、`FAILED` 未终结 task 与过期 `PROCESSING`；前三次 worker attempt 可重置并通过同一 outbox 重投，预算耗尽时 File/Task 同事务失败。
+- 一次性 PostgreSQL 已验证空库 `upgrade head -> downgrade 8c1d7e4a9b20 -> upgrade head`；真实 PostgreSQL / Redis 覆盖 attempt fence、重复 claim、晚到 terminal、active-file 唯一约束、outbox 唯一事件、claim/publish 和稳定 wire identity，共 `4 passed`。完整 backend unit 为 `1024 passed / 9 skipped`，component 为 `42 passed`，TaskIQ focused 为 `2 passed`。
+- Ruff、Alembic 单 head / orphan、config、import boundary、layer dependency、test marker 与类型检查均通过；类型检查仍只报告仓库既有的 16 个 diagnostics。`qa-no-while-true` 仍仅被既有 `scripts/qa/check_serena_mcp.py:52` 阻断。
+
+该证据关闭 WS4 的 Knowledge durable ingestion checkpoint，不代表 cache Redis 与 task broker 已隔离，也不代表真实 restart / SIGKILL 故障矩阵已完成；这些边界分别由 WS5、WS6 验收。
+
 ## 暂缓 / 不纳入范围
 
 - RabbitMQ、Redis Streams、Kafka、通用 DLQ、KEDA 或跨域通用 workflow / saga 框架。

@@ -29,6 +29,10 @@ REQUIRED_SCHEDULE_KEYS = frozenset(
             "recover_stale_knowledge_ingestions_every_15m",
         ),
         (
+            "relay_knowledge_ingestion_outbox",
+            "relay_knowledge_ingestion_outbox_every_minute",
+        ),
+        (
             "reconcile_chat_generations",
             "reconcile_chat_generations_every_minute",
         ),

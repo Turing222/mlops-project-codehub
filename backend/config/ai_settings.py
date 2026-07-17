@@ -165,6 +165,13 @@ class AISettings(BaseSettings):
     KNOWLEDGE_CHUNK_OVERLAP: int = 120
     KNOWLEDGE_MAX_UPLOAD_SIZE_MB: int = 20
     KNOWLEDGE_INGEST_STALE_TIMEOUT_SECONDS: int = Field(default=1800, ge=60)
+    KNOWLEDGE_INGEST_HEARTBEAT_SECONDS: int = Field(default=60, ge=10, le=300)
+    KNOWLEDGE_INGEST_LEASE_SECONDS: int = Field(default=300, ge=60, le=3600)
+    KNOWLEDGE_INGEST_MAX_ATTEMPTS: int = Field(default=3, ge=1, le=10)
+    KNOWLEDGE_OUTBOX_RETRY_SECONDS: int = Field(default=60, ge=5, le=3600)
+    KNOWLEDGE_OUTBOX_LEASE_SECONDS: int = Field(default=60, ge=10, le=600)
+    KNOWLEDGE_OUTBOX_MAX_ATTEMPTS: int = Field(default=3, ge=1, le=20)
+    KNOWLEDGE_RECOVERY_BATCH_SIZE: int = Field(default=100, ge=1, le=500)
 
     # ── Search Text ───────────────────────────────────────────────
     SEARCH_TEXT_DEFAULT_TOKEN_LIMIT: int = 60

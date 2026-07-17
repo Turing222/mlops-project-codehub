@@ -11,7 +11,7 @@ from backend.models.orm.access import Workspace
 from backend.models.orm.chat import ChatMessage, ChatSession
 from backend.models.orm.credits import CreditAccount, CreditTransaction
 from backend.models.orm.knowledge import File as KnowledgeFile
-from backend.models.orm.task import TaskJob
+from backend.models.orm.task import TaskJob, TaskOutbox
 
 
 def _index_by_name(model: type) -> dict[str, object]:
@@ -80,17 +80,29 @@ def test_task_job_has_user_id_foreign_key_and_timing_columns() -> None:
     assert foreign_keys[0].column.table.name == "users"
 
 
-def test_current_task_job_lacks_durable_publish_and_claim_state() -> None:
-    """WS2 baseline: Knowledge cannot durably relay or fence duplicate delivery."""
+def test_task_job_and_outbox_declare_durable_ingestion_state() -> None:
     columns = set(TaskJob.__table__.columns.keys())
 
     assert {
-        "attempt",
-        "lease_token",
+        "knowledge_file_id",
+        "knowledge_base_id",
+        "attempt_count",
+        "heartbeat_at",
         "lease_expires_at",
-        "recovery_due_at",
+    } <= columns
+    assert "task_outbox" in TaskJob.metadata.tables
+
+    outbox_columns = set(TaskOutbox.__table__.columns.keys())
+    assert {
+        "task_id",
+        "event_type",
+        "payload",
+        "status",
+        "attempt_count",
+        "next_attempt_at",
+        "lease_owner",
+        "lease_expires_at",
         "published_at",
-    }.isdisjoint(columns)
-    assert not {
-        table_name for table_name in TaskJob.metadata.tables if "outbox" in table_name
-    }
+        "last_error",
+    } <= outbox_columns
+    assert "ix_task_outbox_claim" in _index_by_name(TaskOutbox)

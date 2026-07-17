@@ -9,12 +9,13 @@ import uuid
 from collections.abc import Collection, Sequence
 from datetime import datetime
 
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import and_, delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
 
 from backend.models.orm.chunk import DocumentChunk
 from backend.models.orm.knowledge import File, FileStatus, FileVisibility, KnowledgeBase
+from backend.models.orm.task import TaskJob, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -173,19 +174,33 @@ class KnowledgeRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
-    async def mark_stale_ingestion_files_failed(
+    async def get_stale_uploaded_files_without_active_task(
         self,
         *,
         older_than: datetime,
-    ) -> int:
+        limit: int,
+    ) -> Sequence[File]:
+        """Return accepted files that have no current PENDING/PROCESSING job."""
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        active_task = and_(
+            TaskJob.knowledge_file_id == File.id,
+            TaskJob.action_type == "KB_INGESTION",
+            TaskJob.status.in_((TaskStatus.PENDING, TaskStatus.PROCESSING)),
+        )
         stmt = (
-            update(File)
-            .where(File.status.in_([FileStatus.PARSING, FileStatus.CHUNKING]))
-            .where(File.updated_at < older_than)
-            .values(status=FileStatus.FAILED)
+            select(File)
+            .outerjoin(TaskJob, active_task)
+            .where(
+                File.status == FileStatus.UPLOADED,
+                File.updated_at <= older_than,
+                TaskJob.id.is_(None),
+            )
+            .order_by(File.updated_at.asc(), File.id.asc())
+            .limit(limit)
         )
         result = await self.session.execute(stmt)
-        return int(getattr(result, "rowcount", 0) or 0)
+        return result.scalars().all()
 
     async def delete_chunks_for_file(self, file_id: uuid.UUID) -> None:
         stmt = delete(DocumentChunk).where(DocumentChunk.file_id == file_id)

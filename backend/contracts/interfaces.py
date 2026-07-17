@@ -13,6 +13,7 @@ from backend.contracts.repository_protocols import (
     CreditRepositoryProtocol,
     KnowledgeRepositoryProtocol,
     RepoAnalysisRepositoryProtocol,
+    TaskOutboxRepositoryProtocol,
     TaskRepositoryProtocol,
     UserRepositoryProtocol,
 )
@@ -31,6 +32,7 @@ class AbstractUnitOfWork(ABC):
     chat_repo: ChatRepositoryProtocol
     knowledge_repo: KnowledgeRepositoryProtocol
     task_repo: TaskRepositoryProtocol
+    task_outbox_repo: TaskOutboxRepositoryProtocol
     repo_analysis_repo: RepoAnalysisRepositoryProtocol
     credit_repo: CreditRepositoryProtocol
 
@@ -275,6 +277,9 @@ class AbstractTaskDispatcher(ABC):
         file_id: str,
         task_id: str | None = None,
         trace_context: dict[str, str] | None = None,
+        *,
+        outbox_id: str | None = None,
+        message_id: str | None = None,
     ) -> None:
         """投递知识库文件入库任务到 TaskIQ worker。"""
         ...
