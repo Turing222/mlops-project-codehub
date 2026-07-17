@@ -148,6 +148,21 @@ Focused baseline 共 40 个相关测试通过，其中 8 个为本工作项新�
 
 该证据关闭 WS5 的 Redis 职责隔离 checkpoint，不代表业务请求在全量 Redis restart、重复 delivery 或 Worker SIGKILL 后已完成端到端收敛；这些破坏性场景统一由 WS6 验收。
 
+## WS6 验证证据
+
+2026-07-17 已完成 disposable fault matrix checkpoint。`scripts/qa/run_t1_4_fault_matrix.sh` 只操作固定的 `dewflow-t1-4-fault-*` 容器与测试卷，使用随机但在容器 restart 前固定的宿主端口，退出时自动清理；它不会发现、停止或删除现有开发 / 生产容器。runner 在全新 pgvector PostgreSQL 上执行 `alembic upgrade head`，并启动相互隔离的 cache Redis 与 AOF TaskIQ Redis。
+
+- DB commit / enqueue 与全 Redis restart：在 Chat `PREPARED`、Knowledge outbox 已提交后同时停止两个 Redis，确认恢复器只推进 PostgreSQL 中可重试的持久状态；Redis 恢复后，Chat 与 Knowledge 均使用原业务身份补派发。连续丢弃 Chat broker 消息达到 3 次派发预算后，request 与 message 原子进入可重试失败，晚到 claim 被拒绝。
+- Chat Worker SIGKILL：真实 TaskIQ Worker claim 并提交短 lease 后由独立进程组接收 `SIGKILL`。lease 到期后 reconciler 写入 `CHAT_GENERATION_LEASE_EXPIRED`，旧 lease 的成功终态 CAS 被拒绝，`UsageRecord` 保持 0。
+- Chat duplicate terminal：同一 attempt 的第一次成功写入 message 并完成 Credits settlement；第二次终态提交抛出 `GenerationAttemptRejected`。最终余额从 100 变为 99，`CreditTransaction=1`、`UsageRecord=1`，首个内容不被覆盖。
+- Knowledge Worker SIGKILL：真实 Worker 将同一 `TaskJob` claim 为 `PROCESSING`、File 推进为 `PARSING` 后被强杀；reconciler 将同一 job / file / outbox 恢复为 `PENDING / UPLOADED / PENDING`，旧 attempt 终态被拒绝，并以原 outbox UUID 重新发布。
+- Knowledge duplicate delivery：向真实 TaskIQ queue 连续发送两次同一 durable job，只有一个条件 claim 成功；最终 `TaskJob=COMPLETED`、`attempt_count=1`、File 为 `READY`，且只存在 1 个 chunk 与 1 次业务写计数。
+- broker contract：fault Worker 使用独立 TaskIQ endpoint，result backend 保持 `TASKIQ_RESULT_TTL_SECONDS` 显式 TTL。
+
+完整矩阵为 `6 passed in 5.59s`，完整 backend unit 为 `1024 passed / 9 skipped`，component 为 `42 passed`。新增两个 Python 测试文件的 Ruff 与 ty 检查均为零 diagnostics；正常 pytest 收集时矩阵默认跳过，只有显式 runner 设置 disposable 容器护栏后才允许执行破坏性 stop / start / SIGKILL。
+
+该证据关闭 WS6 的故障收敛 checkpoint：T1-4 的 Chat、Knowledge、Redis 三个实现 checkpoint 与真实故障矩阵均已验证。剩余 WS7 只冻结已有结构化信号及 T1-5 交接合同，不再扩大恢复状态机或部署范围。
+
 ## 暂缓 / 不纳入范围
 
 - RabbitMQ、Redis Streams、Kafka、通用 DLQ、KEDA 或跨域通用 workflow / saga 框架。

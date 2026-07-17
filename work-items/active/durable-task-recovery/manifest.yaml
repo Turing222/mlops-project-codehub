@@ -40,7 +40,7 @@ workstreams:
     deps: [4]
   - id: 6
     title: Validate restart, duplicate-delivery, and worker-termination convergence.
-    status: pending
+    status: done
     kind: serial
     deps: [3, 4, 5]
   - id: 7
@@ -50,26 +50,26 @@ workstreams:
     deps: [6]
 
 current_checkpoint:
-  name: t1-4-redis-responsibility-isolated
+  name: t1-4-fault-matrix-validated
   state: validated
   summary: >-
-    WS5 is complete: cache traffic uses an evictable redis-cache instance while
-    TaskIQ broker/result traffic uses a distinct redis-taskiq instance with
-    noeviction, AOF everysec, a persistent volume, healthchecks, and a one-hour
-    result TTL. Settings, Compose, CI, smoke helpers, and Kubernetes references
-    share the dedicated endpoint contract. Real cache and TaskIQ clients pass,
-    and TaskIQ data survived container removal and recreation. The full domain
-    restart, duplicate-delivery, and worker-termination matrix remains WS6.
+    WS6 is complete: a guarded disposable runner migrated a fresh PostgreSQL
+    database and validated six real-process fault contracts across the isolated
+    cache and TaskIQ Redis instances. Full Redis restart, DB commit/enqueue gaps,
+    Chat and Knowledge Worker SIGKILL, duplicate terminal/delivery, late-attempt
+    fencing, bounded dispatch exhaustion, single Credits settlement, single
+    chunk write, and result TTL all passed. WS7 remains to freeze the T1-5
+    observability handoff and close T1-4.
 
 open_decisions: []
 
 next_choices:
   - id: A
-    label: Start failure matrix
-    note: Execute WS6 against the isolated Redis topology and the validated Chat and Knowledge durable states.
+    label: Start observability handoff
+    note: Execute WS7 by inventorying structured recovery signals, recording the T1-5 contract, and closing T1-4.
   - id: B
-    label: Pause after isolation
-    note: Preserve the independently validated WS3, WS4, and WS5 commits if the destructive fault-injection matrix must be deferred.
+    label: Pause after fault validation
+    note: Preserve the independently validated WS3 through WS6 commits if the documentation-only closure must be deferred.
 
 attached_artifacts:
   task_plan: task-plan.md
