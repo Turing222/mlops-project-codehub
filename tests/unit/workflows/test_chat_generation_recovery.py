@@ -6,11 +6,15 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from backend.application.chat.generation_recovery import (
     CONTEXT_UNAVAILABLE_CODE,
@@ -18,7 +22,12 @@ from backend.application.chat.generation_recovery import (
     LEASE_EXPIRED_CODE,
     ChatGenerationRecoveryService,
 )
-from backend.models.enums import ChatGenerationStatus, MessageStatus
+from backend.contracts.interfaces import AbstractUnitOfWork
+from backend.models.enums import (
+    ChatGenerationDispatchMode,
+    ChatGenerationStatus,
+    MessageStatus,
+)
 from backend.models.schemas.chat.payloads import (
     GenerationDispatchContext,
     GenerationPayload,
@@ -43,7 +52,7 @@ class FakeRecoveryUow:
 
 def _dispatch_context() -> dict[str, object]:
     return GenerationDispatchContext(
-        mode="stream",
+        mode=ChatGenerationDispatchMode.STREAM,
         generation_payload=GenerationPayload(
             session_id=uuid.uuid4(),
             query_text="recover me",
@@ -81,7 +90,7 @@ def _service(
     dispatcher: AsyncMock,
 ) -> ChatGenerationRecoveryService:
     return ChatGenerationRecoveryService(
-        uow=uow,
+        uow=cast(AbstractUnitOfWork, uow),
         dispatcher=dispatcher,
         recovery_seconds=300,
         max_dispatch_attempts=3,
@@ -153,7 +162,9 @@ async def test_due_queued_request_preserves_attempt_and_broker_identity() -> Non
     assert dispatch_attempt.lease_token == "stable-lease"
 
 
-async def test_exhausted_queue_fails_request_and_assistant_atomically() -> None:
+async def test_exhausted_queue_fails_request_and_assistant_atomically(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     request = _request(
         ChatGenerationStatus.QUEUED,
         dispatch_attempts=3,
@@ -164,6 +175,10 @@ async def test_exhausted_queue_fails_request_and_assistant_atomically() -> None:
     uow.chat_repo.get_due_generation_requests.return_value = [request]
     uow.chat_repo.try_fail_due_generation_request.return_value = True
     dispatcher = AsyncMock()
+    caplog.set_level(
+        logging.WARNING,
+        logger="backend.application.chat.generation_recovery",
+    )
 
     result = await _service(uow, dispatcher).reconcile_due_requests()
 
@@ -174,6 +189,21 @@ async def test_exhausted_queue_fails_request_and_assistant_atomically() -> None:
     assert message_kwargs["message_id"] == request.assistant_message_id
     assert message_kwargs["status"] == MessageStatus.FAILED
     dispatcher.enqueue_generation_recovery.assert_not_awaited()
+    record = next(
+        item
+        for item in caplog.records
+        if getattr(item, "event", None) == "chat_generation_recovery_failed"
+    )
+    fields = record.__dict__
+    assert fields["error_code"] == DISPATCH_EXHAUSTED_CODE
+    assert fields["generation_request_id"] == str(request.id)
+    assert fields["attempt"] == request.attempt
+    assert fields["status"] == str(ChatGenerationStatus.FAILED)
+    assert fields["previous_status"] == str(request.status)
+    assert fields["task_id"] == request.task_id
+    assert fields["dispatch_attempts"] == request.dispatch_attempts
+    assert fields["previous_dispatch_attempts"] == request.dispatch_attempts
+    assert fields["recovery_due_at"] == request.recovery_due_at
 
 
 async def test_expired_running_request_fails_without_automatic_replay() -> None:
@@ -216,7 +246,9 @@ async def test_invalid_dispatch_context_becomes_explicit_retryable_failure() -> 
     dispatcher.enqueue_generation_recovery.assert_not_awaited()
 
 
-async def test_broker_error_leaves_reserved_request_for_next_due_scan() -> None:
+async def test_broker_error_leaves_reserved_request_for_next_due_scan(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     request = _request(
         ChatGenerationStatus.QUEUED,
         dispatch_attempts=1,
@@ -230,8 +262,27 @@ async def test_broker_error_leaves_reserved_request_for_next_due_scan() -> None:
     dispatcher.enqueue_generation_recovery.side_effect = ConnectionError(
         "broker unavailable"
     )
+    caplog.set_level(
+        logging.ERROR,
+        logger="backend.application.chat.generation_recovery",
+    )
 
     result = await _service(uow, dispatcher).reconcile_due_requests()
 
     assert result.dispatch_error_count == 1
     assert result.failed_count == 0
+    record = next(
+        item
+        for item in caplog.records
+        if getattr(item, "event", None) == "chat_generation_recovery_dispatch_failed"
+    )
+    fields = record.__dict__
+    assert fields["generation_request_id"] == str(request.id)
+    assert fields["client_request_id"] == request.client_request_id
+    assert fields["attempt"] == request.attempt
+    assert fields["status"] == str(ChatGenerationStatus.QUEUED)
+    assert fields["previous_status"] == str(request.status)
+    assert fields["task_id"] == request.task_id
+    assert fields["dispatch_attempts"] == request.dispatch_attempts + 1
+    assert fields["previous_dispatch_attempts"] == request.dispatch_attempts
+    assert fields["recovery_due_at"] == request.recovery_due_at

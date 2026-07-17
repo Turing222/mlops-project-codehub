@@ -263,6 +263,7 @@ class KnowledgeOutboxRelayService:
                 extra=self._log_context(
                     outbox,
                     event="knowledge_outbox_published",
+                    outbox_status=TaskOutboxStatus.PUBLISHED,
                 ),
             )
         else:
@@ -316,10 +317,14 @@ class KnowledgeOutboxRelayService:
             result.dead_count += 1
             logger.error(
                 "Knowledge outbox publish budget exhausted",
-                extra=self._log_context(
-                    outbox,
-                    event="knowledge_outbox_dead",
-                ),
+                extra={
+                    **self._log_context(
+                        outbox,
+                        event="knowledge_outbox_dead",
+                        outbox_status=TaskOutboxStatus.DEAD,
+                    ),
+                    "error_code": PUBLISH_EXHAUSTED_ERROR,
+                },
             )
 
     @staticmethod
@@ -327,13 +332,15 @@ class KnowledgeOutboxRelayService:
         outbox: TaskOutbox,
         *,
         event: str,
+        outbox_status: TaskOutboxStatus | None = None,
     ) -> dict[str, object]:
         return {
             "event": event,
             "outbox_id": str(outbox.id),
             "task_id": str(outbox.task_id),
             "event_type": outbox.event_type,
-            "outbox_status": str(outbox.status),
+            "outbox_status": str(outbox_status or outbox.status),
+            "previous_outbox_status": str(outbox.status),
             "publish_attempt": outbox.attempt_count,
             "next_attempt_at": outbox.next_attempt_at,
             "lease_expires_at": outbox.lease_expires_at,

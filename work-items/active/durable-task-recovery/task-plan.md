@@ -163,6 +163,59 @@ Focused baseline 共 40 个相关测试通过，其中 8 个为本工作项新�
 
 该证据关闭 WS6 的故障收敛 checkpoint：T1-4 的 Chat、Knowledge、Redis 三个实现 checkpoint 与真实故障矩阵均已验证。剩余 WS7 只冻结已有结构化信号及 T1-5 交接合同，不再扩大恢复状态机或部署范围。
 
+## WS7 — T1-5 可观测性交接合同
+
+T1-4 交付的是可被 T1-5 消费的领域信号、持久诊断字段与安全恢复入口，不等于 CloudWatch / SNS 告警闭环已经完成。所有 `extra` 字段由 `OrjsonFormatter` 保留为 JSON 顶层字段，并自动补充 `timestamp`、`level`、`logger`、`module`、`func_name`、`line_no`；存在有效 OTel span 时还会补充 `trace_id`、`span_id`。
+
+### 稳定日志事件
+
+| `event` | 级别 | 稳定业务字段 | 运维含义 |
+| --- | --- | --- | --- |
+| `chat_generation_recovery_dispatch_failed` | ERROR | `generation_request_id`、`client_request_id`、`attempt`、`status` / `previous_status`、`task_id`、`dispatch_attempts` / `previous_dispatch_attempts`、`recovery_due_at`、`lease_expires_at` | recovery 已保留 PostgreSQL due 状态，但本次 broker 补派发失败；`status` 与 `dispatch_attempts` 表示 CAS 后结果，按 request ID 查持久状态，不能从日志直接重发。 |
+| `chat_generation_redispatched` | INFO | 同上 | 同一业务 attempt 已按原 fence 补派发；可用于统计恢复成功率，不代表 Worker 已完成。 |
+| `chat_generation_recovery_failed` | WARNING | 同上，并有 `error_code` | request 已进入明确可重试失败终态；稳定错误码为 `CHAT_DISPATCH_RETRY_EXHAUSTED`、`CHAT_GENERATION_LEASE_EXPIRED` 或 `CHAT_RECOVERY_CONTEXT_UNAVAILABLE`。 |
+| `chat_generation_heartbeat_error` / `chat_generation_heartbeat_rejected` | WARNING | `generation_request_id`、`attempt`、`task_id` | 前者是续租写异常，后者是当前 Worker 已被 CAS fence；后者不能继续提交业务终态。 |
+| `knowledge_upload_commit_outcome_uncertain` | ERROR | `file_id` | commit 回执不确定，存储对象被保留；先查 DB，不得直接删对象。 |
+| `knowledge_outbox_fast_publish_failed` | ERROR | `file_id`、`task_id`、`outbox_id` | commit 后快速发布失败，durable outbox 仍由周期 relay 接管。 |
+| `knowledge_outbox_publish_failed` | ERROR | `outbox_id`、`task_id`、`event_type`、`outbox_status` / `previous_outbox_status`、`publish_attempt`、`next_attempt_at`、`lease_expires_at` | 本次 broker publish 失败；outbox 会释放为下一次 due，优先观察 attempt 与 oldest due age。 |
+| `knowledge_outbox_published` | INFO | 同上 | 稳定 outbox UUID 已发布；只表示 at-least-once delivery，不代表 ingestion 完成。 |
+| `knowledge_outbox_dead` | ERROR | 同上，并有 `error_code` | publish 预算耗尽，`outbox_status=dead`、`error_code / last_error=KNOWLEDGE_OUTBOX_PUBLISH_EXHAUSTED`；需要受控人工 replay。 |
+| `knowledge_ingestion_heartbeat_error` / `knowledge_ingestion_heartbeat_rejected` / `knowledge_ingestion_heartbeat_shutdown_error` | WARNING | `task_id`、`attempt` | Worker 续租异常、被 fence 或关闭时 heartbeat 异常；以 TaskJob 状态与 lease 为事实源。 |
+| `knowledge_ingestion_duplicate_delivery` | INFO | `file_id`、`task_id`、`outbox_id` | 重复消息已被条件 claim 拒绝并安全 ack，可计数但不应直接告警为数据损坏。 |
+| `knowledge_ingestion_stale_cleanup_rejected` | WARNING | `file_id`、`task_id`、`attempt` | 旧 Worker 的失败清理被 fence，未覆盖新 attempt 的 chunks / File 状态。 |
+
+WS7 在 unit tests 中锁定两个 Chat 事件和三个 Knowledge outbox 事件的上述 ID、attempt / dispatch count、变更前后状态、due 与错误码字段；字段删除或改名会直接使测试失败。日志不得新增 query、message content、文件内容、lease token、Redis password 或对象存储凭据。
+
+### 批次 trace 与计数
+
+| span | 已提供计数 |
+| --- | --- |
+| `taskiq.chat.reconcile_generations` | `scanned_count`、`prepared_dispatched_count`、`queued_redispatched_count`、`failed_count`、`conflict_count`、`dispatch_error_count` |
+| `taskiq.knowledge.recover_stale_ingestions` | `scanned_task_count`、`created_outbox_count`、`retried_task_count`、`completed_task_count`、`failed_file_count`、`failed_task_count`、`conflict_count` |
+| `taskiq.knowledge.relay_outbox` | `claimed_count`、`published_count`、`retry_count`、`dead_count`、`conflict_count` |
+
+TaskIQ task 返回值同时保留完整 dataclass 计数。T1-5 应把 span duration 或 task runtime 统一投影为 `duration_ms`，并增加 scheduler / Worker dead-man；T1-4 不在日志层重复实现 OTel duration，也不在本项承诺 trace exporter 的生产可用性。
+
+### PostgreSQL 诊断与人工恢复入口
+
+| 领域 | PostgreSQL 事实字段 | 允许的恢复入口 |
+| --- | --- | --- |
+| Chat | `status`、`error_code`、`retryable`、`attempt`、`task_id`、`dispatch_attempts`、`heartbeat_at`、`lease_expires_at`、`recovery_due_at`、`finished_at` | 先通过 actor-scoped `GET /api/v1/chat/requests/{generation_request_id}` 解析状态；只有 terminal failed 且 `retryable=true` 时，使用 `POST /api/v1/chat/requests/{generation_request_id}/retry` 并提交 `expected_attempt`。该入口仍受 `chat-explicit-retry` flag、用户 / tenant / session 授权和 CAS 保护。 |
+| Knowledge TaskJob | `status`、`attempt_count`、`heartbeat_at`、`lease_expires_at`、`error_log`、`knowledge_file_id`、`knowledge_base_id` | 正常的 `PENDING / PROCESSING` 只由 reconciler 处理，不手改状态。 |
+| Knowledge TaskOutbox | `status`、`attempt_count`、`next_attempt_at`、`lease_owner`、`lease_expires_at`、`last_error`、稳定 `id` | 仅对 `DEAD` outbox 调用 `KnowledgeOutboxRelayService.replay_dead(outbox_id, expected_attempt)`；它按当前状态校验，必要时在同一事务重置 Task / File，并重新打开 outbox，随后由 relay 发布。当前是 service-level CAS 入口，T1-5 runbook 需要再包一层认证、审计的 operator command；不得以 SQL 或 `LPUSH` 代替。 |
+| Knowledge File | `status` 与关联 `TaskJob` / `TaskOutbox` | 必须联合诊断，不能只按 File 状态批量失败或重放。 |
+
+Redis queue / result key 不是业务事实源。`LLEN taskiq`、oldest message age、evictions、restart 与 result TTL 只用于判断传输层健康，任何 replay 决策都必须回到上述 PostgreSQL identity 与 expected attempt。
+
+### 明确交给 T1-5 的剩余工作
+
+- 将上述稳定 `event` / `error_code` 对齐到 CloudWatch metric filters，并补 queue depth / oldest age、Worker / Scheduler heartbeat、Redis restart / eviction、日志 dead-man、RDS backup 等基础设施信号。
+- 为 Knowledge `replay_dead` 提供认证、审计、dry-run 与操作人记录；把 Chat retry 的现有 API audit 与 Knowledge operator audit 纳入同一 runbook。
+- 选择基于流量的阈值与连续窗口，完成一次真实的“日志 / metric -> Alarm -> SNS -> 人员确认 -> 状态核对 -> 受控恢复”演练。
+- 实测 RDS snapshot / PITR、Redis / Worker 中断后的 reconciliation，以及启用 S3 后的对象恢复；记录 RPO / RTO。现有 WS6 disposable fault matrix 是恢复原语实证，不替代生产告警与灾备演练。
+
+WS7 focused 日志合同为 `11 passed`，Ruff 与 ty 均为零 diagnostics。至此 T1-4 已达到路线图停止线；T1-5 仍是独立的第一档工作项，不能因本交接文档而标记完成。
+
 ## 暂缓 / 不纳入范围
 
 - RabbitMQ、Redis Streams、Kafka、通用 DLQ、KEDA 或跨域通用 workflow / saga 框架。
@@ -173,4 +226,4 @@ Focused baseline 共 40 个相关测试通过，其中 8 个为本工作项新�
 
 ## Open Decisions 说明
 
-当前没有需要用户阻塞确认的架构决策。派发预算的具体默认值与 backoff 将在 WS3 随 repository CAS 测试固定为可配置合同；它属于实现参数，不改变上述安全边界。
+当前没有需要用户阻塞确认的 T1-4 架构决策。Chat 派发预算已固定为最多 3 次并保持可配置，首期继续使用固定 due 间隔；指数 backoff、Chat transactional outbox 与外部 broker 替换均由明确 SLA 或生产容量证据再触发。

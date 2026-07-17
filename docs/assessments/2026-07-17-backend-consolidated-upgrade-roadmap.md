@@ -177,6 +177,8 @@ T1-3 标记为 `validated` 前，至少要求 flag-on 的显式 retry 端到端�
 
 这一工作流共享交付语义和测试方法，但不应过早建设一个万能任务状态机框架。Chat 与 Knowledge 保留各自的领域状态，通过稳定 ID、attempt / lease、CAS、reconciler、指标和 `AbstractTaskDispatcher` 对齐。落入 `work-items/` 时建议拆为 Redis 职责隔离、Chat 恢复、Knowledge durable ingestion 三个 checkpoint 分别跟踪验收，不作为单一交付物。
 
+**实施状态（2026-07-17）：`validated`。** Chat recovery、Knowledge durable ingestion、Redis 职责隔离三个实现 checkpoint 均已完成；一次性环境中的 DB commit / enqueue、全 Redis restart、重复 delivery、Worker `SIGKILL`、晚到 attempt、派发预算耗尽、Credits 单次结算与 chunk 单次写入矩阵为 `6 passed`。结构化信号与人工恢复入口已经冻结在 [T1-4 work item 的 WS7 交接合同](../../work-items/active/durable-task-recovery/task-plan.md#ws7--t1-5-可观测性交接合同)。这只关闭 T1-4，不表示 T1-5 的 CloudWatch / SNS、生产恢复和 RPO / RTO 实证已经完成。
+
 **来源。** D3 §4、§9.1（P0.1 / P0.2）；D1 §6（WS2）；D2 §3.1–3.3、§5.2–5.3（P1 / P2）。Redis 配置与 ListQueueBroker 破坏性 pop 属已确认；丢失 / 淘汰是否已在生产发生属需验证，由 G0-7 的 eviction 与悬挂任务盘点回答。
 
 **Redis 最低基线：**
@@ -198,6 +200,8 @@ T1-3 标记为 `validated` 前，至少要求 flag-on 的显式 retry 端到端�
 ### 5.5 T1-5 — 最低告警与恢复实证
 
 **来源。** D3 §6.2–6.3、§8、§9.1（P0.3 / P0.4）。CloudWatch filter 与日志字段不匹配属已确认；RDS / S3 / SNS 实际状态属外部实证。结构化字段契约可与 T1-3 并行定义，只有告警与恢复验收依赖 T1-3、T1-4 的恢复原语落地。
+
+T1-4 已提供可消费的 recovery / heartbeat / outbox 事件、批次 trace 计数、持久诊断字段和 CAS replay 入口；T1-5 应直接复用其[信号交接合同](../../work-items/active/durable-task-recovery/task-plan.md#ws7--t1-5-可观测性交接合同)，不再从自由文本日志反推任务状态。
 
 **最低必须做到：**
 
@@ -361,6 +365,7 @@ flowchart LR
 - Chat 幂等与 Credits：[session_orchestrator.py](../../backend/application/chat/session_orchestrator.py)、[worker_persistence_handler.py](../../backend/application/chat/worker_persistence_handler.py)、[worker_generation_workflow.py](../../backend/application/chat/worker_generation_workflow.py)、[chat.py](../../backend/models/orm/chat.py)。
 - 前端重试链路：[use-chat-stream.ts](../../frontend/apps/admin/src/features/chat/use-chat-stream.ts)（重试缓存与回退分支）、[chat-stream.ts](../../frontend/apps/admin/src/streams/chat-stream.ts)（error 事件被压扁为纯文本）、[chat.ts](../../frontend/apps/admin/src/schemas/chat.ts)（SSE 事件 schema）。D1 引用的 `use-chat-controller.ts` 重试逻辑已在 `af4f855` 迁移至 `use-chat-stream.ts`。
 - Task 与 Redis：[task_broker.py](../../backend/infra/task_broker.py)、[task_repo.py](../../backend/repositories/task_repo.py)、[docker-compose.yml](../../deploy/docker-compose.yml)。
+- T1-4 恢复与实证：[generation_recovery.py](../../backend/application/chat/generation_recovery.py)、[outbox_relay.py](../../backend/application/knowledge/outbox_relay.py)、[chat_recovery_tasks.py](../../backend/worker/tasks/chat_recovery_tasks.py)、[knowledge_tasks.py](../../backend/worker/tasks/knowledge_tasks.py)、[fault matrix runner](../../scripts/qa/run_t1_4_fault_matrix.sh) 与 [durable-task-recovery work item](../../work-items/active/durable-task-recovery/task-plan.md)。
 - Knowledge：[upload_workflow.py](../../backend/application/knowledge/upload_workflow.py)、[ingestion_workflow.py](../../backend/application/knowledge/ingestion_workflow.py)、[knowledge_ingestion_recovery_service.py](../../backend/services/knowledge_ingestion_recovery_service.py)。
 - 身份与权限：[google_oauth_service.py](../../backend/services/google_oauth_service.py)、[access_repo.py](../../backend/repositories/access_repo.py)、[permissions.yaml](../../configs/access/permissions.yaml)。
 - CI 与运维：[smoke-ci.yml](../../.github/workflows/smoke-ci.yml)、[security-ci.yml](../../.github/workflows/security-ci.yml)、[cloudwatch-setup.sh](../../deploy/monitoring/cloudwatch-setup.sh)。

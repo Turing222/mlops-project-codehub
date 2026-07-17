@@ -174,7 +174,12 @@ class ChatGenerationRecoveryService:
         if not queued:
             result.conflict_count += 1
             return
-        if await self._dispatch(generation_request, dispatch_context, attempt):
+        if await self._dispatch(
+            generation_request,
+            dispatch_context,
+            attempt,
+            dispatch_attempts=generation_request.dispatch_attempts + 1,
+        ):
             result.prepared_dispatched_count += 1
         else:
             result.dispatch_error_count += 1
@@ -232,7 +237,12 @@ class ChatGenerationRecoveryService:
         if reserved is None:
             result.conflict_count += 1
             return
-        if await self._dispatch(generation_request, dispatch_context, attempt):
+        if await self._dispatch(
+            generation_request,
+            dispatch_context,
+            attempt,
+            dispatch_attempts=reserved,
+        ):
             result.queued_redispatched_count += 1
         else:
             result.dispatch_error_count += 1
@@ -242,6 +252,8 @@ class ChatGenerationRecoveryService:
         generation_request: ChatGenerationRequest,
         dispatch_context: GenerationDispatchContext,
         attempt: GenerationAttemptPayload,
+        *,
+        dispatch_attempts: int,
     ) -> bool:
         try:
             await self.dispatcher.enqueue_generation_recovery(
@@ -257,6 +269,8 @@ class ChatGenerationRecoveryService:
                 extra=self._log_context(
                     generation_request,
                     event="chat_generation_recovery_dispatch_failed",
+                    status=ChatGenerationStatus.QUEUED,
+                    dispatch_attempts=dispatch_attempts,
                 ),
             )
             return False
@@ -265,6 +279,8 @@ class ChatGenerationRecoveryService:
             extra=self._log_context(
                 generation_request,
                 event="chat_generation_redispatched",
+                status=ChatGenerationStatus.QUEUED,
+                dispatch_attempts=dispatch_attempts,
             ),
         )
         return True
@@ -308,6 +324,7 @@ class ChatGenerationRecoveryService:
                 **self._log_context(
                     generation_request,
                     event="chat_generation_recovery_failed",
+                    status=ChatGenerationStatus.FAILED,
                 ),
                 "error_code": error_code,
             },
@@ -322,15 +339,23 @@ class ChatGenerationRecoveryService:
         generation_request: ChatGenerationRequest,
         *,
         event: str,
+        status: ChatGenerationStatus | None = None,
+        dispatch_attempts: int | None = None,
     ) -> dict[str, object]:
         return {
             "event": event,
             "generation_request_id": str(generation_request.id),
             "client_request_id": generation_request.client_request_id,
             "attempt": generation_request.attempt,
-            "status": str(generation_request.status),
+            "status": str(status or generation_request.status),
+            "previous_status": str(generation_request.status),
             "task_id": generation_request.task_id,
-            "dispatch_attempts": generation_request.dispatch_attempts,
+            "dispatch_attempts": (
+                dispatch_attempts
+                if dispatch_attempts is not None
+                else generation_request.dispatch_attempts
+            ),
+            "previous_dispatch_attempts": generation_request.dispatch_attempts,
             "recovery_due_at": generation_request.recovery_due_at,
             "lease_expires_at": generation_request.lease_expires_at,
         }
