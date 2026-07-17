@@ -299,6 +299,43 @@ async def test_nonstream_current_attempt_claims_and_finalizes(monkeypatch) -> No
     assert finalize_kwargs["lease_token"] == attempt.lease_token
 
 
+async def test_current_generation_attempt_never_refreshes_claimed_lease(
+    monkeypatch,
+) -> None:
+    """WS2 baseline: a claimed attempt can run to completion without a heartbeat."""
+    redis = FakeRedis()
+    install_llm_slot_recorder(monkeypatch)
+    uow = FakeChatUow()
+    uow.chat_repo.try_claim_generation_request.return_value = True
+    uow.chat_repo.try_finalize_generation_request.return_value = True
+    uow.chat_repo.update_message_status.return_value = object()
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=_make_nonstreaming_llm(
+            LLMResultDTO(content="accepted", completion_tokens=1)
+        ),
+    )
+    attempt = GenerationAttemptPayload(
+        request_id=uuid.uuid4(),
+        attempt=1,
+        task_id="heartbeat-gap-task",
+        lease_token="heartbeat-gap-lease",
+    )
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(session_id=uuid.uuid4(), query_text="hi"),
+        assistant_message_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        generation_attempt=attempt,
+    )
+
+    assert result.success is True
+    uow.chat_repo.try_claim_generation_request.assert_awaited_once()
+    uow.chat_repo.try_heartbeat_generation_request.assert_not_awaited()
+    uow.chat_repo.try_finalize_generation_request.assert_awaited_once()
+
+
 async def test_credit_failure_returns_failure_and_skips_success_marker(
     monkeypatch,
 ) -> None:

@@ -78,3 +78,19 @@ def test_task_job_has_user_id_foreign_key_and_timing_columns() -> None:
     foreign_keys = list(table.columns["user_id"].foreign_keys)
     assert len(foreign_keys) == 1
     assert foreign_keys[0].column.table.name == "users"
+
+
+def test_current_task_job_lacks_durable_publish_and_claim_state() -> None:
+    """WS2 baseline: Knowledge cannot durably relay or fence duplicate delivery."""
+    columns = set(TaskJob.__table__.columns.keys())
+
+    assert {
+        "attempt",
+        "lease_token",
+        "lease_expires_at",
+        "recovery_due_at",
+        "published_at",
+    }.isdisjoint(columns)
+    assert not {
+        table_name for table_name in TaskJob.metadata.tables if "outbox" in table_name
+    }

@@ -57,6 +57,24 @@ async def test_mark_processing_sets_started_at(
     assert kwargs["started_at"] is not None
 
 
+async def test_current_duplicate_delivery_can_reopen_completed_task(
+    repo_ctx: tuple[TaskRepository, AsyncMock],
+) -> None:
+    """WS2 baseline: mark_processing has no expected-status CAS fence."""
+    repo, _ = repo_ctx
+    completed_task = MagicMock()
+    completed_task.status = TaskStatus.COMPLETED
+    repo.get = AsyncMock(return_value=completed_task)
+    repo.crud.update = AsyncMock(return_value=completed_task)
+
+    result = await repo.mark_processing(task_id=uuid.uuid4())
+
+    assert result is completed_task
+    update_kwargs = repo.crud.update.await_args.kwargs
+    assert update_kwargs["db_obj"].status == TaskStatus.COMPLETED
+    assert update_kwargs["obj_in"]["status"] == TaskStatus.PROCESSING
+
+
 async def test_mark_completed_sets_finished_at(
     repo_ctx: tuple[TaskRepository, AsyncMock],
 ) -> None:

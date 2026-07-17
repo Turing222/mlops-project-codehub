@@ -21,7 +21,7 @@ from backend.application.chat.stream_events import (
     encode_started_event,
 )
 from backend.application.chat.web_stream_workflow import ChatWorkflow
-from backend.models.enums import MessageStatus
+from backend.models.enums import ChatGenerationStatus, MessageStatus
 from backend.models.schemas.chat.commands import (
     ChatQueryCommand,
     RetryChatGenerationCommand,
@@ -171,6 +171,89 @@ async def test_stream_workflow_queues_and_dispatches_before_meta() -> None:
         dispatcher.enqueue_stream.await_args.kwargs["generation_attempt"]
         == generation_attempt
     )
+
+
+async def test_current_dispatch_failure_leaves_request_queued() -> None:
+    """WS2 baseline: queue CAS succeeds before an unavailable broker is observed."""
+    user_id = uuid.uuid4()
+    session = SimpleNamespace(id=uuid.uuid4(), title="Session")
+    assistant_message = SimpleNamespace(id=uuid.uuid4())
+    generation_request = SimpleNamespace(
+        id=uuid.uuid4(),
+        attempt=1,
+        status=ChatGenerationStatus.PREPARED,
+    )
+    prepared = ChatPreparedRequest(
+        session=cast(Any, session),
+        generation_request=cast(Any, generation_request),
+        assistant_message=cast(Any, assistant_message),
+        generation_payload=GenerationPayload(
+            session_id=session.id,
+            query_text="hello",
+        ),
+        lock_key=None,
+        lock_token=None,
+        trace_attrs={},
+    )
+    generation_attempt = GenerationAttemptPayload(
+        request_id=generation_request.id,
+        attempt=1,
+        task_id="task-unavailable",
+        lease_token="lease-unavailable",
+    )
+    dispatcher = AsyncMock()
+    dispatcher.enqueue_stream.side_effect = ConnectionError("broker unavailable")
+    workflow = ChatWorkflow(
+        uow=cast(Any, SimpleNamespace()),
+        dispatcher=dispatcher,
+        redis_client=cast(Any, FakeStreamRedis(FakePubSub())),
+        permission_service=cast(Any, SimpleNamespace()),
+        feature_flag_service=_make_mock_feature_flag_service(),
+    )
+
+    async def queue_request(**_: object) -> GenerationAttemptPayload:
+        generation_request.status = ChatGenerationStatus.QUEUED
+        return generation_attempt
+
+    with (
+        patch(
+            "backend.application.chat.web_stream_workflow.ChatSessionOrchestrator.resolve_existing_generation_request",
+            AsyncMock(return_value=None),
+        ),
+        patch(
+            "backend.application.chat.web_stream_workflow.ChatSessionOrchestrator.check_idempotency",
+            AsyncMock(
+                return_value=ChatIdempotencyState(
+                    lock_key=None,
+                    lock_token=None,
+                    is_new=True,
+                    value=None,
+                )
+            ),
+        ),
+        patch(
+            "backend.application.chat.web_stream_workflow.ChatSessionOrchestrator.prepare_request",
+            AsyncMock(return_value=prepared),
+        ),
+        patch(
+            "backend.application.chat.web_stream_workflow.ChatSessionOrchestrator.queue_generation_request",
+            AsyncMock(side_effect=queue_request),
+        ) as queue_generation_request,
+    ):
+        events = [
+            event
+            async for event in workflow.handle_query_stream(
+                ChatQueryCommand(user_id=user_id, query_text="hello")
+            )
+        ]
+
+    queue_generation_request.assert_awaited_once()
+    dispatcher.enqueue_stream.assert_awaited_once()
+    assert generation_request.status == ChatGenerationStatus.QUEUED
+    assert events[0]["type"] == "error"
+    assert events[0]["error_code"] == "CHAT_DISPATCH_FAILED"
+    assert events[0]["retryable"] is False
+    assert events[-1] == {"type": "done"}
 
 
 async def test_retry_stream_uses_authorized_attempt_and_emits_identity() -> None:

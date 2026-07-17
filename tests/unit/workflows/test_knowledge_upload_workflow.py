@@ -18,6 +18,24 @@ from backend.services.knowledge_service import SavedKnowledgeFile
 from tests.unit.workflows.conftest import FakeAsyncUow
 
 
+class RecordingAsyncUow:
+    def __init__(self, name: str, events: list[str]) -> None:
+        self.name = name
+        self.events = events
+
+    async def __aenter__(self) -> RecordingAsyncUow:
+        self.events.append(f"{self.name}.enter")
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: object,
+        exc: object,
+        traceback: object,
+    ) -> None:
+        self.events.append(f"{self.name}.exit")
+
+
 async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(
     monkeypatch,
 ) -> None:
@@ -82,6 +100,67 @@ async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(
     assert result.file_status == FileStatus.UPLOADED
     assert result.task_status == "pending"
     assert result.deduplicated is False
+
+
+async def test_current_upload_commits_file_then_task_before_dispatch() -> None:
+    """WS2 baseline: file and TaskJob commit separately before broker dispatch."""
+    events: list[str] = []
+    file_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    kb_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    file_obj = SimpleNamespace(
+        id=file_id,
+        file_path="/tmp/demo.md",
+        filename="demo.md",
+        status=FileStatus.UPLOADED,
+    )
+
+    async def save_file(**_: object) -> SavedKnowledgeFile:
+        events.append("file.saved")
+        return SavedKnowledgeFile(
+            file=file_obj,
+            should_ingest=True,
+            deduplicated=False,
+        )
+
+    async def create_task(**_: object) -> SimpleNamespace:
+        events.append("task.created")
+        return SimpleNamespace(id=task_id, status="pending")
+
+    async def dispatch(*_: object) -> None:
+        events.append("broker.dispatch")
+
+    knowledge_service = SimpleNamespace(
+        uow=RecordingAsyncUow("knowledge_uow", events),
+        save_upload_file_for_ingestion=AsyncMock(side_effect=save_file),
+    )
+    task_service = SimpleNamespace(
+        uow=RecordingAsyncUow("task_uow", events),
+        create_kb_ingestion_task=AsyncMock(side_effect=create_task),
+    )
+    dispatcher = SimpleNamespace(enqueue_ingestion=AsyncMock(side_effect=dispatch))
+    workflow = KnowledgeUploadWorkflow(
+        knowledge_service=knowledge_service,
+        task_service=task_service,
+        dispatcher=dispatcher,
+    )
+
+    await workflow.submit(
+        kb_id=kb_id,
+        user_id=user_id,
+        upload_file=MagicMock(spec=UploadFile),
+    )
+
+    assert events == [
+        "knowledge_uow.enter",
+        "file.saved",
+        "knowledge_uow.exit",
+        "task_uow.enter",
+        "task.created",
+        "task_uow.exit",
+        "broker.dispatch",
+    ]
 
 
 async def test_submit_reuses_ready_duplicate_without_dispatching_job() -> None:

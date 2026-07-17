@@ -36,3 +36,14 @@ def test_validate_scheduler_schedules_reports_missing_required_task(
 
     with pytest.raises(RuntimeError, match="missing_schedule"):
         scheduler_entrypoint.validate_scheduler_schedules()
+
+
+def test_current_scheduler_has_no_chat_generation_recovery_schedule() -> None:
+    """WS2 baseline: due PREPARED and QUEUED requests have no periodic scanner."""
+    from backend.worker import scheduler_entrypoint
+
+    assert all(
+        "chat_generation" not in task_name
+        for task_name, _ in scheduler_entrypoint.REQUIRED_SCHEDULE_KEYS
+    )
+    assert "chat" not in scheduler_entrypoint.DEFAULT_SCHEDULER_MODULES
