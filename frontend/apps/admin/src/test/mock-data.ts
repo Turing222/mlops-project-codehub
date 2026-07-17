@@ -48,6 +48,40 @@ export function buildMockSession(overrides: MockOverrides = {}) {
     };
 }
 
+export function buildMockChatMessage(overrides: MockOverrides = {}) {
+    return {
+        id: 'message-1',
+        session_id: 'session-1',
+        role: 'assistant',
+        content: 'Hello from the assistant.',
+        status: 'success',
+        created_at: '2025-01-20T12:00:00Z',
+        updated_at: '2025-01-20T12:00:00Z',
+        ...overrides,
+    };
+}
+
+export function buildMockSessionDetail(options: {
+    session?: MockOverrides;
+    messages?: MockOverrides[];
+} = {}) {
+    const session = buildMockSession(options.session);
+    const messages = options.messages ?? [
+        buildMockChatMessage({
+            id: 'message-user-1',
+            session_id: session.id,
+            role: 'user',
+            content: 'Hello',
+        }),
+        buildMockChatMessage({ session_id: session.id }),
+    ];
+    return {
+        session,
+        messages,
+        total_messages: messages.length,
+    };
+}
+
 export function buildMockSessionList(
     sessions: MockOverrides[] = [buildMockSession()],
 ) {

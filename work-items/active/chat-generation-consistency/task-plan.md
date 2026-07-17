@@ -74,4 +74,32 @@
 ## Open Decisions 说明
 
 - `storage-migration-order`：当前已有 `storage-column-types` work item 准备新增 Alembic revision。推荐单人先完成该 migration，或明确将其设为 deferred；在此之前可以完成失败基线测试，但不创建 Chat migration。
-- `quality-baseline-disposition`：当前 `flow-fast` 仍受 11 个既有 Ruff format 差异和 `scripts/qa/check_serena_mcp.py` 裸循环阻断。它们不属于 T1-3 行为修复，推荐作为独立 T1-1 小型清理处理；在清理完成前可以编写并运行 T1-3 focused tests，但 PR1 合并前应恢复完整绿色基线。
+- `quality-baseline-disposition`：当前 `flow-fast` 仍受 7 个既有 Ruff format 差异和 `scripts/qa/check_serena_mcp.py` 裸循环阻断。它们不属于 T1-3 行为修复，推荐作为独立 T1-1 小型清理处理；本工作项的 focused tests 已通过，但提交合并前仍应恢复完整绿色基线。
+
+## WS6 验证结论
+
+2026-07-17 的 rollout 与故障矩阵已验证以下边界：
+
+| 场景 | 验证证据 | 结论 |
+| --- | --- | --- |
+| flag 缺失或关闭 | FeatureFlag 默认值、API component、Playwright 历史会话 | 默认 `false`；前端不暴露重试入口，后端返回 `CHAT_EXPLICIT_RETRY_DISABLED` 且不改变 request 状态。 |
+| flag 开启且刷新后重试 | `chat-retry-flow.spec.ts`、`use-chat-stream.test.tsx`、stream workflow unit | 使用服务端 `generation_request_id` 与 `expected_attempt` 调用 retry endpoint；不回退到普通 `query_stream`，完成后仍只有一个 assistant message。 |
+| RUNNING、已成功、不可重试、stale attempt | session orchestrator 参数化回归 | 分别返回稳定冲突码，不触发 retry CAS 或重复 dispatch。 |
+| meta 前断流与身份未知 | `use-chat-stream.test.tsx` | 先按 client request identity 解析；解析失败时 fail-closed，不生成新 ID 盲重发。 |
+| actor / Workspace / session 边界 | Chat API component 与真实 PostgreSQL repository tests | 跨 actor 隐藏为 404；只有仍有效的 Workspace membership 和 session 可读取或推进 request。 |
+| 重复 settlement、晚到 Worker、Credits / DB 失败 | Worker persistence 与真实 PostgreSQL tests | message、Credits settlement 和 request terminal 由同一事务与 attempt / lease fence 保护；失败不会伪装为成功。 |
+| Redis 清理或发布边界 | Redis failure unit 与真实 Redis pub/sub integration | Redis 清理失败不逆转 PostgreSQL 终态；结构化 `error_code` / `retryable` 经过真实 pub/sub 保持不变。 |
+
+本矩阵证明的是 T1-3 的持久终态、授权查询和显式重试闭环，不等于自动恢复、任务不丢或高可用。
+
+验证运行结果：后端 unit `985 passed / 9 skipped`、component `42 passed`、retry focused matrix `56 passed`；一次性 PostgreSQL `5 passed`、一次性 Redis `1 passed`；前端 Vitest `316 passed`、mock Playwright `13 passed`，production build 与 `461.9 KiB / 504.0 KiB` bundle gate 通过。Ruff lint、import boundary、test marker、Alembic、config、docs、skill 和 changed-scope format checks 通过；仓库级 format check 与 bare-loop gate 仍只被上文记录的既有 T1-1 债阻断，`ty` 以 16 个既有 warning、0 error 退出成功。
+
+## T1-4 / T1-5 交接合同
+
+T1-4 可直接复用 generation request 上的 `status`、`attempt`、`task_id`、`lease_token`、`heartbeat_at`、`lease_expires_at` 和 `recovery_due_at`，但后续实现仍必须单独证明：
+
+- `PREPARED + recovery_due_at <= now` 由 reconciler 通过 CAS 接管，重复扫描不会重复 dispatch。
+- `QUEUED` / `RUNNING` 的 lease 过期恢复会先 fence 旧 attempt，再执行有上限的恢复；不能启用 TaskIQ 盲目自动 retry。
+- 达到恢复上限后写入明确 terminal failure，不让请求永久停留在 active 状态。
+
+T1-5 的日志与告警至少关联 `event`、`error_code`、`http_request_id`、`generation_request_id`、`client_request_id`、`attempt`、`status`、`task_id`、`recovery_due_at` 和 `lease_expires_at`。最低告警场景为 PREPARED 超时、lease 过期、terminal settlement 失败、stale attempt / retry conflict 异常增长及 Redis publish 失败。实际告警规则、阈值、CloudWatch / SNS 交付和恢复演练均未在 T1-3 实现。

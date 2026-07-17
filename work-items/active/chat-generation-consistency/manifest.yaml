@@ -40,31 +40,31 @@ workstreams:
     deps: [4]
   - id: 6
     title: Validate rollout behavior and hand off T1-4 recovery dependencies.
-    status: pending
+    status: done
     kind: serial
     deps: [5]
 
 current_checkpoint:
-  name: ws5-authorized-explicit-retry-implemented
-  state: implemented
-  summary: Actor-scoped request status resolution, expected-attempt retry dispatch, additive SSE and session-detail identity, and the backend-controlled chat-explicit-retry frontend path are implemented. The old local-ID replay and new-ID fallback paths are removed; missing flag, identity, or durable status fails closed. Full unit, component, frontend, mock E2E, production build, and disposable PostgreSQL checks pass. The WS5 checkpoint is complete; WS6 owns rollout fault-matrix validation and the T1-4/T1-5 handoff.
+  name: t1-3-rollout-matrix-validated
+  state: validated
+  summary: All six workstreams are done. Flag-off and missing-flag paths fail closed, while flag-on retries a refreshed historical failure through the durable request identity and expected-attempt contract without falling back to query_stream. The focused retry matrix, full frontend Vitest and mock Playwright suites, and disposable PostgreSQL and Redis contracts pass. T1-4 PREPARED/lease recovery and T1-5 alert delivery remain explicit handoffs rather than claimed T1-3 capabilities.
 
 open_decisions:
   - id: quality-baseline-disposition
     note: Clear the pre-existing Ruff format debt and scripts/qa/check_serena_mcp.py bare loop in a separate T1-1 cleanup before PR 1 is merged; focused T1-3 regression work may proceed meanwhile.
   - id: chat-explicit-retry-rollout
-    note: The solo maintainer owns rollout. Keep chat-explicit-retry default-off through WS5, enable it only after the WS6 flag-on/off and refreshed-session fault matrix passes, retain it for one observation window as the rollback switch, then remove the frontend branch and backend registration together.
+    note: The solo maintainer owns rollout. The validated WS6 checkpoint is committed; keep chat-explicit-retry default-off until a controlled observation window starts, enable it only for the maintainer or test cohort first, retain it as the rollback switch, and remove the frontend branch and backend registration together only after the window is clean.
 
 next_choices:
   - id: A
-    label: Start WS6 validation
-    note: Run the explicit flag-on/off fault matrix and record the remaining PREPARED, lease-recovery, and alert dependencies without implementing T1-4 recovery.
+    label: Start controlled rollout
+    note: Enable chat-explicit-retry only for the maintainer or test cohort, verify live and refreshed retry once, and keep the flag as the immediate rollback switch.
   - id: B
-    label: Rehearse rollout rollback
-    note: Exercise chat-explicit-retry enable and disable transitions against the same durable request fixtures before widening traffic.
+    label: Clear quality baseline debt
+    note: During the observation window, fix the seven pre-existing Ruff format differences and the bounded-loop QA blocker in a separate T1-1 commit so future flow-fast failures are actionable.
   - id: C
-    label: Clear repository quality debt
-    note: Fix the recorded flow-fast blockers as a separate T1-1 cleanup before the work item needs a fully green merge baseline.
+    label: Open T1-4 recovery work
+    note: After the rollout baseline is stable, scope the PREPARED reconciler and lease-expiry recovery as a separate work item; do not fold automatic replay into this validated T1-3 checkpoint.
 
 attached_artifacts:
   task_plan: task-plan.md
