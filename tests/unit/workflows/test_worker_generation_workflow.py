@@ -376,7 +376,14 @@ async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch) -
 
     assert without_step_events(redis.published) == [
         ("stream:test", encode_started_event()),
-        ("stream:test", encode_error_event("provider failed")),
+        (
+            "stream:test",
+            encode_error_event(
+                "provider failed",
+                error_code="LLM_FAILED",
+                retryable=True,
+            ),
+        ),
         ("stream:test", encode_done_event()),
     ]
     assert redis.deleted == ["idempotency:test"]
@@ -416,7 +423,14 @@ async def test_worker_stream_system_error_returns_generic_message(monkeypatch) -
     assert result.error == "服务暂时不可用，请稍后重试"
     assert without_step_events(redis.published) == [
         ("stream:test", encode_started_event()),
-        ("stream:test", encode_error_event("服务暂时不可用，请稍后重试")),
+        (
+            "stream:test",
+            encode_error_event(
+                "服务暂时不可用，请稍后重试",
+                error_code="CHAT_GENERATION_FAILED",
+                retryable=True,
+            ),
+        ),
         ("stream:test", encode_done_event()),
     ]
     assert redis.deleted == ["idempotency:test"]

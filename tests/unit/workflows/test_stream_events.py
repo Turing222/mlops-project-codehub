@@ -43,6 +43,18 @@ def test_stream_events_round_trip_structured_payloads() -> None:
     assert decode_stream_event(encode_done_event()) == {"type": "done"}
     assert decode_stream_event(encode_started_event()) == {"type": "started"}
     assert decode_stream_event(
+        encode_error_event(
+            "failed",
+            error_code="CHAT_GENERATION_FAILED",
+            retryable=True,
+        )
+    ) == {
+        "type": "error",
+        "message": "failed",
+        "error_code": "CHAT_GENERATION_FAILED",
+        "retryable": True,
+    }
+    assert decode_stream_event(
         encode_step_event(
             step="kb-search",
             status="done",
@@ -81,6 +93,20 @@ def test_http_sse_event_helpers_build_typed_payloads() -> None:
     }
     assert chunk_event("hello") == {"type": "chunk", "content": "hello"}
     assert error_event("failed") == {"type": "error", "message": "failed"}
+    assert error_event(
+        "failed",
+        error_code="CHAT_GENERATION_FAILED",
+        retryable=True,
+        generation_request_id="request-1",
+        attempt=2,
+    ) == {
+        "type": "error",
+        "message": "failed",
+        "error_code": "CHAT_GENERATION_FAILED",
+        "retryable": True,
+        "generation_request_id": "request-1",
+        "attempt": 2,
+    }
     assert done_event() == {"type": "done"}
 
 
@@ -100,6 +126,7 @@ def test_http_sse_events_keep_existing_wire_format() -> None:
         'data: {"type": "chunk", "content": "hello"}\n\n'
     )
     assert encode_sse_event(done_event()) == "data: [DONE]\n\n"
-    assert encode_sse_event(
-        step_event(step="router-judge", status="running")
-    ) == 'data: {"type": "step", "step": "router-judge", "status": "running"}\n\n'
+    assert (
+        encode_sse_event(step_event(step="router-judge", status="running"))
+        == 'data: {"type": "step", "step": "router-judge", "status": "running"}\n\n'
+    )

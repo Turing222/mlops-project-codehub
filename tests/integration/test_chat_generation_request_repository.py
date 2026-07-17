@@ -385,6 +385,16 @@ async def test_attempt_and_lease_cas_reject_stale_worker_in_postgres(
         heartbeat_at=now + timedelta(seconds=10),
         lease_expires_at=now + timedelta(minutes=3),
     )
+    failed_message = await repo.update_message_status(
+        message_id=assistant_message_id,
+        status=MessageStatus.FAILED,
+        content="provider timed out",
+        tokens_input=12,
+        tokens_output=3,
+        search_context={"stale": True},
+        message_metadata={"metrics": {"attempt": 1}},
+    )
+    assert failed_message is not None
     assert await repo.try_finalize_generation_request(
         request_id=request.id,
         expected_attempt=1,
@@ -405,6 +415,15 @@ async def test_attempt_and_lease_cas_reject_stale_worker_in_postgres(
         )
         == 2
     )
+    assert await repo.reset_assistant_message_for_retry(message_id=assistant_message_id)
+    reset_message = await repo.get_message(assistant_message_id)
+    assert reset_message is not None
+    assert reset_message.status == MessageStatus.THINKING
+    assert reset_message.content == ""
+    assert reset_message.tokens_input == 0
+    assert reset_message.tokens_output == 0
+    assert reset_message.search_context is None
+    assert reset_message.message_metadata == {}
     assert not await repo.try_finalize_generation_request(
         request_id=request.id,
         expected_attempt=1,

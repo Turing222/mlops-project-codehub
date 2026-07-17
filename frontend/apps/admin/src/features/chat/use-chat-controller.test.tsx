@@ -17,10 +17,14 @@ vi.mock('../../api/chat', () => ({
         messages: [],
         total_messages: 0,
     }),
+    getGenerationRequestAPI: vi.fn().mockRejectedValue(new Error('not found')),
+    resolveGenerationRequestAPI: vi.fn().mockRejectedValue(new Error('not found')),
 }));
 
-vi.mock('../../streams/chat-stream', () => ({
+vi.mock('../../streams/chat-stream', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../streams/chat-stream')>()),
     streamChatQuery: vi.fn(),
+    streamChatRetry: vi.fn(),
 }));
 
 const mockAuthState = vi.hoisted(() => ({
@@ -430,8 +434,10 @@ describe('useChatController', () => {
         });
 
         // Step 2 (kb-search) is running at this point
-        act(() => {
+        await act(async () => {
             capturedCallbacks.onError!(new Error('fail'));
+            await Promise.resolve();
+            await Promise.resolve();
         });
 
         const runningIdx = result.current.traceSteps.findIndex((s) => s.status === 'error');
@@ -865,39 +871,12 @@ describe('useChatController', () => {
         expect(result.current.messages.some((m) => m.content === 'stale from detail')).toBe(false);
     });
 
-    it('retryFailedMessage deletes the error message and retries with the original clientRequestId', async () => {
-        const capturedOptions: StreamOptions[] = [];
-        mockStreamChatQuery.mockImplementation((options: StreamOptions, callbacks: StreamCallbacks) => {
-            capturedOptions.push(options);
-            callbacks.onError!(new Error('Immediate fail'));
-            return new AbortController();
-        });
-
+    it('does not expose explicit retry when the backend flag is missing', () => {
         const { result } = renderHook(() => useChatController(), {
             wrapper: createWrapper(),
         });
 
-        await act(async () => {
-            result.current.sendQuery('query one');
-        });
-
-        expect(result.current.messages).toHaveLength(2);
-        const errorMessage = result.current.messages[1];
-        expect(errorMessage.status).toBe('failed');
-        expect(capturedOptions).toHaveLength(1);
-        const firstClientId = capturedOptions[0].clientRequestId;
-        expect(firstClientId).toBeDefined();
-
-        await act(async () => {
-            result.current.retryFailedMessage(errorMessage.id);
-        });
-
-        expect(result.current.messages).toHaveLength(2);
-        expect(capturedOptions).toHaveLength(2);
-        
-        const secondClientId = capturedOptions[1].clientRequestId;
-        expect(secondClientId).toBeDefined();
-        expect(secondClientId).toBe(firstClientId);
+        expect(result.current.retryFailedMessage).toBeUndefined();
     });
 
     it('preserves historical messages when sending a new query in an active historical session', async () => {

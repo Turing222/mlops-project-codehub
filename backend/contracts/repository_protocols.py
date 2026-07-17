@@ -126,6 +126,10 @@ class ChatRepositoryProtocol(Protocol):
         self, *, user_id: uuid.UUID, client_request_id: str
     ) -> ChatGenerationRequest | None: ...
 
+    async def get_generation_requests_for_session_for_actor(
+        self, *, session_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Sequence[ChatGenerationRequest]: ...
+
     async def try_queue_generation_request(
         self,
         *,
@@ -184,6 +188,10 @@ class ChatRepositoryProtocol(Protocol):
         expected_attempt: int,
         recovery_due_at: datetime.datetime,
     ) -> int | None: ...
+
+    async def reset_assistant_message_for_retry(
+        self, *, message_id: uuid.UUID
+    ) -> bool: ...
 
     async def get_session(self, session_id: uuid.UUID) -> ChatSession | None: ...
 

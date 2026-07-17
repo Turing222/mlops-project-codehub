@@ -339,19 +339,23 @@ class LLMGenerationWorkerWorkflow:
         if isinstance(exc, TerminalSettlementError):
             error_content = exc.error_message
             error_code = exc.error_code
+            retryable = True
             should_persist_failure = False
         elif isinstance(exc, GenerationAttemptRejected):
             error_content = "请求状态已变化，本次执行结果已丢弃"
             error_code = "CHAT_GENERATION_ATTEMPT_REJECTED"
+            retryable = False
             should_persist_failure = False
         elif isinstance(exc, AppException):
             logger.warning("TaskIQ 调用 LLM 业务异常: %s", exc)
             error_content = str(exc)
             error_code = exc.code
+            retryable = True
         else:
             logger.exception("TaskIQ 调用 LLM 系统异常")
             error_content = "服务暂时不可用，请稍后重试"
             error_code = "CHAT_GENERATION_FAILED"
+            retryable = True
 
         if should_persist_failure:
             try:
@@ -361,10 +365,14 @@ class LLMGenerationWorkerWorkflow:
                     idempotency_lock_key=idempotency_lock_key,
                     generation_attempt=generation_attempt,
                     error_code=error_code,
+                    retryable=retryable,
                 )
             except GenerationAttemptRejected:
                 error_content = "请求状态已变化，本次执行结果已丢弃"
+                error_code = "CHAT_GENERATION_ATTEMPT_REJECTED"
+                retryable = False
             except Exception:
+                retryable = False
                 logger.exception(
                     "Chat terminal failure persistence failed: message_id=%s",
                     assistant_message_id,
@@ -372,7 +380,12 @@ class LLMGenerationWorkerWorkflow:
 
         if channel is not None:
             try:
-                await self.stream_publisher.publish_error(channel, error_content)
+                await self.stream_publisher.publish_error(
+                    channel,
+                    error_content,
+                    error_code=error_code,
+                    retryable=retryable,
+                )
             except Exception:
                 logger.warning(
                     "Chat terminal Redis error publish failed: channel=%s",

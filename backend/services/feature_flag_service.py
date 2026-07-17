@@ -153,6 +153,9 @@ class FeatureFlagService:
             "enable-agent-trace": self._eval_flag(
                 gb, "enable-agent-trace", features_dict, bool(user.is_superuser)
             ),
+            "chat-explicit-retry": self._eval_flag(
+                gb, "chat-explicit-retry", features_dict, False
+            ),
         }
 
     @staticmethod

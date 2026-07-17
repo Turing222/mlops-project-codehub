@@ -25,6 +25,7 @@ from backend.models.schemas.chat.params import LLMExtraBody, LLMThinkingConfig
 from backend.models.schemas.chat.payloads import (
     GenerationAttemptPayload,
     GenerationPayload,
+    GenerationRequestContext,
     GenerationResult,
     LLMTaskPayload,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "ConversationMessage",
     "GenerationAttemptPayload",
     "GenerationPayload",
+    "GenerationRequestContext",
     "GenerationResult",
     "LLMExtraBody",
     "LLMQueryDTO",

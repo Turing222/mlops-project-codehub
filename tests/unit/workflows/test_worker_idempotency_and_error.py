@@ -118,7 +118,14 @@ async def test_stream_error_publishes_error_and_done_and_cleans_lock(
     ]
     assert non_step_events == [
         ("stream:err", encode_started_event()),
-        ("stream:err", encode_error_event("provider failed")),
+        (
+            "stream:err",
+            encode_error_event(
+                "provider failed",
+                error_code="LLM_FAILED",
+                retryable=True,
+            ),
+        ),
         ("stream:err", encode_done_event()),
     ]
     assert redis.deleted == ["idempotency:err"]

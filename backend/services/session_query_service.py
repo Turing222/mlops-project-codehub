@@ -82,13 +82,39 @@ class SessionQueryService(BaseService[AbstractUnitOfWork]):
             skip=skip,
             limit=limit,
         )
+        generation_requests = (
+            await self.uow.chat_repo.get_generation_requests_for_session_for_actor(
+                session_id=session.id,
+                user_id=user_id,
+            )
+        )
         total_messages = await self.uow.chat_repo.count_session_messages(session.id)
         total_tokens = await self.uow.chat_repo.get_session_total_tokens(session.id)
+
+        requests_by_message_id = {
+            request.assistant_message_id: request
+            for request in generation_requests
+            if request.assistant_message_id is not None
+        }
+        message_responses = []
+        for message in messages:
+            response = MessageResponse.model_validate(message)
+            generation_request = requests_by_message_id.get(message.id)
+            if generation_request is not None:
+                response = response.model_copy(
+                    update={
+                        "generation_request_id": generation_request.id,
+                        "attempt": generation_request.attempt,
+                        "retryable": generation_request.retryable,
+                        "error_code": generation_request.error_code,
+                    }
+                )
+            message_responses.append(response)
 
         session_res = self._to_session_response(session, total_tokens)
         return SessionDetailResponse(
             session=session_res,
-            messages=[MessageResponse.model_validate(msg) for msg in messages],
+            messages=message_responses,
             total_messages=total_messages,
         )
 

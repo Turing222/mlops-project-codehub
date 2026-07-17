@@ -315,6 +315,10 @@ async def test_idempotency_replay_with_success_message_returns_cached_answer() -
         latency_ms=123,
         search_context={"hits": []},
         message_metadata={},
+        generation_request_id=None,
+        attempt=None,
+        retryable=None,
+        error_code=None,
         created_at=now,
         updated_at=now,
     )

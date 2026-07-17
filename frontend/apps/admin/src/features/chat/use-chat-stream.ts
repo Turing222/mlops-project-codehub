@@ -2,10 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { resolveIdempotencyKey } from '../../lib/http/idempotency';
 import { chatKeys } from '../../query/keys/chat';
-import { getSessionDetailAPI } from '../../api/chat';
-import { streamChatQuery } from '../../streams/chat-stream';
+import {
+  getGenerationRequestAPI,
+  getSessionDetailAPI,
+  resolveGenerationRequestAPI,
+} from '../../api/chat';
+import {
+  ChatStreamError,
+  streamChatQuery,
+  streamChatRetry,
+} from '../../streams/chat-stream';
 import { submitRepoReadmeCheckAPI } from '../../api/repo-analysis';
 import type { ChatMessage } from '../../types/chat';
+import type { GenerationRequestStatus } from '../../schemas/chat';
 import type {
   SendMessageOptions,
   UseChatStreamParams,
@@ -21,20 +30,29 @@ export type {
   UseChatStreamReturn,
 } from './use-chat-stream-types';
 
-const RETRY_CACHE_TTL_MS = 5 * 60 * 1000;
-
-type RetryCacheEntry = {
-  clientRequestId: string;
-  query: string;
-  createdAt: number;
-};
-
 function tempMessage(
   partial: Pick<ChatMessage, 'id' | 'session_id' | 'role' | 'content' | 'status'> &
     Partial<ChatMessage>,
 ): ChatMessage {
   const now = new Date().toISOString();
   return { created_at: now, updated_at: now, ...partial };
+}
+
+async function resolveGenerationStatus(
+  generationRequestId: string | undefined,
+  clientRequestId: string | undefined,
+): Promise<GenerationRequestStatus | null> {
+  try {
+    if (generationRequestId) {
+      return await getGenerationRequestAPI(generationRequestId);
+    }
+    if (clientRequestId) {
+      return await resolveGenerationRequestAPI(clientRequestId);
+    }
+  } catch {
+    // Missing or unauthorized identity is intentionally non-retryable.
+  }
+  return null;
 }
 
 export function useChatStream({
@@ -46,13 +64,13 @@ export function useChatStream({
   sessionActions,
   traceActions,
   resolveDefaultKbId,
+  explicitRetryEnabled,
 }: UseChatStreamParams): UseChatStreamReturn {
   const queryClient = useQueryClient();
   const [streamingText, setStreamingText] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
-  const retryCacheRef = useRef<Map<string, RetryCacheEntry>>(new Map());
   const latestRef = useRef({
     sessionActions,
     traceActions,
@@ -62,6 +80,7 @@ export function useChatStream({
     resolveDefaultKbId,
     refreshUser,
     displayedMessages,
+    explicitRetryEnabled,
   });
   useEffect(() => {
     latestRef.current = {
@@ -73,17 +92,9 @@ export function useChatStream({
       resolveDefaultKbId,
       refreshUser,
       displayedMessages,
+      explicitRetryEnabled,
     };
   });
-
-  const pruneRetryCache = useCallback(() => {
-    const now = Date.now();
-    for (const [messageId, entry] of retryCacheRef.current.entries()) {
-      if (now - entry.createdAt > RETRY_CACHE_TTL_MS) {
-        retryCacheRef.current.delete(messageId);
-      }
-    }
-  }, []);
 
   const abort = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -91,7 +102,6 @@ export function useChatStream({
 
   const resetStream = useCallback(() => {
     abortControllerRef.current?.abort();
-    retryCacheRef.current.clear();
     setStreamingText('');
     setIsStreaming(false);
   }, []);
@@ -114,7 +124,6 @@ export function useChatStream({
     abortControllerRef.current?.abort();
     const newController = new AbortController();
     abortControllerRef.current = newController;
-    pruneRetryCache();
     session.enterLiveMode();
 
     if (mode === 'repo_check') {
@@ -159,9 +168,6 @@ export function useChatStream({
 
     const addUserMessage = options?.addUserMessage ?? true;
     const clientRequestId = resolveIdempotencyKey(options?.clientRequestId);
-    if (options?.retryMessageId) {
-      retryCacheRef.current.delete(options.retryMessageId);
-    }
     if (addUserMessage) {
       session.appendMessage(tempMessage({
         id: `temp-user-${Date.now()}`,
@@ -191,12 +197,9 @@ export function useChatStream({
           role: 'assistant',
           content: '无法获取默认知识库，请确保系统已配置知识库后再试。',
           status: 'failed',
+          retryable: false,
+          error_code: 'CHAT_PREFLIGHT_FAILED',
         }));
-        retryCacheRef.current.set(failedMessageId, {
-          clientRequestId,
-          query: normalizedText,
-          createdAt: Date.now(),
-        });
         return;
       }
     }
@@ -205,6 +208,8 @@ export function useChatStream({
     let runtimeSessionId: string | null = sessionId;
     let metaReceived = false;
     let messageId = '';
+    let generationRequestId: string | undefined;
+    let generationAttempt: number | undefined;
     let accumulatedContent = '';
     const queryStartTime = Date.now();
 
@@ -226,6 +231,8 @@ export function useChatStream({
           if (newController.signal.aborted || metaReceived) return;
           metaReceived = true;
           messageId = event.message_id || '';
+          generationRequestId = event.generation_request_id;
+          generationAttempt = event.attempt;
           runtimeSessionId = event.session_id || runtimeSessionId;
           const latest = latestRef.current;
           latest.traceActions.applyMetaSkips(latest.chatMode);
@@ -260,6 +267,9 @@ export function useChatStream({
             role: 'assistant',
             content: accumulatedContent,
             status: 'success',
+            generation_request_id: generationRequestId,
+            attempt: generationAttempt,
+            retryable: false,
           }));
           setStreamingText('');
           setIsStreaming(false);
@@ -292,57 +302,246 @@ export function useChatStream({
           if (newController.signal.aborted) return;
           setIsStreaming(false);
           setStreamingText('');
-          const latest = latestRef.current;
-          latest.traceActions.markError();
-          const failedMessageId = `temp-err-${Date.now()}`;
-          latest.sessionActions.appendMessage(tempMessage({
-            id: failedMessageId,
-            session_id: latest.activeSessionId || '',
-            role: 'assistant',
-            content: err.message || '请求处理失败，请稍后重试',
-            status: 'failed',
-          }));
-          retryCacheRef.current.set(failedMessageId, {
-            clientRequestId,
-            query: normalizedText,
-            createdAt: Date.now(),
+          const streamError = err instanceof ChatStreamError ? err : null;
+          const observedRequestId =
+            streamError?.generationRequestId || generationRequestId;
+          const observedAttempt = streamError?.attempt || generationAttempt;
+          void resolveGenerationStatus(observedRequestId, clientRequestId).then(async (status) => {
+            if (newController.signal.aborted) return;
+            const current = latestRef.current;
+            if (status?.status === 'succeeded') {
+              current.traceActions.completeIdle();
+              current.refreshUser().catch(() => { });
+              queryClient.invalidateQueries({ queryKey: chatKeys.sessions() });
+              queryClient.invalidateQueries({
+                queryKey: chatKeys.sessionDetail(status.session_id),
+              });
+              try {
+                const detail = await getSessionDetailAPI(status.session_id);
+                if (newController.signal.aborted) return;
+                const active = latestRef.current;
+                active.sessionActions.commitSession(detail.session);
+                active.sessionActions.updateMessages(() => detail.messages || []);
+              } catch {
+                if (newController.signal.aborted) return;
+                current.sessionActions.appendMessage(tempMessage({
+                  id: status.assistant_message_id || messageId || `temp-done-${Date.now()}`,
+                  session_id: status.session_id,
+                  role: 'assistant',
+                  content: '请求已完成，请刷新页面查看结果。',
+                  status: 'failed',
+                  generation_request_id: status.generation_request_id,
+                  attempt: status.attempt,
+                  retryable: false,
+                  error_code: 'CHAT_REQUEST_ALREADY_SUCCEEDED',
+                }));
+              }
+              return;
+            }
+
+            current.traceActions.markError();
+            const resolvedRequestId =
+              status?.generation_request_id || observedRequestId;
+            const resolvedAttempt = status?.attempt || observedAttempt;
+            const isRunning = status != null && (
+              status.status === 'prepared' ||
+              status.status === 'queued' ||
+              status.status === 'running'
+            );
+            const isRetryable = status?.status === 'failed' && status.retryable;
+            current.sessionActions.appendMessage(tempMessage({
+              id: status?.assistant_message_id || messageId || `temp-err-${Date.now()}`,
+              session_id: status?.session_id || runtimeSessionId || '',
+              role: 'assistant',
+              content: isRunning
+                ? '请求已被服务端接受，仍在生成中，请稍后刷新。'
+                : status?.error_message || err.message || '请求处理失败，请稍后重试',
+              status: 'failed',
+              generation_request_id: resolvedRequestId,
+              attempt: resolvedAttempt,
+              retryable: isRetryable,
+              error_code: isRunning
+                ? 'CHAT_REQUEST_STILL_RUNNING'
+                : status?.error_code || streamError?.errorCode || 'CHAT_REQUEST_IDENTITY_UNKNOWN',
+            }));
+            if (status?.session_id) {
+              queryClient.invalidateQueries({
+                queryKey: chatKeys.sessionDetail(status.session_id),
+              });
+            }
           });
         },
       },
     );
-  }, [pruneRetryCache, queryClient]);
+  }, [queryClient]);
 
   const retryFailedMessage = useCallback((messageId: string) => {
-    if (isStreaming) return;
-    pruneRetryCache();
-
-    let queryText = '';
-    let clientRequestId: string | undefined;
-    const entry = retryCacheRef.current.get(messageId);
-    if (entry) {
-      queryText = entry.query;
-      clientRequestId = entry.clientRequestId;
-    } else {
-      const messages = latestRef.current.displayedMessages;
-      const msgIndex = messages.findIndex((msg) => msg.id === messageId);
-      if (msgIndex > 0) {
-        const prevMsg = messages[msgIndex - 1];
-        if (prevMsg?.role === 'user') queryText = prevMsg.content;
-      }
-    }
-    if (!queryText) return;
-    if (entry) retryCacheRef.current.delete(messageId);
-
-    // Live messages are hydrated from history detail (PR5); delete from live state only.
-    latestRef.current.sessionActions.updateMessages((prev) =>
-      prev.filter((msg) => msg.id !== messageId),
+    const latest = latestRef.current;
+    if (isStreaming || !latest.explicitRetryEnabled) return;
+    const failedMessage = latest.displayedMessages.find(
+      (message) => message.id === messageId,
     );
-    void sendQuery(queryText, {
-      clientRequestId,
-      addUserMessage: false,
-      retryMessageId: messageId,
-    });
-  }, [isStreaming, pruneRetryCache, sendQuery]);
+    if (
+      !failedMessage?.retryable ||
+      !failedMessage.generation_request_id ||
+      failedMessage.attempt == null
+    ) return;
+
+    abortControllerRef.current?.abort();
+    const retryController = new AbortController();
+    abortControllerRef.current = retryController;
+    let runtimeSessionId = failedMessage.session_id || latest.activeSessionId;
+    let generationRequestId = failedMessage.generation_request_id;
+    let generationAttempt = failedMessage.attempt;
+    let accumulatedContent = '';
+    const retryStartedAt = Date.now();
+
+    latest.sessionActions.updateMessages((messages) =>
+      messages.map((message) => message.id === messageId
+        ? { ...message, content: '', status: 'thinking', retryable: false }
+        : message),
+    );
+    latest.traceActions.reset();
+    setStreamingText('');
+    setIsStreaming(true);
+
+    streamChatRetry(
+      {
+        generationRequestId,
+        expectedAttempt: generationAttempt,
+        sessionId: runtimeSessionId || undefined,
+        signal: retryController.signal,
+      },
+      {
+        onStarted() {
+          if (retryController.signal.aborted) return;
+          latestRef.current.traceActions.markNetworkStarted(
+            Date.now() - retryStartedAt,
+          );
+        },
+        onMeta(event) {
+          if (retryController.signal.aborted) return;
+          runtimeSessionId = event.session_id || runtimeSessionId;
+          generationRequestId = event.generation_request_id || generationRequestId;
+          generationAttempt = event.attempt || generationAttempt;
+          latestRef.current.traceActions.applyMetaSkips(
+            latestRef.current.chatMode,
+          );
+        },
+        onStep(event) {
+          if (retryController.signal.aborted) return;
+          latestRef.current.traceActions.handleStep(event);
+        },
+        onChunk(event) {
+          if (retryController.signal.aborted) return;
+          accumulatedContent += event.content;
+          setStreamingText((previous) => previous + event.content);
+        },
+        onDone() {
+          if (retryController.signal.aborted) return;
+          setStreamingText('');
+          setIsStreaming(false);
+          const current = latestRef.current;
+          current.traceActions.completeIdle();
+          current.refreshUser().catch(() => { });
+          current.sessionActions.updateMessages((messages) =>
+            messages.map((message) => message.id === messageId
+              ? {
+                ...message,
+                content: accumulatedContent,
+                status: 'success',
+                generation_request_id: generationRequestId,
+                attempt: generationAttempt,
+                retryable: false,
+                error_code: undefined,
+              }
+              : message),
+          );
+          if (runtimeSessionId) {
+            queryClient.invalidateQueries({
+              queryKey: chatKeys.sessionDetail(runtimeSessionId),
+            });
+            getSessionDetailAPI(runtimeSessionId).then((detail) => {
+              if (retryController.signal.aborted) return;
+              const active = latestRef.current;
+              active.sessionActions.commitSession(detail.session);
+              active.sessionActions.updateMessages(() => detail.messages || []);
+            }).catch(() => { });
+          }
+          queryClient.invalidateQueries({ queryKey: chatKeys.sessions() });
+        },
+        onError(error) {
+          if (retryController.signal.aborted) return;
+          setStreamingText('');
+          setIsStreaming(false);
+          const streamError = error instanceof ChatStreamError ? error : null;
+          const observedRequestId =
+            streamError?.generationRequestId || generationRequestId;
+          void resolveGenerationStatus(observedRequestId, undefined).then(async (status) => {
+            if (retryController.signal.aborted) return;
+            if (status?.status === 'succeeded') {
+              latestRef.current.traceActions.completeIdle();
+              queryClient.invalidateQueries({ queryKey: chatKeys.sessions() });
+              queryClient.invalidateQueries({
+                queryKey: chatKeys.sessionDetail(status.session_id),
+              });
+              try {
+                const detail = await getSessionDetailAPI(status.session_id);
+                if (retryController.signal.aborted) return;
+                const active = latestRef.current;
+                active.sessionActions.commitSession(detail.session);
+                active.sessionActions.updateMessages(() => detail.messages || []);
+              } catch {
+                if (retryController.signal.aborted) return;
+                latestRef.current.sessionActions.updateMessages((messages) =>
+                  messages.map((message) => message.id === messageId
+                    ? {
+                      ...message,
+                      content: '请求已完成，请刷新页面查看结果。',
+                      status: 'failed',
+                      generation_request_id: status.generation_request_id,
+                      attempt: status.attempt,
+                      retryable: false,
+                      error_code: 'CHAT_REQUEST_ALREADY_SUCCEEDED',
+                    }
+                    : message),
+                );
+              }
+              return;
+            }
+
+            latestRef.current.traceActions.markError();
+            const isRunning = status != null && (
+              status.status === 'prepared' ||
+              status.status === 'queued' ||
+              status.status === 'running'
+            );
+            const canRetry = streamError?.retryable === false
+              ? false
+              : status?.status === 'failed' && status.retryable;
+            latestRef.current.sessionActions.updateMessages((messages) =>
+              messages.map((message) => message.id === messageId
+                ? {
+                  ...message,
+                  content: isRunning
+                    ? '请求已被服务端接受，仍在生成中，请稍后刷新。'
+                    : status?.error_message || error.message,
+                  status: 'failed',
+                  generation_request_id:
+                    status?.generation_request_id || observedRequestId,
+                  attempt: status?.attempt || streamError?.attempt || generationAttempt,
+                  retryable: canRetry,
+                  error_code: isRunning
+                    ? 'CHAT_REQUEST_STILL_RUNNING'
+                    : status?.error_code || streamError?.errorCode || 'CHAT_REQUEST_IDENTITY_UNKNOWN',
+                }
+                : message),
+            );
+          });
+        },
+      },
+    );
+  }, [isStreaming, queryClient]);
 
   return {
     streamingText,

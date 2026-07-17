@@ -10,7 +10,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from backend.models.enums import MessageStatus
+from backend.models.enums import ChatGenerationStatus, MessageStatus
 from backend.models.schemas.chat.context_routing import ContextMode
 from backend.models.schemas.chat.params import LLMExtraBody
 
@@ -78,6 +78,10 @@ class MessageResponse(BaseModel):
     latency_ms: int | None = None
     search_context: dict | None = None
     message_metadata: dict = Field(default_factory=dict)
+    generation_request_id: uuid.UUID | None = None
+    attempt: int | None = Field(None, ge=1)
+    retryable: bool | None = None
+    error_code: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -127,3 +131,28 @@ class SessionDetailResponse(BaseModel):
     session: SessionResponse
     messages: list[MessageResponse]
     total_messages: int
+
+
+class GenerationRequestStatusResponse(BaseModel):
+    """Actor-scoped durable Chat generation state."""
+
+    generation_request_id: uuid.UUID
+    client_request_id: str
+    session_id: uuid.UUID
+    assistant_message_id: uuid.UUID | None = None
+    status: ChatGenerationStatus
+    attempt: int = Field(ge=1)
+    retryable: bool
+    error_code: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    finished_at: datetime | None = None
+
+
+class RetryGenerationRequest(BaseModel):
+    """Expected-attempt fence for an explicit retry command."""
+
+    expected_attempt: int = Field(ge=1)
+
+    model_config = ConfigDict(extra="forbid")

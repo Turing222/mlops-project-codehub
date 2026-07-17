@@ -50,6 +50,7 @@ async def test_get_user_features_regular_user(
     assert flags["enable-pixel-avatar"] is True
     assert flags["enable-credits"] is False
     assert flags["enable-agent-trace"] is False
+    assert flags["chat-explicit-retry"] is False
 
 
 async def test_get_user_features_superuser(
@@ -67,6 +68,7 @@ async def test_get_user_features_superuser(
     assert flags["enable-pixel-avatar"] is True
     assert flags["enable-credits"] is True
     assert flags["enable-agent-trace"] is True
+    assert flags["chat-explicit-retry"] is False
 
 
 def test_is_beta_user_superuser(feature_flag_service: FeatureFlagService) -> None:

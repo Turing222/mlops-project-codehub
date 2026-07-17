@@ -26,14 +26,26 @@ class StreamEvent(TypedDict, total=False):
     step: str
     status: StepStatus
     metrics: dict[str, object]
+    error_code: str
+    retryable: bool
 
 
 def stream_chunk_event(content: str) -> StreamEvent:
     return {"type": "chunk", "content": content}
 
 
-def stream_error_event(message: str) -> StreamEvent:
-    return {"type": "error", "message": message}
+def stream_error_event(
+    message: str,
+    *,
+    error_code: str | None = None,
+    retryable: bool | None = None,
+) -> StreamEvent:
+    event: StreamEvent = {"type": "error", "message": message}
+    if error_code is not None:
+        event["error_code"] = error_code
+    if retryable is not None:
+        event["retryable"] = retryable
+    return event
 
 
 def stream_done_event() -> StreamEvent:
@@ -59,8 +71,20 @@ def encode_chunk_event(content: str) -> str:
     return json.dumps(stream_chunk_event(content), ensure_ascii=False)
 
 
-def encode_error_event(message: str) -> str:
-    return json.dumps(stream_error_event(message), ensure_ascii=False)
+def encode_error_event(
+    message: str,
+    *,
+    error_code: str | None = None,
+    retryable: bool | None = None,
+) -> str:
+    return json.dumps(
+        stream_error_event(
+            message,
+            error_code=error_code,
+            retryable=retryable,
+        ),
+        ensure_ascii=False,
+    )
 
 
 def encode_done_event() -> str:
@@ -88,10 +112,16 @@ def encode_meta_event(
     session_id: str,
     session_title: str | None,
     message_id: str,
+    generation_request_id: str | None = None,
+    attempt: int | None = None,
 ) -> str:
     return json.dumps(
         meta_event(
-            session_id=session_id, session_title=session_title, message_id=message_id
+            session_id=session_id,
+            session_title=session_title,
+            message_id=message_id,
+            generation_request_id=generation_request_id,
+            attempt=attempt,
         ),
         ensure_ascii=False,
     )
@@ -111,7 +141,13 @@ def decode_stream_event(payload: str) -> StreamEvent:
     if event_type == "chunk":
         return stream_chunk_event(str(data.get("content") or ""))
     if event_type == "error":
-        return stream_error_event(str(data.get("message") or ""))
+        error_code = data.get("error_code")
+        retryable = data.get("retryable")
+        return stream_error_event(
+            str(data.get("message") or ""),
+            error_code=str(error_code) if error_code else None,
+            retryable=retryable if isinstance(retryable, bool) else None,
+        )
     if event_type == "done":
         return stream_done_event()
     if event_type == "started":
@@ -142,13 +178,15 @@ def _decode_legacy_payload(payload: str) -> StreamEvent:
 # ---------------------------------------------------------------------------
 
 
-class MetaEvent(TypedDict):
+class MetaEvent(TypedDict, total=False):
     """Chat stream metadata event."""
 
     type: Literal["meta"]
     session_id: str
     session_title: str | None
     message_id: str
+    generation_request_id: str
+    attempt: int
 
 
 class ChunkEvent(TypedDict):
@@ -158,11 +196,15 @@ class ChunkEvent(TypedDict):
     content: str
 
 
-class ErrorEvent(TypedDict):
+class ErrorEvent(TypedDict, total=False):
     """Chat stream error event."""
 
     type: Literal["error"]
     message: str
+    error_code: str
+    retryable: bool
+    generation_request_id: str
+    attempt: int
 
 
 class DoneEvent(TypedDict):
@@ -188,21 +230,44 @@ def meta_event(
     session_id: str,
     session_title: str | None,
     message_id: str,
+    generation_request_id: str | None = None,
+    attempt: int | None = None,
 ) -> MetaEvent:
-    return {
+    event: MetaEvent = {
         "type": "meta",
         "session_id": session_id,
         "session_title": session_title,
         "message_id": message_id,
     }
+    if generation_request_id is not None:
+        event["generation_request_id"] = generation_request_id
+    if attempt is not None:
+        event["attempt"] = attempt
+    return event
 
 
 def chunk_event(content: str) -> ChunkEvent:
     return {"type": "chunk", "content": content}
 
 
-def error_event(message: str) -> ErrorEvent:
-    return {"type": "error", "message": message}
+def error_event(
+    message: str,
+    *,
+    error_code: str | None = None,
+    retryable: bool | None = None,
+    generation_request_id: str | None = None,
+    attempt: int | None = None,
+) -> ErrorEvent:
+    event: ErrorEvent = {"type": "error", "message": message}
+    if error_code is not None:
+        event["error_code"] = error_code
+    if retryable is not None:
+        event["retryable"] = retryable
+    if generation_request_id is not None:
+        event["generation_request_id"] = generation_request_id
+    if attempt is not None:
+        event["attempt"] = attempt
+    return event
 
 
 def done_event() -> DoneEvent:

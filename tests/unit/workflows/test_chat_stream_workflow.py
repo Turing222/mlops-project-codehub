@@ -22,7 +22,10 @@ from backend.application.chat.stream_events import (
 )
 from backend.application.chat.web_stream_workflow import ChatWorkflow
 from backend.models.enums import MessageStatus
-from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.models.schemas.chat.commands import (
+    ChatQueryCommand,
+    RetryChatGenerationCommand,
+)
 from backend.models.schemas.chat.payloads import (
     GenerationAttemptPayload,
     GenerationPayload,
@@ -44,6 +47,9 @@ def _make_mock_feature_flag_service(
     }
     svc = AsyncMock(spec=FeatureFlagService)
     svc.get_system_features = AsyncMock(return_value=flags)
+    svc.get_user_features = AsyncMock(
+        return_value={"chat-explicit-retry": flags.get("chat-explicit-retry", False)}
+    )
     return svc
 
 
@@ -165,6 +171,77 @@ async def test_stream_workflow_queues_and_dispatches_before_meta() -> None:
         dispatcher.enqueue_stream.await_args.kwargs["generation_attempt"]
         == generation_attempt
     )
+
+
+async def test_retry_stream_uses_authorized_attempt_and_emits_identity() -> None:
+    user_id = uuid.uuid4()
+    request_id = uuid.uuid4()
+    session = SimpleNamespace(id=uuid.uuid4(), title="Session")
+    assistant_message = SimpleNamespace(id=uuid.uuid4())
+    generation_request = SimpleNamespace(id=request_id, attempt=2)
+    prepared = ChatPreparedRequest(
+        session=cast(Any, session),
+        generation_request=cast(Any, generation_request),
+        assistant_message=cast(Any, assistant_message),
+        generation_payload=GenerationPayload(
+            session_id=session.id,
+            query_text="retry",
+        ),
+        lock_key=None,
+        lock_token=None,
+        trace_attrs={},
+    )
+    generation_attempt = GenerationAttemptPayload(
+        request_id=request_id,
+        attempt=2,
+        task_id="retry-task",
+        lease_token="retry-lease",
+    )
+    dispatcher = AsyncMock()
+    workflow = ChatWorkflow(
+        uow=cast(Any, SimpleNamespace()),
+        dispatcher=dispatcher,
+        redis_client=cast(Any, FakeStreamRedis(FakePubSub())),
+        permission_service=cast(Any, SimpleNamespace()),
+        feature_flag_service=_make_mock_feature_flag_service(
+            {"chat-explicit-retry": True}
+        ),
+    )
+    workflow._merge_web_stream_metrics = AsyncMock()  # type: ignore[method-assign]
+
+    with (
+        patch(
+            "backend.application.chat.web_stream_workflow.ChatSessionOrchestrator.prepare_retry_request",
+            AsyncMock(return_value=prepared),
+        ) as prepare_retry,
+        patch(
+            "backend.application.chat.web_stream_workflow.ChatSessionOrchestrator.queue_generation_request",
+            AsyncMock(return_value=generation_attempt),
+        ),
+    ):
+        events = [
+            event
+            async for event in workflow.handle_retry_stream(
+                command=RetryChatGenerationCommand(
+                    user_id=user_id,
+                    generation_request_id=request_id,
+                    expected_attempt=1,
+                ),
+                user=cast(Any, SimpleNamespace(id=user_id)),
+            )
+        ]
+
+    assert events[0] == {
+        "type": "meta",
+        "session_id": str(session.id),
+        "session_title": "Session",
+        "message_id": str(assistant_message.id),
+        "generation_request_id": str(request_id),
+        "attempt": 2,
+    }
+    assert events[-1] == {"type": "done"}
+    prepare_retry.assert_awaited_once()
+    dispatcher.enqueue_stream.assert_awaited_once()
 
 
 def test_history_projection_keeps_only_user_and_assistant_messages() -> None:

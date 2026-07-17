@@ -1,4 +1,4 @@
-import { sendQueryStreamAPI } from '../api/chat';
+import { sendQueryStreamAPI, sendRetryStreamAPI } from '../api/chat';
 import { AppHttpError } from '../lib/http/errors';
 import { normalizeErrorMessage, reportFrontendErrorEvent } from '../lib/http/telemetry';
 import { chatStreamEventSchema } from '../schemas/chat';
@@ -8,6 +8,23 @@ type StartedEvent = Extract<ChatStreamEvent, { type: 'started' }>;
 type MetaEvent = Extract<ChatStreamEvent, { type: 'meta' }>;
 type ChunkEvent = Extract<ChatStreamEvent, { type: 'chunk' }>;
 type StepEvent = Extract<ChatStreamEvent, { type: 'step' }>;
+type ErrorEvent = Extract<ChatStreamEvent, { type: 'error' }>;
+
+export class ChatStreamError extends Error {
+    readonly errorCode?: string;
+    readonly retryable: boolean;
+    readonly generationRequestId?: string;
+    readonly attempt?: number;
+
+    constructor(event: ErrorEvent) {
+        super(event.message || 'LLM 服务错误');
+        this.name = 'ChatStreamError';
+        this.errorCode = event.error_code;
+        this.retryable = event.retryable === true;
+        this.generationRequestId = event.generation_request_id;
+        this.attempt = event.attempt;
+    }
+}
 
 export type StreamCallbacks = {
     onStarted?: (event: StartedEvent) => void;
@@ -28,8 +45,57 @@ export type StreamOptions = {
     signal?: AbortSignal;
 };
 
+export type RetryStreamOptions = {
+    generationRequestId: string;
+    expectedAttempt: number;
+    sessionId?: string;
+    signal?: AbortSignal;
+};
+
+type StreamCorrelationOptions = {
+    clientRequestId?: string;
+    generationRequestId?: string;
+    sessionId?: string;
+    signal?: AbortSignal;
+};
+
 export function streamChatQuery(
     options: StreamOptions,
+    callbacks: StreamCallbacks,
+): AbortController {
+    return startChatStream(
+        {
+            clientRequestId: options.clientRequestId,
+            sessionId: options.sessionId,
+            signal: options.signal,
+        },
+        (signal) => sendQueryStreamAPI({ ...options, signal }),
+        callbacks,
+    );
+}
+
+export function streamChatRetry(
+    options: RetryStreamOptions,
+    callbacks: StreamCallbacks,
+): AbortController {
+    return startChatStream(
+        {
+            generationRequestId: options.generationRequestId,
+            sessionId: options.sessionId,
+            signal: options.signal,
+        },
+        (signal) => sendRetryStreamAPI({
+            generationRequestId: options.generationRequestId,
+            expectedAttempt: options.expectedAttempt,
+            signal,
+        }),
+        callbacks,
+    );
+}
+
+function startChatStream(
+    options: StreamCorrelationOptions,
+    sendRequest: (signal: AbortSignal) => Promise<Response>,
     callbacks: StreamCallbacks,
 ): AbortController {
     const abortController = new AbortController();
@@ -50,6 +116,9 @@ export function streamChatQuery(
         }
         if (options.sessionId) {
             metadata.sessionId = options.sessionId;
+        }
+        if (options.generationRequestId) {
+            metadata.generationRequestId = options.generationRequestId;
         }
         reportFrontendErrorEvent({
             eventType: 'stream_error',
@@ -76,14 +145,7 @@ export function streamChatQuery(
 
     (async () => {
         try {
-            const response = await sendQueryStreamAPI({
-                query: options.query,
-                sessionId: options.sessionId,
-                kbId: options.kbId,
-                clientRequestId: options.clientRequestId,
-                enableExternalContext: options.enableExternalContext,
-                signal: abortController.signal,
-            });
+            const response = await sendRequest(abortController.signal);
 
             const reader = response.body?.getReader();
             if (!reader) {
@@ -132,9 +194,11 @@ export function streamChatQuery(
                         } else if (parsed.type === 'chunk') {
                             callbacks.onChunk(parsed);
                         } else if (parsed.type === 'error') {
-                            const errorMessage = parsed.message || 'LLM 服务错误';
-                            reportStreamError(errorMessage, 'sse_error');
-                            callbacks.onError(new Error(errorMessage));
+                            const streamError = new ChatStreamError(parsed);
+                            reportStreamError(streamError.message, 'sse_error', {
+                                errorCode: streamError.errorCode,
+                            });
+                            callbacks.onError(streamError);
                             return;
                         }
                     } catch (parseErr) {

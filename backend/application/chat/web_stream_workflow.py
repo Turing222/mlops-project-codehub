@@ -12,7 +12,10 @@ from collections.abc import AsyncGenerator
 
 import redis.asyncio as redis
 
-from backend.application.chat.session_orchestrator import ChatSessionOrchestrator
+from backend.application.chat.session_orchestrator import (
+    ChatPreparedRequest,
+    ChatSessionOrchestrator,
+)
 from backend.application.chat.stream_events import (
     SSEEvent,
     StreamEvent,
@@ -30,8 +33,15 @@ from backend.contracts.interfaces import (
     AbstractUnitOfWork,
 )
 from backend.core.concurrency import db_concurrency_slot
-from backend.core.exceptions import AppException, app_service_error
-from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.core.exceptions import AppException, app_not_found, app_service_error
+from backend.infra.redis import safe_release_lock
+from backend.models.orm.chat import ChatGenerationRequest
+from backend.models.orm.user import User
+from backend.models.schemas.chat.api import GenerationRequestStatusResponse
+from backend.models.schemas.chat.commands import (
+    ChatQueryCommand,
+    RetryChatGenerationCommand,
+)
 from backend.observability.langfuse_utils import set_langfuse_trace_metadata
 from backend.observability.trace_utils import (
     inject_trace_context,
@@ -66,6 +76,138 @@ class ChatWorkflow:
             uow, permission_service
         )
 
+    async def get_generation_request_status(
+        self,
+        *,
+        request_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> GenerationRequestStatusResponse:
+        """Resolve one durable generation request for its current actor."""
+        async with self.uow.read_context():
+            generation_request = (
+                await self.uow.chat_repo.get_generation_request_for_actor(
+                    request_id=request_id,
+                    user_id=user_id,
+                )
+            )
+        if generation_request is None:
+            raise app_not_found(
+                "生成请求不存在",
+                code="CHAT_GENERATION_REQUEST_NOT_FOUND",
+                details={"generation_request_id": str(request_id)},
+            )
+        return self._to_status_response(generation_request)
+
+    async def resolve_generation_request_status(
+        self,
+        *,
+        client_request_id: str,
+        user_id: uuid.UUID,
+    ) -> GenerationRequestStatusResponse:
+        """Resolve accepted identity after an ambiguous transport failure."""
+        async with self.uow.read_context():
+            generation_request = await self.uow.chat_repo.get_generation_request_by_client_request_id_for_actor(
+                user_id=user_id,
+                client_request_id=client_request_id,
+            )
+        if generation_request is None:
+            raise app_not_found(
+                "生成请求不存在",
+                code="CHAT_GENERATION_REQUEST_NOT_FOUND",
+                details={"client_request_id": client_request_id},
+            )
+        return self._to_status_response(generation_request)
+
+    async def handle_retry_stream(
+        self,
+        *,
+        command: RetryChatGenerationCommand,
+        user: User,
+    ) -> AsyncGenerator[SSEEvent, None]:
+        """Retry one authorized terminal failure and stream its next attempt."""
+        user_features = await self._feature_flag_service.get_user_features(user)
+        if not user_features.get("chat-explicit-retry", False):
+            yield error_event(
+                "显式重试功能尚未启用",
+                error_code="CHAT_EXPLICIT_RETRY_DISABLED",
+                retryable=False,
+                generation_request_id=str(command.generation_request_id),
+                attempt=command.expected_attempt,
+            )
+            yield done_event()
+            return
+
+        trace_attrs: dict[str, object] = {
+            "chat.user_id": command.user_id,
+            "chat.generation_request_id": command.generation_request_id,
+            "chat.generation_attempt.expected": command.expected_attempt,
+            "chat.stream": True,
+            "chat.retry": True,
+        }
+        orchestrator = ChatSessionOrchestrator(
+            self.uow,
+            self.redis,
+            self.permission_service,
+            self._feature_flag_service,
+            self._session_manager,
+        )
+        try:
+            prepared = await orchestrator.prepare_retry_request(
+                command=command,
+                trace_attrs=trace_attrs,
+            )
+        except AppException as exc:
+            yield error_event(
+                str(exc),
+                error_code=exc.code,
+                retryable=False,
+                generation_request_id=str(command.generation_request_id),
+                attempt=command.expected_attempt,
+            )
+            yield done_event()
+            return
+
+        retry_query = ChatQueryCommand(
+            user_id=command.user_id,
+            query_text=prepared.generation_payload.query_text,
+            session_id=prepared.session.id,
+            kb_id=prepared.generation_payload.kb_id,
+            enable_external_context=(
+                prepared.generation_payload.enable_external_context
+            ),
+            context_mode=prepared.generation_payload.context_mode,
+            extra_body=prepared.generation_payload.extra_body,
+        )
+        with set_langfuse_trace_metadata(
+            user_id=command.user_id,
+            session_id=prepared.session.id,
+            tags=["chat_api", "stream", "explicit_retry"],
+        ):
+            async for event in self._handle_query_stream(
+                retry_query,
+                prepared_request=prepared,
+            ):
+                yield event
+
+    @staticmethod
+    def _to_status_response(
+        generation_request: ChatGenerationRequest,
+    ) -> GenerationRequestStatusResponse:
+        return GenerationRequestStatusResponse(
+            generation_request_id=generation_request.id,
+            client_request_id=generation_request.client_request_id,
+            session_id=generation_request.session_id,
+            assistant_message_id=generation_request.assistant_message_id,
+            status=generation_request.status,
+            attempt=generation_request.attempt,
+            retryable=generation_request.retryable,
+            error_code=generation_request.error_code,
+            error_message=generation_request.error_message,
+            created_at=generation_request.created_at,
+            updated_at=generation_request.updated_at,
+            finished_at=generation_request.finished_at,
+        )
+
     async def handle_query_stream(
         self,
         command: ChatQueryCommand,
@@ -82,6 +224,8 @@ class ChatWorkflow:
     async def _handle_query_stream(
         self,
         command: ChatQueryCommand,
+        *,
+        prepared_request: ChatPreparedRequest | None = None,
     ) -> AsyncGenerator[SSEEvent, None]:
         user_id = command.user_id
         query_text = command.query_text
@@ -96,14 +240,17 @@ class ChatWorkflow:
             len(query_text),
         )
 
-        trace_attrs = {
-            "chat.user_id": user_id,
-            "chat.session_id": session_id,
-            "chat.kb_id": kb_id,
-            "chat.client_request_id.present": client_request_id is not None,
-            "chat.query.char_count": len(query_text),
-            "chat.stream": True,
-        }
+        trace_attrs = dict(prepared_request.trace_attrs) if prepared_request else {}
+        trace_attrs.update(
+            {
+                "chat.user_id": user_id,
+                "chat.session_id": session_id,
+                "chat.kb_id": kb_id,
+                "chat.client_request_id.present": client_request_id is not None,
+                "chat.query.char_count": len(query_text),
+                "chat.stream": True,
+            }
+        )
 
         # 幂等锁避免同一 client_request_id 并发生成多条助手消息。
         orchestrator = ChatSessionOrchestrator(
@@ -113,39 +260,56 @@ class ChatWorkflow:
             self._feature_flag_service,
             self._session_manager,
         )
-        existing_request = await orchestrator.resolve_existing_generation_request(
-            command=command
-        )
-        if existing_request is not None:
-            yield error_event("该请求已被接受，请刷新页面查看状态")
-            yield done_event()
-            return
-        idempotency = await orchestrator.check_idempotency(
-            command=command,
-            trace_attrs=trace_attrs,
-            span_name="chat.stream.idempotency_check",
-        )
-        if not idempotency.is_new:
-            if idempotency.is_processing_duplicate:
-                yield error_event("正在加速计算中...")
+        if prepared_request is None:
+            existing_request = await orchestrator.resolve_existing_generation_request(
+                command=command
+            )
+            if existing_request is not None:
+                yield error_event(
+                    "该请求已被接受，请刷新页面查看状态",
+                    error_code="CHAT_REQUEST_ALREADY_EXISTS",
+                    retryable=False,
+                    generation_request_id=str(existing_request.id),
+                    attempt=existing_request.attempt,
+                )
                 yield done_event()
                 return
-            yield error_event("该请求已完成，请刷新页面")
-            yield done_event()
-            return
-
-        # 会话和消息创建放在 DB 槽位内，避免高并发下耗尽连接池。
-        try:
-            prepared = await orchestrator.prepare_request(
+            idempotency = await orchestrator.check_idempotency(
                 command=command,
-                idempotency=idempotency,
                 trace_attrs=trace_attrs,
-                span_prefix="chat.stream",
+                span_name="chat.stream.idempotency_check",
             )
-        except AppException as exc:
-            yield error_event(str(exc))
-            yield done_event()
-            return
+            if not idempotency.is_new:
+                error_code = (
+                    "CHAT_REQUEST_PROCESSING"
+                    if idempotency.is_processing_duplicate
+                    else "CHAT_REQUEST_ALREADY_EXISTS"
+                )
+                yield error_event(
+                    "请求正在处理中，请刷新页面查看状态",
+                    error_code=error_code,
+                    retryable=False,
+                )
+                yield done_event()
+                return
+
+            try:
+                prepared = await orchestrator.prepare_request(
+                    command=command,
+                    idempotency=idempotency,
+                    trace_attrs=trace_attrs,
+                    span_prefix="chat.stream",
+                )
+            except AppException as exc:
+                yield error_event(
+                    str(exc),
+                    error_code=exc.code,
+                    retryable=False,
+                )
+                yield done_event()
+                return
+        else:
+            prepared = prepared_request
         session = prepared.session
         assistant_msg = prepared.assistant_message
 
@@ -183,19 +347,31 @@ class ChatWorkflow:
                     generation_attempt=generation_attempt,
                 )
         except AppException as exc:
-            await orchestrator.release_idempotency(idempotency)
+            await self._release_prepared_lock(prepared)
             await self._close_pubsub(pubsub, channel)
             pubsub = None
             logger.warning("流式任务初始化失败: %s", exc)
-            yield error_event(str(exc))
+            yield error_event(
+                str(exc),
+                error_code=exc.code,
+                retryable=False,
+                generation_request_id=str(prepared.generation_request.id),
+                attempt=prepared.generation_request.attempt,
+            )
             yield done_event()
             return
         except Exception as exc:
-            await orchestrator.release_idempotency(idempotency)
+            await self._release_prepared_lock(prepared)
             await self._close_pubsub(pubsub, channel)
             pubsub = None
             logger.error("流式任务初始化异常: %s", str(exc), exc_info=True)
-            yield error_event("服务暂时不可用，请稍后重试")
+            yield error_event(
+                "服务暂时不可用，请稍后重试",
+                error_code="CHAT_DISPATCH_FAILED",
+                retryable=False,
+                generation_request_id=str(prepared.generation_request.id),
+                attempt=prepared.generation_request.attempt,
+            )
             yield done_event()
             return
 
@@ -205,6 +381,8 @@ class ChatWorkflow:
             session_id=str(session.id),
             session_title=session.title,
             message_id=str(assistant_msg.id),
+            generation_request_id=str(prepared.generation_request.id),
+            attempt=prepared.generation_request.attempt,
         )
 
         accumulated_content = []
@@ -271,9 +449,11 @@ class ChatWorkflow:
                     if event_type == "done":
                         done_received = True
                     elif event_type == "error":
-                        raise app_service_error(
-                            f"Taskiq 队列执行 LLM 错误: {event.get('message', '')}",
-                            code="LLM_TASK_FAILED",
+                        raise AppException(
+                            code=str(event.get("error_code") or "LLM_TASK_FAILED"),
+                            message=str(event.get("message") or "LLM 服务错误"),
+                            status_code=500,
+                            details={"retryable": event.get("retryable") is True},
                         )
                     elif event_type == "step":
                         sse_step = _yield_worker_event(event)
@@ -329,9 +509,11 @@ class ChatWorkflow:
                             done_received = True
                             break
                         if event_type == "error":
-                            raise app_service_error(
-                                f"Taskiq 队列执行 LLM 错误: {event.get('message', '')}",
-                                code="LLM_TASK_FAILED",
+                            raise AppException(
+                                code=str(event.get("error_code") or "LLM_TASK_FAILED"),
+                                message=str(event.get("message") or "LLM 服务错误"),
+                                status_code=500,
+                                details={"retryable": event.get("retryable") is True},
                             )
                         if event_type == "step":
                             sse_step = _yield_worker_event(event)
@@ -379,18 +561,39 @@ class ChatWorkflow:
                 )
         except AppException as exc:
             logger.warning("流式 LLM 调用业务异常: %s", exc)
-            yield error_event(str(exc))
+            yield error_event(
+                str(exc),
+                error_code=exc.code,
+                retryable=exc.details.get("retryable") is True,
+                generation_request_id=str(prepared.generation_request.id),
+                attempt=prepared.generation_request.attempt,
+            )
             yield done_event()
             return
         except Exception as exc:
             logger.error("流式 LLM 调用异常: %s", str(exc), exc_info=True)
-            yield error_event("服务暂时不可用，请稍后重试")
+            yield error_event(
+                "服务暂时不可用，请稍后重试",
+                error_code="CHAT_STREAM_FAILED",
+                retryable=False,
+                generation_request_id=str(prepared.generation_request.id),
+                attempt=prepared.generation_request.attempt,
+            )
             yield done_event()
             return
         finally:
             await self._close_pubsub(pubsub, channel)
 
         yield done_event()
+
+    async def _release_prepared_lock(self, prepared: ChatPreparedRequest) -> None:
+        if prepared.lock_key is None or prepared.lock_token is None:
+            return
+        await safe_release_lock(
+            self.redis,
+            prepared.lock_key,
+            prepared.lock_token,
+        )
 
     @staticmethod
     async def _close_pubsub(pubsub: object | None, channel: str) -> None:

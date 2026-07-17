@@ -4,7 +4,6 @@
 边界：使用 FakeRedis，不连接真实 Redis；副作用：无。
 """
 
-
 from backend.application.chat.stream_events import (
     encode_chunk_event,
     encode_done_event,
@@ -47,6 +46,29 @@ async def test_publish_error_encodes_and_sends() -> None:
     await publisher.publish_error("stream:err", "something failed")
 
     assert redis.published == [("stream:err", encode_error_event("something failed"))]
+
+
+async def test_publish_error_includes_retry_contract() -> None:
+    redis = FakeRedis()
+    publisher = WorkerStreamPublisher(redis_client=FakeRedisClient(redis))
+
+    await publisher.publish_error(
+        "stream:err",
+        "something failed",
+        error_code="CHAT_GENERATION_FAILED",
+        retryable=True,
+    )
+
+    assert redis.published == [
+        (
+            "stream:err",
+            encode_error_event(
+                "something failed",
+                error_code="CHAT_GENERATION_FAILED",
+                retryable=True,
+            ),
+        )
+    ]
 
 
 async def test_publish_done_encodes_and_sends() -> None:

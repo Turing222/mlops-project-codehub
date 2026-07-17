@@ -36,9 +36,23 @@ class WorkerStreamPublisher:
         redis_connection = await self._redis()
         await redis_connection.publish(channel, encode_started_event())
 
-    async def publish_error(self, channel: str, message: str) -> None:
+    async def publish_error(
+        self,
+        channel: str,
+        message: str,
+        *,
+        error_code: str | None = None,
+        retryable: bool | None = None,
+    ) -> None:
         redis_connection = await self._redis()
-        await redis_connection.publish(channel, encode_error_event(message))
+        await redis_connection.publish(
+            channel,
+            encode_error_event(
+                message,
+                error_code=error_code,
+                retryable=retryable,
+            ),
+        )
 
     async def publish_done(self, channel: str) -> None:
         redis_connection = await self._redis()

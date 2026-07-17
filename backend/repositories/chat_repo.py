@@ -126,6 +126,20 @@ class ChatRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_generation_requests_for_session_for_actor(
+        self,
+        *,
+        session_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> Sequence[ChatGenerationRequest]:
+        """Return request identity for messages visible to the current actor."""
+        stmt = select(ChatGenerationRequest).where(
+            ChatGenerationRequest.session_id == session_id,
+            _generation_request_actor_scope(user_id),
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
     async def try_queue_generation_request(
         self,
         *,
@@ -316,13 +330,39 @@ class ChatRepository:
                 lease_expires_at=None,
                 recovery_due_at=recovery_due_at,
                 finished_at=None,
-                reserved_credits=0,
             )
             .returning(ChatGenerationRequest.attempt)
         )
         result = await self.session.execute(stmt)
         next_attempt = result.scalar_one_or_none()
         return int(next_attempt) if next_attempt is not None else None
+
+    async def reset_assistant_message_for_retry(
+        self,
+        *,
+        message_id: uuid.UUID,
+    ) -> bool:
+        """Clear one failed assistant message before its next fenced attempt."""
+        stmt = (
+            update(ChatMessage)
+            .where(
+                ChatMessage.id == message_id,
+                ChatMessage.role == "assistant",
+                ChatMessage.status == MessageStatus.FAILED,
+            )
+            .values(
+                status=MessageStatus.THINKING,
+                content="",
+                latency_ms=None,
+                tokens_input=0,
+                tokens_output=0,
+                search_context=None,
+                message_metadata={},
+            )
+            .returning(ChatMessage.id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def get_session(self, session_id: uuid.UUID) -> ChatSession | None:
         return await self.session_crud.get(session_id)

@@ -2,7 +2,11 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import type { StreamCallbacks, StreamOptions } from '../../streams/chat-stream';
+import type {
+  RetryStreamOptions,
+  StreamCallbacks,
+  StreamOptions,
+} from '../../streams/chat-stream';
 import type { ChatMessage } from '../../types/chat';
 import {
   useChatStream,
@@ -11,8 +15,10 @@ import {
   type UseChatStreamParams,
 } from './use-chat-stream';
 
-vi.mock('../../streams/chat-stream', () => ({
+vi.mock('../../streams/chat-stream', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../streams/chat-stream')>()),
   streamChatQuery: vi.fn(),
+  streamChatRetry: vi.fn(),
 }));
 
 vi.mock('../../api/chat', () => ({
@@ -21,16 +27,27 @@ vi.mock('../../api/chat', () => ({
     messages: [],
     total_messages: 0,
   }),
+  getGenerationRequestAPI: vi.fn(),
+  resolveGenerationRequestAPI: vi.fn(),
 }));
 
 vi.mock('../../api/repo-analysis', () => ({
   submitRepoReadmeCheckAPI: vi.fn(),
 }));
 
-import { streamChatQuery } from '../../streams/chat-stream';
+import { streamChatQuery, streamChatRetry } from '../../streams/chat-stream';
+import {
+  getSessionDetailAPI,
+  getGenerationRequestAPI,
+  resolveGenerationRequestAPI,
+} from '../../api/chat';
 import { submitRepoReadmeCheckAPI } from '../../api/repo-analysis';
 
 const mockStreamChatQuery = vi.mocked(streamChatQuery);
+const mockStreamChatRetry = vi.mocked(streamChatRetry);
+const mockGetSessionDetail = vi.mocked(getSessionDetailAPI);
+const mockGetGenerationRequest = vi.mocked(getGenerationRequestAPI);
+const mockResolveGenerationRequest = vi.mocked(resolveGenerationRequestAPI);
 const mockSubmitRepo = vi.mocked(submitRepoReadmeCheckAPI);
 
 function createWrapper() {
@@ -86,13 +103,22 @@ function baseParams(
     activeSessionId: null,
     displayedMessages: [],
     resolveDefaultKbId: vi.fn().mockResolvedValue('kb1'),
+    explicitRetryEnabled: false,
     ...partial,
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetSessionDetail.mockResolvedValue({
+    session: { id: 's1', title: 'T', user_id: '1', created_at: '', updated_at: '', total_tokens: 0 },
+    messages: [],
+    total_messages: 0,
+  });
   mockStreamChatQuery.mockReturnValue(new AbortController());
+  mockStreamChatRetry.mockReturnValue(new AbortController());
+  mockGetGenerationRequest.mockRejectedValue(new Error('not found'));
+  mockResolveGenerationRequest.mockRejectedValue(new Error('not found'));
 });
 
 describe('useChatStream', () => {
@@ -273,91 +299,218 @@ describe('useChatStream', () => {
     expect(actions.appendMessage).toHaveBeenCalledTimes(2);
   });
 
-  it('pre-meta error retry cache reuses the original clientRequestId', async () => {
-    const captured: StreamOptions[] = [];
-    mockStreamChatQuery.mockImplementation((options: StreamOptions, cb: StreamCallbacks) => {
-      captured.push(options);
-      cb.onError!(new Error('fail'));
+  it('fails closed when a pre-meta error identity cannot be resolved', async () => {
+    mockStreamChatQuery.mockImplementation((_options, callbacks) => {
+      callbacks.onError(new Error('fail'));
       return new AbortController();
     });
-
     const { actions, messages } = createSessionActions();
     const { result } = renderHook(
-      () => useChatStream(baseParams({ sessionActions: actions, traceActions: createTraceActions() })),
+      () => useChatStream(baseParams({
+        sessionActions: actions,
+        traceActions: createTraceActions(),
+        displayedMessages: messages,
+        explicitRetryEnabled: true,
+      })),
       { wrapper: createWrapper() },
     );
 
     await act(async () => {
       await result.current.sendQuery('query one');
     });
-    const failedId = messages.find((m) => m.status === 'failed')!.id;
-    const firstId = captured[0].clientRequestId;
-
-    await act(async () => {
-      result.current.retryFailedMessage(failedId);
+    await vi.waitFor(() => {
+      expect(messages.some((message) => message.status === 'failed')).toBe(true);
     });
-    expect(actions.commitSession).not.toHaveBeenCalled();
-    expect(captured[1].clientRequestId).toBe(firstId);
-    expect(captured[1].query).toBe('query one');
+    const failedMessage = messages.find((message) => message.status === 'failed')!;
+
+    act(() => result.current.retryFailedMessage(failedMessage.id));
+
+    expect(failedMessage.retryable).toBe(false);
+    expect(mockResolveGenerationRequest).toHaveBeenCalledOnce();
+    expect(mockStreamChatRetry).not.toHaveBeenCalled();
   });
 
-  it('TTL-expired retry cache falls back to message history without reusing clientRequestId', async () => {
-    vi.useFakeTimers();
-    const now = Date.now();
-    vi.setSystemTime(now);
-
-    const captured: StreamOptions[] = [];
+  it('shows an accepted request as still running instead of retryable failure', async () => {
     let callbacks: Partial<StreamCallbacks> = {};
-    mockStreamChatQuery.mockImplementation((options: StreamOptions, cb: StreamCallbacks) => {
-      captured.push(options);
-      callbacks = cb;
+    mockStreamChatQuery.mockImplementation((_options, streamCallbacks) => {
+      callbacks = streamCallbacks;
       return new AbortController();
     });
-
+    mockResolveGenerationRequest.mockResolvedValue({
+      generation_request_id: 'request-running',
+      client_request_id: 'client-running',
+      session_id: 's1',
+      assistant_message_id: 'a-running',
+      status: 'running',
+      attempt: 1,
+      retryable: false,
+      error_code: null,
+      error_message: null,
+      created_at: '2026-07-17T00:00:00Z',
+      updated_at: '2026-07-17T00:00:01Z',
+      finished_at: null,
+    });
     const { actions, messages } = createSessionActions();
-    const { result, rerender } = renderHook(
-      (props: { displayed: ChatMessage[] }) =>
-        useChatStream(baseParams({
-          sessionActions: actions,
-          traceActions: createTraceActions(),
-          displayedMessages: props.displayed,
-        })),
-      { wrapper: createWrapper(), initialProps: { displayed: [] as ChatMessage[] } },
+    const { result } = renderHook(
+      () => useChatStream(baseParams({
+        sessionActions: actions,
+        traceActions: createTraceActions(),
+        displayedMessages: messages,
+        explicitRetryEnabled: true,
+      })),
+      { wrapper: createWrapper() },
     );
 
     await act(async () => {
-      await result.current.sendQuery('cached query');
-    });
-    act(() => {
-      callbacks.onError!(new Error('boom'));
+      await result.current.sendQuery('still running');
+      callbacks.onError?.(new Error('stream disconnected'));
     });
 
-    const failedId = messages.find((m) => m.status === 'failed')!.id;
-    const originalClientId = captured[0].clientRequestId;
-    expect(originalClientId).toBeDefined();
-
-    // History fallback list must include the same failed id after cache TTL prune.
-    await act(async () => {
-      rerender({
-        displayed: [
-          tempUser('u1', 'from history'),
-          tempAssistant(failedId, 'failed', 'failed'),
-        ],
+    await vi.waitFor(() => {
+      expect(messages.find((message) => message.id === 'a-running')).toMatchObject({
+        status: 'failed',
+        retryable: false,
+        error_code: 'CHAT_REQUEST_STILL_RUNNING',
+        content: expect.stringContaining('仍在生成中'),
       });
     });
+  });
 
-    // Expire retry cache (5 min TTL) so the same id is a cache miss.
-    vi.setSystemTime(now + 6 * 60 * 1000);
+  it('hydrates the completed message when transport fails after settlement', async () => {
+    let callbacks: Partial<StreamCallbacks> = {};
+    mockStreamChatQuery.mockImplementation((_options, streamCallbacks) => {
+      callbacks = streamCallbacks;
+      return new AbortController();
+    });
+    mockResolveGenerationRequest.mockResolvedValue({
+      generation_request_id: 'request-succeeded',
+      client_request_id: 'client-succeeded',
+      session_id: 's1',
+      assistant_message_id: 'a-succeeded',
+      status: 'succeeded',
+      attempt: 1,
+      retryable: false,
+      error_code: null,
+      error_message: null,
+      created_at: '2026-07-17T00:00:00Z',
+      updated_at: '2026-07-17T00:00:01Z',
+      finished_at: '2026-07-17T00:00:01Z',
+    });
+    mockGetSessionDetail.mockResolvedValue({
+      session: {
+        id: 's1',
+        title: 'T',
+        user_id: '1',
+        created_at: '',
+        updated_at: '',
+        total_tokens: 0,
+      },
+      messages: [tempAssistant('a-succeeded', 'settled answer', 'success')],
+      total_messages: 1,
+    });
+    const { actions, messages } = createSessionActions();
+    const trace = createTraceActions();
+    const { result } = renderHook(
+      () => useChatStream(baseParams({
+        sessionActions: actions,
+        traceActions: trace,
+        displayedMessages: messages,
+      })),
+      { wrapper: createWrapper() },
+    );
 
     await act(async () => {
-      result.current.retryFailedMessage(failedId);
+      await result.current.sendQuery('already settled');
+      callbacks.onError?.(new Error('stream disconnected'));
     });
 
-    expect(captured).toHaveLength(2);
-    expect(captured[1].query).toBe('from history');
-    expect(captured[1].clientRequestId).toBeDefined();
-    expect(captured[1].clientRequestId).not.toBe(originalClientId);
-    vi.useRealTimers();
+    await vi.waitFor(() => {
+      expect(messages).toEqual([
+        expect.objectContaining({
+          id: 'a-succeeded',
+          status: 'success',
+          content: 'settled answer',
+        }),
+      ]);
+    });
+    expect(trace.completeIdle).toHaveBeenCalled();
+    expect(trace.markError).not.toHaveBeenCalled();
+  });
+
+  it('retries only with server generation identity and expected attempt', async () => {
+    const { actions, messages } = createSessionActions();
+    messages.push(
+      tempUser('u1', 'from history'),
+      {
+        ...tempAssistant('a1', 'failed', 'failed'),
+        generation_request_id: 'request-1',
+        attempt: 3,
+        retryable: true,
+        error_code: 'CHAT_GENERATION_FAILED',
+      },
+    );
+    mockGetSessionDetail.mockResolvedValue({
+      session: {
+        id: 's1',
+        title: 'T',
+        user_id: '1',
+        created_at: '',
+        updated_at: '',
+        total_tokens: 0,
+      },
+      messages: [{
+        ...tempAssistant('a1', 'recovered', 'success'),
+        generation_request_id: 'request-1',
+        attempt: 4,
+        retryable: false,
+      }],
+      total_messages: 1,
+    });
+    let retryCallbacks: StreamCallbacks | undefined;
+    const captured: RetryStreamOptions[] = [];
+    mockStreamChatRetry.mockImplementation((options, callbacks) => {
+      captured.push(options);
+      retryCallbacks = callbacks;
+      return new AbortController();
+    });
+    const { result } = renderHook(
+      () => useChatStream(baseParams({
+        activeSessionId: 's1',
+        sessionActions: actions,
+        traceActions: createTraceActions(),
+        displayedMessages: messages,
+        explicitRetryEnabled: true,
+      })),
+      { wrapper: createWrapper() },
+    );
+
+    act(() => result.current.retryFailedMessage('a1'));
+
+    expect(captured).toEqual([expect.objectContaining({
+      generationRequestId: 'request-1',
+      expectedAttempt: 3,
+      sessionId: 's1',
+    })]);
+    expect(mockStreamChatQuery).not.toHaveBeenCalled();
+
+    await act(async () => {
+      retryCallbacks?.onMeta({
+        type: 'meta',
+        session_id: 's1',
+        session_title: 'T',
+        message_id: 'a1',
+        generation_request_id: 'request-1',
+        attempt: 4,
+      });
+      retryCallbacks?.onChunk({ type: 'chunk', content: 'recovered' });
+      retryCallbacks?.onDone();
+    });
+    expect(messages.find((message) => message.id === 'a1')).toMatchObject({
+      status: 'success',
+      content: 'recovered',
+      attempt: 4,
+      retryable: false,
+    });
   });
 
   it('resetStream aborts and clears streaming state', async () => {

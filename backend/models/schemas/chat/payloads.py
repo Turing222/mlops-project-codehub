@@ -14,6 +14,8 @@ from backend.models.schemas.chat.context_routing import ContextMode
 from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.dto import ConversationMessage
 
+GENERATION_REQUEST_CONTEXT_KEY = "generation_request_context"
+
 
 class FeatureFlags(BaseModel):
     """System-level AI feature flags snapshot evaluated at request time."""
@@ -41,6 +43,16 @@ class GenerationPayload(BaseModel):
     billing_model_name: str = "default"
     extra_body: dict[str, object] | None = None
     feature_flags: FeatureFlags = Field(default_factory=FeatureFlags)
+
+
+class GenerationRequestContext(BaseModel):
+    """Controlled request options persisted for an authorized explicit retry."""
+
+    schema_version: int = 1
+    enable_external_context: bool = False
+    context_mode: ContextMode | None = None
+    billing_model_name: str = "default"
+    extra_body: dict[str, object] | None = None
 
 
 class GenerationResult(BaseModel):

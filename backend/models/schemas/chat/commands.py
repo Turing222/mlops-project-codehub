@@ -22,3 +22,11 @@ class ChatQueryCommand(BaseModel):
     enable_external_context: bool = False
     context_mode: ContextMode | None = None
     extra_body: dict[str, object] | None = None
+
+
+class RetryChatGenerationCommand(BaseModel):
+    """Use-case command for retrying one durable generation request."""
+
+    user_id: uuid.UUID
+    generation_request_id: uuid.UUID
+    expected_attempt: int

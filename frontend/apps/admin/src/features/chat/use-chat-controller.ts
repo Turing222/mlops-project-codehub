@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../context/useAuth';
+import { useFeatureFlag } from '../../context/useFeatureFlag';
 import { defaultKBQueryOptions, useDefaultKBQuery } from '../../query/hooks/knowledge';
 import { useKbIngestion } from '../knowledge/use-kb-ingestion';
 import { useChatSessionState } from './use-chat-session-state';
@@ -34,7 +35,7 @@ export type UseChatControllerReturn = {
   isStreaming: boolean;
   isLoadingHistory: boolean;
   sendQuery: (text: string, options?: SendMessageOptions) => Promise<void>;
-  retryFailedMessage: (messageId: string) => void;
+  retryFailedMessage?: (messageId: string) => void;
   selectSession: (session: ChatSession) => void;
   startNewChat: () => void;
   traceSteps: AgentTraceStep[];
@@ -52,6 +53,7 @@ export type UseChatControllerReturn = {
 
 export function useChatController(): UseChatControllerReturn {
   const { user, refreshUser } = useAuth();
+  const explicitRetryEnabled = useFeatureFlag('chat-explicit-retry');
   const queryClient = useQueryClient();
 
   const {
@@ -154,6 +156,7 @@ export function useChatController(): UseChatControllerReturn {
     sessionActions,
     traceActions,
     resolveDefaultKbId,
+    explicitRetryEnabled,
   });
 
   const resetChatSessionState = useCallback(() => {
@@ -216,7 +219,7 @@ export function useChatController(): UseChatControllerReturn {
     isStreaming,
     isLoadingHistory,
     sendQuery,
-    retryFailedMessage,
+    retryFailedMessage: explicitRetryEnabled ? retryFailedMessage : undefined,
     selectSession,
     startNewChat,
     traceSteps,

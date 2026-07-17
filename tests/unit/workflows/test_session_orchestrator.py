@@ -17,8 +17,13 @@ from backend.application.chat.session_orchestrator import (
     ChatSessionOrchestrator,
 )
 from backend.core.exceptions import AppException
-from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.models.enums import ChatGenerationStatus, MessageStatus
+from backend.models.schemas.chat.commands import (
+    ChatQueryCommand,
+    RetryChatGenerationCommand,
+)
 from backend.models.schemas.chat.context_state import ContextState
+from backend.models.schemas.chat.payloads import GENERATION_REQUEST_CONTEXT_KEY
 from backend.services.feature_flag_service import (
     _AI_SYSTEM_FLAG_DEFAULTS,
     FeatureFlagService,
@@ -114,6 +119,148 @@ async def test_queue_generation_request_commits_attempt_fence_before_dispatch() 
     assert queue_kwargs["user_id"] == user_id
     assert queue_kwargs["lease_token"] == attempt.lease_token
     assert queue_kwargs["recovery_due_at"] > queue_kwargs["queued_at"]
+
+
+async def test_prepare_retry_request_rebuilds_context_and_advances_attempt() -> None:
+    orchestrator, uow = _build_orchestrator()
+    user_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    user_message_id = uuid.uuid4()
+    assistant_message_id = uuid.uuid4()
+    request_id = uuid.uuid4()
+    generation_request = MagicMock(
+        id=request_id,
+        user_id=user_id,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        assistant_message_id=assistant_message_id,
+        status=ChatGenerationStatus.FAILED,
+        attempt=1,
+        retryable=True,
+        reserved_credits=3,
+    )
+    user_message = MagicMock(
+        id=user_message_id,
+        role="user",
+        content="retry this",
+        message_metadata={
+            GENERATION_REQUEST_CONTEXT_KEY: {
+                "schema_version": 1,
+                "enable_external_context": True,
+                "context_mode": "web_only",
+                "billing_model_name": "model-a",
+                "extra_body": {"thinking": {"type": "enabled"}},
+            }
+        },
+    )
+    assistant_message = MagicMock(
+        id=assistant_message_id,
+        role="assistant",
+        status=MessageStatus.FAILED,
+    )
+    session = MagicMock(id=session_id, kb_id=None, title="Retry")
+    uow.chat_repo.get_generation_request_for_actor.return_value = generation_request
+    uow.chat_repo.get_message.side_effect = [user_message, assistant_message]
+    uow.chat_repo.get_session_messages.return_value = [
+        user_message,
+        assistant_message,
+    ]
+    uow.chat_repo.get_context_state.return_value = ContextState()
+    uow.chat_repo.try_retry_generation_request.return_value = 2
+    uow.chat_repo.reset_assistant_message_for_retry.return_value = True
+    uow.user_repo.get_with_lock.return_value = MagicMock(
+        used_tokens=0,
+        max_tokens=100_000,
+    )
+    orchestrator._session_manager.ensure_session = AsyncMock(return_value=session)
+
+    prepared = await orchestrator.prepare_retry_request(
+        command=RetryChatGenerationCommand(
+            user_id=user_id,
+            generation_request_id=request_id,
+            expected_attempt=1,
+        ),
+        trace_attrs={},
+    )
+
+    assert prepared.generation_request.attempt == 2
+    assert prepared.assistant_message is assistant_message
+    assert prepared.generation_payload.query_text == "retry this"
+    assert prepared.generation_payload.enable_external_context is True
+    assert prepared.generation_payload.context_mode == "web_only"
+    assert prepared.generation_payload.billing_model_name == "model-a"
+    assert prepared.generation_payload.conversation_history == [
+        {"role": "user", "content": "retry this"}
+    ]
+    uow.chat_repo.try_retry_generation_request.assert_awaited_once()
+    uow.chat_repo.reset_assistant_message_for_retry.assert_awaited_once_with(
+        message_id=assistant_message_id
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "attempt", "expected_attempt", "retryable", "expected_code"),
+    [
+        (
+            ChatGenerationStatus.FAILED,
+            2,
+            1,
+            True,
+            "CHAT_RETRY_ATTEMPT_CONFLICT",
+        ),
+        (
+            ChatGenerationStatus.RUNNING,
+            2,
+            2,
+            False,
+            "CHAT_REQUEST_STILL_RUNNING",
+        ),
+        (
+            ChatGenerationStatus.SUCCEEDED,
+            2,
+            2,
+            False,
+            "CHAT_REQUEST_ALREADY_SUCCEEDED",
+        ),
+        (
+            ChatGenerationStatus.FAILED,
+            2,
+            2,
+            False,
+            "CHAT_REQUEST_NOT_RETRYABLE",
+        ),
+    ],
+)
+async def test_prepare_retry_request_rejects_invalid_state_with_stable_code(
+    status: ChatGenerationStatus,
+    attempt: int,
+    expected_attempt: int,
+    retryable: bool,
+    expected_code: str,
+) -> None:
+    orchestrator, uow = _build_orchestrator()
+    request_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    uow.chat_repo.get_generation_request_for_actor.return_value = MagicMock(
+        id=request_id,
+        status=status,
+        attempt=attempt,
+        retryable=retryable,
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await orchestrator.prepare_retry_request(
+            command=RetryChatGenerationCommand(
+                user_id=user_id,
+                generation_request_id=request_id,
+                expected_attempt=expected_attempt,
+            ),
+            trace_attrs={},
+        )
+
+    assert exc_info.value.code == expected_code
+    assert exc_info.value.status_code == 409
+    uow.chat_repo.try_retry_generation_request.assert_not_awaited()
 
 
 class TestKbIdMismatchRejection:

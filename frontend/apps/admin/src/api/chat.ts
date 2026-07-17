@@ -6,6 +6,8 @@ import { getRequestIdFromHeaders } from '../lib/http/trace';
 import {
     chatQueryRequestSchema,
     chatQueryResponseSchema,
+    generationRequestStatusSchema,
+    retryGenerationRequestSchema,
     sessionDetailResponseSchema,
     sessionListResponseSchema,
 } from '../schemas/chat';
@@ -18,6 +20,12 @@ export interface ChatQueryOptions {
     kbId?: string;
     clientRequestId?: string;
     enableExternalContext?: boolean;
+    signal?: AbortSignal;
+}
+
+export interface RetryGenerationOptions {
+    generationRequestId: string;
+    expectedAttempt: number;
     signal?: AbortSignal;
 }
 
@@ -79,6 +87,62 @@ export const sendQueryStreamAPI = async (options: ChatQueryOptions): Promise<Res
         throw error;
     }
     return res;
+};
+
+export const sendRetryStreamAPI = async (
+    options: RetryGenerationOptions,
+): Promise<Response> => {
+    const payload = retryGenerationRequestSchema.parse({
+        expected_attempt: options.expectedAttempt,
+    });
+    const streamUrl = resolveApiUrl(API_URLS.CHAT.REQUEST_RETRY(options.generationRequestId));
+    const requestToken = getAccessToken();
+    const response = await fetch(streamUrl, {
+        method: 'POST',
+        headers: createAuthorizedHeaders({
+            'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify(payload),
+        signal: options.signal,
+    });
+
+    if (!response.ok) {
+        const error = createFetchHttpError({
+            status: response.status,
+            statusText: response.statusText,
+            requestId: getRequestIdFromHeaders(response.headers),
+            url: streamUrl,
+            method: 'POST',
+        });
+        if (error.code === 'unauthorized') {
+            handleUnauthorized(requestToken);
+        }
+        notifyHttpError(error);
+        throw error;
+    }
+    return response;
+};
+
+export const getGenerationRequestAPI = (generationRequestId: string) => {
+    return request
+        .get<unknown, unknown>(API_URLS.CHAT.REQUEST_STATUS(generationRequestId))
+        .then((response) => parseWithSchema(
+            generationRequestStatusSchema,
+            response,
+            '生成请求状态格式无效',
+        ));
+};
+
+export const resolveGenerationRequestAPI = (clientRequestId: string) => {
+    return request
+        .get<unknown, unknown>(API_URLS.CHAT.REQUEST_RESOLVE, {
+            params: { client_request_id: clientRequestId },
+        })
+        .then((response) => parseWithSchema(
+            generationRequestStatusSchema,
+            response,
+            '生成请求状态格式无效',
+        ));
 };
 
 export const getSessionsAPI = (skip = 0, limit = 20) => {

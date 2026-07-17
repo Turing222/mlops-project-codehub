@@ -35,11 +35,16 @@ from backend.middleware.rate_limit import RateLimiter
 from backend.models.orm.user import User
 from backend.models.schemas.chat.api import (
     ChatQueryResponse,
+    GenerationRequestStatusResponse,
     QuerySentRequest,
+    RetryGenerationRequest,
     SessionDetailResponse,
     SessionListResponse,
 )
-from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.models.schemas.chat.commands import (
+    ChatQueryCommand,
+    RetryChatGenerationCommand,
+)
 from backend.services.audit_service import AuditAction, AuditService, capture_audit
 from backend.services.session_query_service import SessionQueryService
 
@@ -187,6 +192,84 @@ async def query_stream(
 
     return StreamingResponse(
         _audited_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/requests/resolve")
+async def resolve_generation_request(
+    current_user: CurrentUserDep,
+    workflow: StreamWorkflowDep,
+    client_request_id: Annotated[str, Query(min_length=1, max_length=64)],
+) -> GenerationRequestStatusResponse:
+    """Resolve a durable request after an ambiguous transport failure."""
+    return await workflow.resolve_generation_request_status(
+        client_request_id=client_request_id,
+        user_id=current_user.id,
+    )
+
+
+@router.get("/requests/{generation_request_id}")
+async def get_generation_request(
+    generation_request_id: uuid.UUID,
+    current_user: CurrentUserDep,
+    workflow: StreamWorkflowDep,
+) -> GenerationRequestStatusResponse:
+    """Return actor-scoped durable generation status."""
+    return await workflow.get_generation_request_status(
+        request_id=generation_request_id,
+        user_id=current_user.id,
+    )
+
+
+@router.post("/requests/{generation_request_id}/retry")
+async def retry_generation_request(
+    http_request: Request,
+    generation_request_id: uuid.UUID,
+    request: RetryGenerationRequest,
+    current_user: CurrentUserDep,
+    workflow: StreamWorkflowDep,
+    _: Annotated[None, Depends(chat_limiter)],
+    audit_service: AuditServiceDep,
+) -> StreamingResponse:
+    """Retry one authorized terminal failure as an SSE stream."""
+
+    async def _audited_retry_stream() -> AsyncIterator[str]:
+        async with capture_audit(
+            audit_service,
+            action=AuditAction.CHAT_GENERATION_RETRY,
+            actor_user_id=current_user.id,
+            resource_type="chat_generation_request",
+            resource_id=generation_request_id,
+            metadata={"expected_attempt": request.expected_attempt},
+        ) as audit:
+            command = RetryChatGenerationCommand(
+                user_id=current_user.id,
+                generation_request_id=generation_request_id,
+                expected_attempt=request.expected_attempt,
+            )
+            async for event in workflow.handle_retry_stream(
+                command=command,
+                user=current_user,
+            ):
+                if await http_request.is_disconnected():
+                    logger.warning(
+                        "SSE retry client disconnected: user_id=%s, request_id=%s",
+                        current_user.id,
+                        generation_request_id,
+                    )
+                    return
+                if event["type"] == "meta":
+                    audit.add_metadata(attempt=event.get("attempt"))
+                yield encode_sse_event(event)
+
+    return StreamingResponse(
+        _audited_retry_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

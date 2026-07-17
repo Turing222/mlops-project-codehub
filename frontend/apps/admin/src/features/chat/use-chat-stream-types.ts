@@ -6,7 +6,6 @@ export type ChatMode = 'normal' | 'rag' | 'web_rag' | 'repo_check';
 export type SendMessageOptions = {
   clientRequestId?: string;
   addUserMessage?: boolean;
-  retryMessageId?: string;
 };
 
 export type SessionStreamActions = {
@@ -38,6 +37,7 @@ export type UseChatStreamParams = {
   sessionActions: SessionStreamActions;
   traceActions: TraceStreamActions;
   resolveDefaultKbId: () => Promise<string | null>;
+  explicitRetryEnabled: boolean;
 };
 
 export type UseChatStreamReturn = {

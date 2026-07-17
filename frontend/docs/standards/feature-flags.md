@@ -21,7 +21,19 @@ Feature flag 由后端控制下发，前端只负责消费，绝不直接连接 
 ## 命名约定
 
 - flag key 使用稳定的 `kebab-case`，与后端注册的 key 保持一致。
-- 当前在用的 flag：`enable-credits`、`enable-agent-trace`、`enable-pixel-avatar`。
+- 当前在用的 flag：`enable-credits`、`enable-agent-trace`、`enable-pixel-avatar`、
+  `chat-explicit-retry`。
+
+### `chat-explicit-retry` rollout contract
+
+- Owner：当前单人维护者；进度与删除 checkpoint 记录在
+  `work-items/active/chat-generation-consistency/manifest.yaml`。
+- Scope：只控制显式 retry UI 与命令入口；status、SSE 和 session detail 的
+  additive identity 字段始终兼容返回，flag 不承担授权。
+- Default / rollback：缺失时为 `false`；发现异常时后端关闭 flag 即可隐藏前端入口，
+  status 查询与原有消息读取不受影响。
+- Enable / delete：WS6 的 flag-on、flag-off、刷新后重试和身份未知故障矩阵通过后再
+  扩大流量；完成全量观察并确认不再需要快速回滚后，删除前后端分支与 flag 注册。
 
 ## 约定
 

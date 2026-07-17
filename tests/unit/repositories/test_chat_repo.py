@@ -309,6 +309,28 @@ async def test_get_generation_request_for_actor_scopes_session_and_workspace(
     assert "workspaces.deleted_at IS NULL" in sql
 
 
+async def test_get_generation_requests_for_session_scopes_current_actor(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    expected = [MagicMock()]
+    result_proxy = MagicMock()
+    result_proxy.scalars.return_value.all.return_value = expected
+    mock_async_session.execute.return_value = result_proxy
+    session_id = uuid.uuid4()
+
+    result = await repo.get_generation_requests_for_session_for_actor(
+        session_id=session_id,
+        user_id=uuid.uuid4(),
+    )
+
+    assert result == expected
+    sql = str(mock_async_session.execute.await_args.args[0].compile())
+    assert "chat_generation_requests.session_id" in sql
+    assert "chat_generation_requests.user_id" in sql
+    assert "chat_sessions.deleted_at IS NULL" in sql
+
+
 async def test_queue_generation_request_uses_actor_attempt_cas(
     mock_async_session: AsyncMock,
 ) -> None:
@@ -422,3 +444,25 @@ async def test_retry_generation_request_returns_incremented_attempt(
     assert "chat_generation_requests.retryable IS true" in sql
     assert "chat_generation_requests.attempt +" in sql
     assert "RETURNING chat_generation_requests.attempt" in sql
+
+
+async def test_reset_assistant_message_for_retry_clears_terminal_fields(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    message_id = uuid.uuid4()
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = message_id
+    mock_async_session.execute.return_value = result_proxy
+
+    reset = await repo.reset_assistant_message_for_retry(message_id=message_id)
+
+    assert reset is True
+    statement = mock_async_session.execute.await_args.args[0]
+    compiled = statement.compile()
+    sql = str(compiled)
+    assert "chat_messages.role" in sql
+    assert "chat_messages.status" in sql
+    assert "RETURNING chat_messages.id" in sql
+    assert MessageStatus.FAILED in compiled.params.values()
+    assert MessageStatus.THINKING in compiled.params.values()
