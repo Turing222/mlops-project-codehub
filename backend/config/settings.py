@@ -16,7 +16,7 @@ from pydantic import Field, field_validator, model_validator
 from sqlalchemy.engine import URL, make_url
 
 from backend.config.ai_settings import BASE_DIR, AISettings, _config_dir
-from backend.config.web_settings import WebSettings
+from backend.config.web_settings import WebSettings, is_production_app_env
 from backend.config.worker_settings import WorkerSettings
 
 _logger = logging.getLogger(__name__)
@@ -80,6 +80,7 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     ENABLE_OTEL_TRACES: bool = False
     OTEL_METRICS_ENDPOINT: str = "http://prometheus:9090/api/v1/otlp/v1/metrics"
     OTEL_TRACES_ENDPOINT: str = "http://jaeger:4318/v1/traces"
+    TELEMETRY_CAPTURE_CONTENT: bool = False
 
     # ── GrowthBook ──────────────────────────────────────────────────
     GROWTHBOOK_API_HOST: str = "https://cdn.growthbook.io"
@@ -221,6 +222,12 @@ class Settings(WebSettings, AISettings, WorkerSettings):
             raise ValueError(
                 f"POSTGRES_SSL_ROOT_CERT_FILE 不存在或不是文件: {cert_path}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_telemetry_content_capture(self) -> Self:
+        if is_production_app_env(self.APP_ENV) and self.TELEMETRY_CAPTURE_CONTENT:
+            raise ValueError("TELEMETRY_CAPTURE_CONTENT must be False in production")
         return self
 
 

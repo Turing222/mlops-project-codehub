@@ -183,6 +183,31 @@ def test_production_settings_reject_sms_mock_mode(
         Settings(_env_file=None)
 
 
+def test_telemetry_content_capture_defaults_to_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.delenv("TELEMETRY_CAPTURE_CONTENT", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.TELEMETRY_CAPTURE_CONTENT is False
+
+
+def test_production_settings_reject_telemetry_content_capture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("SECRET_KEY", PROD_SECRET_KEY)
+    monkeypatch.setenv("TELEMETRY_CAPTURE_CONTENT", "true")
+
+    with pytest.raises(
+        ValueError,
+        match="TELEMETRY_CAPTURE_CONTENT must be False in production",
+    ):
+        Settings(_env_file=None)
+
+
 def test_cors_defaults_are_wildcard_for_local(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
