@@ -519,6 +519,10 @@ DEPLOY_AWS_REGION=us-east-1
 DEPLOY_CW_LOG_STREAM_PREFIX=dewflow
 DEPLOY_CW_METRIC_NAMESPACE=Dewflow/Logs
 DEPLOY_ALERTS_SNS_TOPIC_NAME=dewflow-prod-alerts
+# DEPLOY_ALERTS_SNS_EMAIL=alerts@example.com
+DEPLOY_CW_API_LATENCY_THRESHOLD_MS=2000
+DEPLOY_CW_QUEUE_DEPTH_THRESHOLD=100
+DEPLOY_CW_OLDEST_PENDING_THRESHOLD_SECONDS=300
 ```
 
 首次部署前创建或更新 CloudWatch log group、SNS topic、metric filters 和 alarms：
@@ -533,20 +537,22 @@ EC2 instance role 至少需要对该 log group 具备：
 - `logs:DescribeLogStreams`
 - `logs:PutLogEvents`
 
-运行 `make deploy-cloudwatch-setup` 的人或 CI role 还需要 `logs:CreateLogGroup`、`logs:DescribeLogGroups`、`logs:PutMetricFilter`、`cloudwatch:PutMetricAlarm`、`sns:CreateTopic`。
+运行 `make deploy-cloudwatch-setup` 的人或 CI role 还需要
+`logs:CreateLogGroup`、`logs:DescribeLogGroups`、`logs:PutMetricFilter`、
+`cloudwatch:PutMetricAlarm`、`sns:CreateTopic`、`sns:ListSubscriptionsByTopic`；
+配置 email 时还需要 `sns:Subscribe`。受控送达验证另需
+`logs:DescribeLogStreams`、`logs:CreateLogStream`、`logs:PutLogEvents` 与
+`cloudwatch:DescribeAlarms`。
 
 最少告警验证步骤：
 
 1. 运行 `make deploy-cloudwatch-setup`。
 2. 确认 `api`、`task_worker` 和 `credit_scheduler` 日志进入同一个 CloudWatch Logs log group。
 3. 在 SNS topic 上添加 email / ChatOps subscription；收件人必须完成确认。
-4. 确认第一批生产信号的 metric filters 已创建：
-   - `level=CRITICAL`
-   - `event=circuit_breaker_opened`
-   - `event=worker_rerank_init_degraded`
-   - `error_code=LLM_ROUTING_FAILED`
-   - `error_code=KNOWLEDGE_FILE_INGEST_FAILED`
-5. 触发一次 test alarm，确认通知渠道能收到 `ALARM` 和恢复通知。
+4. 确认 API 5xx / latency、queue depth / oldest pending、E2E heartbeat、
+   terminal failure、Redis risk、probe failure 与 synthetic delivery filters 已创建。
+5. 运行 `make deploy-cloudwatch-verify-delivery`，等待 synthetic Alarm 进入
+   `ALARM`，再由 confirmed receiver 明确确认实际收到通知。
 
 查看生产日志：
 
@@ -558,7 +564,11 @@ aws logs tail "$DEPLOY_CW_LOG_GROUP" \
 
 CSP report-only 第一阶段只用于日志观察：`POST /api/v1/csp/reports` 会写 `event=csp_violation`，但不落库、不触发应用告警，也暂不建 CloudWatch alarm。等 report-only 噪声稳定并确认 allowlist 后，再决定是否为 CSP 加 metric filter。
 
-API P99、5xx 错误率、Redis 内存、Postgres 连接数这类指标告警不通过普通 log metric filter 伪装完成。它们需要 EMF、ADOT/CloudWatch exporter、AMP，或后续托管 RDS / ElastiCache 指标。迁移清单见 [deploy/monitoring/alarms-cloudwatch.md](../../deploy/monitoring/alarms-cloudwatch.md)。
+T1-Lite 只从显式 structured event 得到 API `duration_ms` Maximum、5xx count、
+queue / oldest age 与 Redis restart / eviction delta；它们不能表述为 P99、错误率、
+Redis memory capacity 或完整 SLO。后续分布指标、托管 RDS / ElastiCache 指标仍需
+EMF、ADOT / CloudWatch exporter、AMP 或 AWS managed metrics。迁移清单见
+[deploy/monitoring/alarms-cloudwatch.md](../../deploy/monitoring/alarms-cloudwatch.md)。
 
 ## 与本地 smoke 的边界
 
