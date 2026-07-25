@@ -230,6 +230,23 @@ T1-4 已提供可消费的 recovery / heartbeat / outbox 事件、批次 trace �
 
 **当前不需要：**逐句 LLM 安全 judge、完整 badcase 加密平台或所有流式 chunk 的高级分类器；这些属于第二档内容治理。
 
+### 5.7 2026-07-17 T1-Lite 执行范围决定
+
+本节记录当前交付裁剪，不改写 T1-5 / T1-6 的完整生产停止线，也不把未实施能力记为已完成。当前目标是尽快形成可继续受控内测的 T1-Lite：保留最低告警闭环和内容安全默认值，不新增 SMS 生产化工作，不实施生产恢复实证。
+
+**当前纳入：**
+
+- `T1-5A — 最低告警闭环`：只统一首批告警实际消费的结构化字段；覆盖 API 5xx / 延迟、queue depth / oldest age、Worker + Scheduler 端到端 heartbeat、日志 dead-man、task terminal failure / outbox dead，以及 Redis eviction / restart；复用现有 CloudWatch -> Alarm -> SNS 路径完成一次非恢复型受控信号送达。
+- `T1-6 — 内容与观测安全默认值`：T1 阶段强制不捕获 query / history / output 原文，不提供生产 `capture_content=true` 路径；unsafe metadata 只保留 hash、category、规则和脱敏摘要；provider reasoning / `<think>` 不进入 SSE、普通消息持久化或常规 telemetry，并由 synthetic secret / PII fixtures 验证。
+- 已完成的 SMS rate limit、验证码失败 lockout 和真实 client IP 防护保留，但本轮不接真实 SMS provider，不补 SMS 生产验收、告警或恢复。
+
+**明确暂缓：**
+
+- `T1-5B — 恢复实证` 不进入当前 workstream。RDS snapshot / PITR、S3 version / object restore、Redis / Worker 中断后的生产演练、EC2 / Tunnel / secret 恢复及 RPO / RTO 记录均 deferred；若未来重新需要，应创建独立 recovery-evidence work item。
+- 统一 telemetry sanitizer、完整 retention / sampling / access 治理、dashboard、IaC、CSP enforcement 和高级内容分类仍按第二档或后续专项处理。
+
+**状态语义：**T1-5A 与 T1-6 完成后只能声明 `T1-Lite validated for controlled internal use`。它不等于原始 T1-5 的正式生产 `validated`，也不支持“已具备灾备、任务不丢或高可用”的对外承诺。执行进度由 [`t1-lite-alerting-content-safety`](../../work-items/active/t1-lite-alerting-content-safety/task-plan.md) 跟踪。
+
 ## 6. 第二档：收益最高，建议完成
 
 第二档不是“低优先级”。它应在第一档的事实源和恢复原语稳定后连续推进，目标是用较低边际成本提升核心体验、排障能力和长期开发效率。

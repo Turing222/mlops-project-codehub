@@ -22,6 +22,8 @@
 - Supply-chain baseline 应同时覆盖 dependency scan、image scan、Dependabot hygiene 和 pinned action refs；完整 Trivy action behavior 仍以 GitHub CI 为最终验证环境。
 - Auth abuse baseline 应把 `/sms/send`、`/sms/login`、`/google/callback` 分成独立 rate-limit bucket，并用手机号维度的 SMS verify failure lockout 防止验证码猜测。
 - Compose fallback 中的真实 client IP readiness 通过 `RATE_LIMIT_TRUSTED_PROXY_CIDRS` 显式信任 Docker/nginx proxy 网段；如果 API 直连公网或改由外部 edge 代理，则该值必须改为空或实际可信网段。
+- 已交付的 SMS rate limit、验证码失败 lockout 和真实 client IP 防护保留；当前不继续接真实 SMS provider，也不新增 SMS 生产验收、告警或恢复范围。
+- 原 WS4 是 CSP 与 AWS alert delivery 的复合范围。最低 CloudWatch / SNS 告警职责已移交给 [`t1-lite-alerting-content-safety`](../t1-lite-alerting-content-safety/task-plan.md)；CSP report-only / enforcement rollout 继续归 T2-6，不在本工作项扩展。
 
 ## Workstream 拆分理由
 
@@ -45,9 +47,9 @@
 
 ### WS4 — PR 4 CSP report-only and AWS alert delivery
 
-- Scope：为 frontend delivery surface 增加 report-only CSP，增加 thin self-hosted CSP report sink，只写 `event=csp_violation` 结构化日志；生产告警投递改走 CloudWatch Alarm -> SNS email，优先覆盖 backend / worker critical logs、关键 failure events 和 AWS 主机资源告警。
-- Reason：CSP enforcement 容易误伤前端，应先用 report-only 建立真实 allowlist；当前最大 operability 缺口不是缺少更多 Prometheus rules，而是 production incident 不能可靠触达到人。AWS 后端 + Cloudflare Pages 前端的部署形态下，CloudWatch / SNS 比自托管 Alertmanager 更贴近生产 source of truth，也减少 EC2 上额外运维负担。
-- Expected effect：CSP 可以在不影响线上功能的前提下积累 validation 数据；生产告警通过 AWS 托管链路触达 email receiver，后续服务器性能告警和前端安全信号可以复用同一投递路径。
+- Scope：保留原先关于 report-only CSP、thin CSP report sink 和 CloudWatch / SNS 的计划判断作为历史记录；不在本工作项继续实现复合 PR。最低告警由新 T1-Lite work item 接手，CSP report-only / enforcement rollout 留给 T2-6。
+- Reason：告警与 CSP 已形成两个独立停止线。继续绑定会让受控内测告警被前端 enforcement rollout 阻塞，也会与新的 T1-5A / T1-6 责任重复。
+- Expected effect：既有实现和决策历史不丢失；新告警计划只有一个 owner，未来 CSP 收敛也能独立验收。
 
 ## 暂缓 / 不纳入范围
 
@@ -57,10 +59,11 @@
 - Performance CI。
 - Business metrics。
 - Kubernetes production manifests。
-- CSP enforcement；待 report-only 日志稳定后再决定是否启用阻断。
+- CSP report-only 与 enforcement rollout；统一留给 T2-6 重新排期和验收。
 - 自托管 Alertmanager；除非后续决定生产长期运行自托管 Prometheus alert delivery。
+- 真实 SMS provider 接入、SMS 生产验收、专项告警和恢复。
+- T1-5B 的 RDS / S3 / EC2 / Tunnel / secret 恢复实证和 RPO / RTO。
 
 ## Open Decisions 说明
 
-- `aws-alert-infra-owner`：需要确认 CloudWatch Logs、metric filters、alarms 和 SNS topic 先在 AWS 控制台 / CLI 手工建立，还是后续补 IaC 管理。
-- `csp-enforcement-rollout`：CSP enforcement 暂缓；只有 report-only 日志证明 allowlist 稳定后才进入阻断 rollout。
+当前工作项没有继续阻塞执行的 open decision。最低告警沿用现有 AWS CLI / CloudWatch / SNS 资产，不在 T1-Lite 引入 IaC；CSP report-only / enforcement rollout 作为 T2-6 的独立范围重新排期。
