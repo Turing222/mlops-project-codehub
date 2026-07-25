@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from httpx import ASGITransport, AsyncClient
 
 from backend.middleware.tracing import REQUEST_ID_CTX, setup_tracing
@@ -25,6 +25,10 @@ async def tracing_client() -> AsyncIterator[AsyncClient]:
             "state_request_id": request.state.request_id,
             "ctx_request_id": REQUEST_ID_CTX.get(),
         }
+
+    @app.get("/fail/{item_id}")
+    async def fail_request(item_id: str) -> Response:
+        return Response(status_code=503, headers={"X-Test-Item": item_id})
 
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -59,3 +63,29 @@ async def test_reuses_incoming_request_id_in_response_header(
     body = response.json()
     assert body["state_request_id"] == "req-123"
     assert body["ctx_request_id"] == "req-123"
+
+
+async def test_logs_stable_5xx_fields_without_query_content(
+    tracing_client: AsyncClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    query_marker = "query-secret-AKIA1111111111111111"
+    caplog.set_level("INFO", logger="backend.middleware.tracing")
+
+    response = await tracing_client.get(
+        f"/fail/record-1?query={query_marker}",
+        headers={"X-Request-ID": "request-503"},
+    )
+
+    record = next(
+        item
+        for item in caplog.records
+        if getattr(item, "event", None) == "api_request_completed"
+    )
+    assert response.status_code == 503
+    assert record.http_request_id == "request-503"
+    assert record.route == "/fail/{item_id}"
+    assert record.status_code == 503
+    assert record.error_code == "HTTP_503"
+    assert isinstance(record.duration_ms, float)
+    assert query_marker not in repr(record.__dict__)
