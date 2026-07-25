@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -304,6 +305,7 @@ class KnowledgeOutboxRelayService:
                 limit=self.batch_size,
             )
         for outbox in exhausted:
+            started = time.perf_counter()
             async with self.uow:
                 marked = await self.uow.task_outbox_repo.try_mark_dead(
                     outbox_id=outbox.id,
@@ -324,6 +326,10 @@ class KnowledgeOutboxRelayService:
                         outbox_status=TaskOutboxStatus.DEAD,
                     ),
                     "error_code": PUBLISH_EXHAUSTED_ERROR,
+                    "duration_ms": round(
+                        (time.perf_counter() - started) * 1000,
+                        3,
+                    ),
                 },
             )
 
@@ -336,11 +342,14 @@ class KnowledgeOutboxRelayService:
     ) -> dict[str, object]:
         return {
             "event": event,
+            "task_name": "relay_knowledge_ingestion_outbox",
             "outbox_id": str(outbox.id),
+            "job_id": str(outbox.task_id),
             "task_id": str(outbox.task_id),
             "event_type": outbox.event_type,
             "outbox_status": str(outbox_status or outbox.status),
             "previous_outbox_status": str(outbox.status),
+            "attempt": outbox.attempt_count,
             "publish_attempt": outbox.attempt_count,
             "next_attempt_at": outbox.next_attempt_at,
             "lease_expires_at": outbox.lease_expires_at,

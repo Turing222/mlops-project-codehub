@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -293,6 +294,7 @@ class ChatGenerationRecoveryService:
         error_code: str,
         error_message: str,
     ) -> bool:
+        started = time.perf_counter()
         async with self.uow:
             failed = await self.uow.chat_repo.try_fail_due_generation_request(
                 request_id=generation_request.id,
@@ -327,6 +329,7 @@ class ChatGenerationRecoveryService:
                     status=ChatGenerationStatus.FAILED,
                 ),
                 "error_code": error_code,
+                "duration_ms": round((time.perf_counter() - started) * 1000, 3),
             },
         )
         return True
@@ -344,6 +347,7 @@ class ChatGenerationRecoveryService:
     ) -> dict[str, object]:
         return {
             "event": event,
+            "task_name": "reconcile_chat_generations",
             "generation_request_id": str(generation_request.id),
             "client_request_id": generation_request.client_request_id,
             "attempt": generation_request.attempt,

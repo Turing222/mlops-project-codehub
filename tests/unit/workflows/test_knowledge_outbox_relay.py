@@ -137,7 +137,9 @@ async def test_relay_broker_failure_releases_event_for_retry(
         if getattr(item, "event", None) == "knowledge_outbox_publish_failed"
     )
     fields = record.__dict__
+    assert fields["task_name"] == "relay_knowledge_ingestion_outbox"
     assert fields["outbox_id"] == str(row.id)
+    assert fields["job_id"] == str(row.task_id)
     assert fields["task_id"] == str(row.task_id)
     assert fields["event_type"] == row.event_type
     assert fields["outbox_status"] == str(row.status)
@@ -179,7 +181,9 @@ async def test_relay_marks_due_publish_budget_as_dead(
     assert fields["outbox_status"] == str(TaskOutboxStatus.DEAD)
     assert fields["previous_outbox_status"] == str(row.status)
     assert fields["publish_attempt"] == row.attempt_count
+    assert fields["attempt"] == row.attempt_count
     assert fields["error_code"] == PUBLISH_EXHAUSTED_ERROR
+    assert isinstance(fields["duration_ms"], float)
 
 
 async def test_manual_dead_replay_reopens_failed_task_file_and_outbox_atomically() -> (

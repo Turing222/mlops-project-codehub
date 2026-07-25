@@ -196,6 +196,7 @@ async def test_exhausted_queue_fails_request_and_assistant_atomically(
     )
     fields = record.__dict__
     assert fields["error_code"] == DISPATCH_EXHAUSTED_CODE
+    assert fields["task_name"] == "reconcile_chat_generations"
     assert fields["generation_request_id"] == str(request.id)
     assert fields["attempt"] == request.attempt
     assert fields["status"] == str(ChatGenerationStatus.FAILED)
@@ -204,6 +205,7 @@ async def test_exhausted_queue_fails_request_and_assistant_atomically(
     assert fields["dispatch_attempts"] == request.dispatch_attempts
     assert fields["previous_dispatch_attempts"] == request.dispatch_attempts
     assert fields["recovery_due_at"] == request.recovery_due_at
+    assert isinstance(fields["duration_ms"], float)
 
 
 async def test_expired_running_request_fails_without_automatic_replay() -> None:
