@@ -7,11 +7,15 @@ rerank 流程、concurrency slot 记录、Redis 连接轮换和幂等锁管理�
 
 from __future__ import annotations
 
+import logging
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from backend.api.v1.sse_events import encode_sse_event
 from backend.application.chat.stream_events import (
+    chunk_event,
+    decode_stream_event,
     encode_chunk_event,
     encode_done_event,
     encode_error_event,
@@ -82,7 +86,7 @@ async def test_worker_generation_persists_success_and_publishes_done(
     assert isinstance(update_kwargs["tokens_input"], int)
     assert update_kwargs["tokens_output"] == 7
     message_metadata = update_kwargs["message_metadata"]
-    assert message_metadata["schema_version"] == 1
+    assert message_metadata["schema_version"] == 2
     assert message_metadata["response_outcome"] == "answered"
     assert message_metadata["metrics"]["tokens_output"] == 7
     assert "first_token_latency_ms" in message_metadata["metrics"]
@@ -256,6 +260,7 @@ async def test_worker_stream_routes_to_planner_model_tier(monkeypatch) -> None:
         resolver_calls.append(provider)
         return routed_llm
 
+    route_reason_marker = "route-reason-AKIA1111111111111111-pii-13812345678"
     workflow = LLMGenerationWorkerWorkflow(
         uow=FakeChatUow(),
         redis_client=FakeRedisClient(redis),
@@ -270,7 +275,7 @@ async def test_worker_stream_routes_to_planner_model_tier(monkeypatch) -> None:
                 search_context={"metrics": {"planner_used": True}},
                 answer_model_tier="reasoning",
                 model_route_confidence=0.93,
-                model_route_reason="复杂推理",
+                model_route_reason=route_reason_marker,
             )
         ),
     )
@@ -295,6 +300,9 @@ async def test_worker_stream_routes_to_planner_model_tier(monkeypatch) -> None:
     assert metrics["answer_model_tier"] == "reasoning"
     assert metrics["answer_model_provider"] == "reasoning-provider"
     assert metrics["answer_model_name"] == "reasoning-model"
+    assert metrics["model_route_reason_present"] is True
+    assert route_reason_marker not in repr(redis.published)
+    assert route_reason_marker not in repr(update_kwargs)
 
 
 async def test_worker_nonstream_falls_back_when_model_route_provider_fails(
@@ -346,9 +354,17 @@ async def test_worker_nonstream_falls_back_when_model_route_provider_fails(
     assert usage_kwargs["model_name"] == "fake-model"
 
 
-async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch) -> None:
+async def test_worker_generation_marks_failed_and_publishes_error(
+    monkeypatch,
+    caplog,
+) -> None:
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)
+    query_marker = "query-pii-13812345678"
+    caplog.set_level(
+        logging.ERROR,
+        logger="backend.application.chat.worker_generation_workflow",
+    )
 
     uow = FakeChatUow()
     assistant_message_id = uuid.uuid4()
@@ -366,7 +382,7 @@ async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch) -
     await workflow.generate_stream(
         payload=GenerationPayload(
             session_id=uuid.uuid4(),
-            query_text="hi",
+            query_text=query_marker,
             conversation_history=[],
         ),
         channel="stream:test",
@@ -392,11 +408,30 @@ async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch) -
     assert update_kwargs["message_id"] == assistant_message_id
     assert update_kwargs["content"] == "provider failed"
     assert update_kwargs["message_metadata"]["response_outcome"] == "failed"
+    terminal_record = next(
+        record
+        for record in caplog.records
+        if getattr(record, "event", None) == "chat_generation_terminal_failed"
+    )
+    assert terminal_record.error_code == "LLM_FAILED"
+    assert terminal_record.task_name == "generate_llm_stream"
+    assert terminal_record.retryable is True
+    assert isinstance(terminal_record.duration_ms, int | float)
+    assert query_marker not in caplog.text
+    assert query_marker not in repr([record.__dict__ for record in caplog.records])
 
 
-async def test_worker_stream_system_error_returns_generic_message(monkeypatch) -> None:
+async def test_worker_stream_system_error_returns_generic_message(
+    monkeypatch,
+    caplog,
+) -> None:
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)
+    secret_marker = "provider-system-AKIA1111111111111111-pii-13812345678"
+    caplog.set_level(
+        logging.ERROR,
+        logger="backend.application.chat.worker_generation_workflow",
+    )
 
     uow = FakeChatUow()
     assistant_message_id = uuid.uuid4()
@@ -405,7 +440,7 @@ async def test_worker_stream_system_error_returns_generic_message(monkeypatch) -
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
         redis_client=FakeRedisClient(redis),
-        llm_service=StreamingLLM([], error=RuntimeError("internal secret")),
+        llm_service=StreamingLLM([], error=RuntimeError(secret_marker)),
     )
 
     result = await workflow.generate_stream(
@@ -439,6 +474,8 @@ async def test_worker_stream_system_error_returns_generic_message(monkeypatch) -
     assert update_kwargs["message_id"] == assistant_message_id
     assert update_kwargs["content"] == "服务暂时不可用，请稍后重试"
     assert update_kwargs["message_metadata"]["response_outcome"] == "failed"
+    assert secret_marker not in caplog.text
+    assert secret_marker not in repr([record.__dict__ for record in caplog.records])
 
 
 async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
@@ -484,7 +521,7 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
     assert update_kwargs["content"] == "full answer"
     assert update_kwargs["tokens_input"] == 12
     assert update_kwargs["tokens_output"] == 5
-    assert update_kwargs["message_metadata"]["schema_version"] == 1
+    assert update_kwargs["message_metadata"]["schema_version"] == 2
     assert update_kwargs["message_metadata"]["response_outcome"] == "answered"
     metrics = update_kwargs["message_metadata"]["metrics"]
     assert metrics["tokens_input"] == 12
@@ -662,7 +699,14 @@ async def test_worker_stream_timing_with_thinking_tags(monkeypatch) -> None:
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
         redis_client=FakeRedisClient(redis),
-        llm_service=StreamingLLM(["<think>", "thinking", "</think>", "actual answer"]),
+        llm_service=StreamingLLM(
+            [
+                "<thi",
+                "nk>reasoning-secret-AKIA1111111111111111",
+                "</think>",
+                "actual answer",
+            ]
+        ),
     )
     monkeypatch.setattr(workflow, "_count_output_tokens", lambda content: 10)
 
@@ -681,11 +725,56 @@ async def test_worker_stream_timing_with_thinking_tags(monkeypatch) -> None:
 
     uow.chat_repo.update_message_status.assert_awaited_once()
     update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    assert update_kwargs["content"] == "actual answer"
+    assert "reasoning-secret" not in repr(update_kwargs)
+    assert without_step_events(redis.published) == [
+        ("stream:test", encode_started_event()),
+        ("stream:test", encode_chunk_event("actual answer")),
+        ("stream:test", encode_done_event()),
+    ]
+    sse_frames = [
+        encode_sse_event(chunk_event(str(event.get("content") or "")))
+        for _channel, encoded in without_step_events(redis.published)
+        if (event := decode_stream_event(encoded)).get("type") == "chunk"
+    ]
+    assert "reasoning-secret" not in "".join(sse_frames)
+    assert "<think>" not in "".join(sse_frames)
     metrics = update_kwargs["message_metadata"]["metrics"]
     assert "llm_thinking_ms" in metrics
     assert "llm_answer_ms" in metrics
     assert metrics["llm_thinking_ms"] >= 0
     assert metrics["llm_answer_ms"] >= 0
+
+
+async def test_worker_nonstream_strips_reasoning_before_persistence(
+    monkeypatch,
+) -> None:
+    redis = FakeRedis()
+    install_llm_slot_recorder(monkeypatch)
+    uow = FakeChatUow()
+    uow.chat_repo.update_message_status.return_value = object()
+    reasoning_marker = "reasoning-pii-13812345678"
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=NonStreamingLLM(
+            LLMResultDTO(content=f"<think>{reasoning_marker}</think>safe answer")
+        ),
+    )
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="normal query",
+            conversation_history=[],
+        ),
+        assistant_message_id=uuid.uuid4(),
+    )
+
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    assert result.content == "safe answer"
+    assert update_kwargs["content"] == "safe answer"
+    assert reasoning_marker not in repr(update_kwargs)
 
 
 async def test_worker_stream_timing_without_thinking_tags(monkeypatch) -> None:

@@ -216,11 +216,12 @@ async def test_prepare_context_planner_preflight_refusal_skips_retrieval(
     )
 
     assert result.refusal_decision is not None
-    assert result.refusal_decision.reason == "明显无法回答"
+    assert result.refusal_decision.reason == "planner_preflight_refusal"
     assert result.search_context["planner_refusal"] is True
     assert result.search_context["refusal_type"] == "planner_preflight"
     assert result.search_context["answer_route"] == "refuse"
     assert result.search_context["route_confidence"] == 0.9
+    assert "明显无法回答" not in str(result.search_context)
     rag_service.retrieve.assert_not_awaited()
 
 
@@ -361,7 +362,7 @@ async def test_prepare_context_routing_disabled_ignores_refuse_route(
     rag_service.retrieve.assert_awaited_once()
 
 
-async def test_prepare_context_planner_preflight_refusal_falls_back_to_plan_reason(
+async def test_prepare_context_planner_preflight_refusal_uses_stable_reason(
     monkeypatch,
 ) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
@@ -402,11 +403,12 @@ async def test_prepare_context_planner_preflight_refusal_falls_back_to_plan_reas
     )
 
     assert result.refusal_decision is not None
-    assert result.refusal_decision.reason == "问题超出知识库范围"
+    assert result.refusal_decision.reason == "planner_preflight_refusal"
+    assert "问题超出知识库范围" not in str(result)
     rag_service.retrieve.assert_not_awaited()
 
 
-async def test_prepare_context_planner_preflight_refusal_falls_back_to_default_text(
+async def test_prepare_context_planner_preflight_refusal_stays_stable_without_reason(
     monkeypatch,
 ) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
@@ -446,7 +448,7 @@ async def test_prepare_context_planner_preflight_refusal_falls_back_to_default_t
     )
 
     assert result.refusal_decision is not None
-    assert result.refusal_decision.reason == "RAG planner 前置拒答"
+    assert result.refusal_decision.reason == "planner_preflight_refusal"
     rag_service.retrieve.assert_not_awaited()
 
 
@@ -537,5 +539,6 @@ async def test_prepare_context_confidence_at_threshold_triggers_refusal(
     )
 
     assert result.refusal_decision is not None
-    assert result.refusal_decision.reason == "边界值拒答"
+    assert result.refusal_decision.reason == "planner_preflight_refusal"
+    assert "边界值拒答" not in str(result)
     rag_service.retrieve.assert_not_awaited()

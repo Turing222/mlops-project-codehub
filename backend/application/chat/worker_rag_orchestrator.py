@@ -120,13 +120,13 @@ class WorkerRAGOrchestrator:
             metrics["rerank_used"] = rag_plan.use_rerank
             metrics["context_mode"] = rag_plan.context_mode
             metrics["selected_sources"] = ",".join(rag_plan.selected_sources)
-            metrics["route_reason"] = rag_plan.reason
+            metrics["route_reason_present"] = bool(rag_plan.reason)
             if payload.feature_flags.enable_rag_planner_routing:
                 metrics["answer_route"] = rag_plan.answer_route
                 metrics["route_confidence"] = rag_plan.route_confidence
             metrics["answer_model_tier"] = rag_plan.answer_model_tier
             metrics["model_route_confidence"] = rag_plan.model_route_confidence
-            metrics["model_route_reason"] = rag_plan.model_route_reason
+            metrics["model_route_reason_present"] = bool(rag_plan.model_route_reason)
             metrics["external_context_planned"] = rag_plan.should_use_external_context
             await _emit_step(
                 on_step,
@@ -135,7 +135,7 @@ class WorkerRAGOrchestrator:
                 {
                     "planner_ms": metrics["planner_ms"],
                     "planner_used": planner_used,
-                    "route_reason": metrics.get("route_reason"),
+                    "answer_route": rag_plan.answer_route,
                 },
             )
 
@@ -154,7 +154,7 @@ class WorkerRAGOrchestrator:
                     span,
                     {
                         "rag.refusal": True,
-                        "rag.refusal_reason": preflight_refusal.reason,
+                        "rag.refusal_reason": "planner_preflight_refusal",
                         "rag.planner.used": planner_used,
                         "rag.planner.answer_route": rag_plan.answer_route,
                         "rag.planner.route_confidence": rag_plan.route_confidence,
@@ -370,7 +370,13 @@ class WorkerRAGOrchestrator:
                 return default_plan, True
             return plan, True
         except Exception as exc:
-            logger.warning("Worker RAG Planner 规划失败，降级为默认计划: %s", exc)
+            logger.warning(
+                "Worker RAG planner failed; using default plan",
+                extra={
+                    "event": "worker_rag_planner_degraded",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return default_plan, False
 
     def _build_planner_preflight_refusal(
@@ -392,14 +398,9 @@ class WorkerRAGOrchestrator:
             < ai_settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD
         ):
             return None
-        reason = (
-            rag_plan.planner_refusal_reason.strip()
-            or rag_plan.reason.strip()
-            or "RAG planner 前置拒答"
-        )
         return RAGEvidenceDecision(
             should_refuse=True,
-            reason=reason,
+            reason="planner_preflight_refusal",
             hit_count=0,
             policy_version=3,
         )
@@ -427,7 +428,13 @@ class WorkerRAGOrchestrator:
                 for index, chunk in enumerate(chunks)
             ]
         except Exception as exc:
-            logger.warning("外部上下文检索失败，降级为仅使用 RAG: %s", exc)
+            logger.warning(
+                "External context retrieval failed; using RAG only",
+                extra={
+                    "event": "worker_external_context_degraded",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return []
 
     async def retrieve_rag_candidates(
@@ -447,7 +454,13 @@ class WorkerRAGOrchestrator:
         try:
             return await self._retrieve_from_rag_service(payload, rag_plan)
         except Exception as exc:
-            logger.warning("Worker RAG 候选检索失败，降级为普通对话: %s", exc)
+            logger.warning(
+                "Worker RAG retrieval failed; using ordinary chat",
+                extra={
+                    "event": "worker_rag_retrieval_degraded",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return []
 
     async def _retrieve_from_rag_service(
@@ -528,7 +541,13 @@ class WorkerRAGOrchestrator:
                 )
                 return reranked
         except Exception as exc:
-            logger.warning("Worker RAG rerank 失败，降级为候选原始排序: %s", exc)
+            logger.warning(
+                "Worker RAG rerank failed; preserving candidate order",
+                extra={
+                    "event": "worker_rag_rerank_degraded",
+                    "error_type": type(exc).__name__,
+                },
+            )
             fallback_chunks = select_rerank_fallback_candidates(candidates, limit)
             self._debug_log_final_chunks(
                 payload=payload,
@@ -582,7 +601,7 @@ class WorkerRAGOrchestrator:
                 "refusal_type": "planner_preflight",
                 "answer_route": rag_plan.answer_route,
                 "route_confidence": rag_plan.route_confidence,
-                "planner_refusal_reason": decision.reason,
+                "planner_refusal_reason": "planner_preflight_refusal",
             }
         )
         return search_context
@@ -623,7 +642,7 @@ class WorkerRAGOrchestrator:
                     rag_plan.should_use_external_context
                 ),
                 "rag_external_top_k": rag_plan.external_top_k,
-                "rag_reason": rag_plan.reason,
+                "rag_reason_present": bool(rag_plan.reason),
             },
         )
 
@@ -665,6 +684,6 @@ def _rag_chunk_debug_record(chunk: dict[str, Any]) -> dict[str, object]:
         "matched_by": chunk.get("matched_by"),
         "filename": chunk.get("filename"),
         "title": chunk.get("title"),
-        "url": chunk.get("url"),
-        "content_preview": str(chunk.get("content") or "")[:240],
+        "has_url": bool(chunk.get("url")),
+        "content_length": len(str(chunk.get("content") or "")),
     }

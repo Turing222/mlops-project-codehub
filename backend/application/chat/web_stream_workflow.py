@@ -352,7 +352,14 @@ class ChatWorkflow:
             await self._release_prepared_lock(prepared)
             await self._close_pubsub(pubsub, channel)
             pubsub = None
-            logger.warning("流式任务初始化失败: %s", exc)
+            logger.warning(
+                "Chat stream initialization rejected",
+                extra={
+                    "event": "chat_stream_initialization_failed",
+                    "error_code": exc.code,
+                    "error_type": type(exc).__name__,
+                },
+            )
             yield error_event(
                 str(exc),
                 error_code=exc.code,
@@ -366,7 +373,14 @@ class ChatWorkflow:
             await self._release_prepared_lock(prepared)
             await self._close_pubsub(pubsub, channel)
             pubsub = None
-            logger.error("流式任务初始化异常: %s", str(exc), exc_info=True)
+            logger.error(
+                "Chat stream initialization failed",
+                extra={
+                    "event": "chat_stream_initialization_failed",
+                    "error_code": "CHAT_DISPATCH_RECOVERY_PENDING",
+                    "error_type": type(exc).__name__,
+                },
+            )
             yield error_event(
                 "请求已接受，正在恢复派发，请稍后刷新",
                 error_code="CHAT_DISPATCH_RECOVERY_PENDING",
@@ -562,7 +576,14 @@ class ChatWorkflow:
                     },
                 )
         except AppException as exc:
-            logger.warning("流式 LLM 调用业务异常: %s", exc)
+            logger.warning(
+                "Chat stream business failure",
+                extra={
+                    "event": "chat_stream_failed",
+                    "error_code": exc.code,
+                    "error_type": type(exc).__name__,
+                },
+            )
             yield error_event(
                 str(exc),
                 error_code=exc.code,
@@ -573,7 +594,14 @@ class ChatWorkflow:
             yield done_event()
             return
         except Exception as exc:
-            logger.error("流式 LLM 调用异常: %s", str(exc), exc_info=True)
+            logger.error(
+                "Chat stream failed",
+                extra={
+                    "event": "chat_stream_failed",
+                    "error_code": "CHAT_STREAM_FAILED",
+                    "error_type": type(exc).__name__,
+                },
+            )
             yield error_event(
                 "服务暂时不可用，请稍后重试",
                 error_code="CHAT_STREAM_FAILED",

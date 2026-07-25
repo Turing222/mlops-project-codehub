@@ -14,6 +14,10 @@ from datetime import UTC, datetime, timedelta
 
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.application.chat.generation_heartbeat import GenerationLeaseHeartbeat
+from backend.application.chat.provider_reasoning import (
+    StreamingReasoningFilter,
+    strip_provider_reasoning,
+)
 from backend.application.chat.timing import (
     elapsed_ms,
     merge_metrics,
@@ -115,7 +119,10 @@ def _default_model_name() -> str:
     try:
         return get_llm_model_config().resolve_profile().model
     except Exception as exc:
-        logger.debug("Failed to resolve default LLM model name: %s", exc)
+        logger.debug(
+            "Failed to resolve default LLM model name",
+            extra={"error_type": type(exc).__name__},
+        )
         return "default"
 
 
@@ -320,10 +327,13 @@ class LLMGenerationWorkerWorkflow:
                 except Exception as exc:
                     fallback = True
                     logger.warning(
-                        "Model tier routing failed, falling back to default LLM: tier=%s provider=%s error=%s",
-                        tier,
-                        provider_config,
-                        exc,
+                        "Model tier routing failed, falling back to default LLM",
+                        extra={
+                            "event": "llm_model_route_resolution_failed",
+                            "model_tier": tier,
+                            "provider_config": provider_config,
+                            "error_type": type(exc).__name__,
+                        },
                     )
                     provider_config = None
         return _SelectedLLM(
@@ -344,6 +354,7 @@ class LLMGenerationWorkerWorkflow:
         assistant_message_id: uuid.UUID | None,
         idempotency_lock_key: str | None,
         generation_attempt: GenerationAttemptPayload | None,
+        duration_ms: int,
         channel: str | None = None,
     ) -> GenerationResult:
         """Common error handling: persist failure, optionally publish, return result."""
@@ -359,12 +370,26 @@ class LLMGenerationWorkerWorkflow:
             retryable = False
             should_persist_failure = False
         elif isinstance(exc, AppException):
-            logger.warning("TaskIQ 调用 LLM 业务异常: %s", exc)
+            logger.warning(
+                "TaskIQ LLM business failure",
+                extra={
+                    "event": "llm_generation_failed",
+                    "error_code": exc.code,
+                    "error_type": type(exc).__name__,
+                },
+            )
             error_content = str(exc)
             error_code = exc.code
             retryable = True
         else:
-            logger.exception("TaskIQ 调用 LLM 系统异常")
+            logger.error(
+                "TaskIQ LLM system failure",
+                extra={
+                    "event": "llm_generation_failed",
+                    "error_code": "CHAT_GENERATION_FAILED",
+                    "error_type": type(exc).__name__,
+                },
+            )
             error_content = "服务暂时不可用，请稍后重试"
             error_code = "CHAT_GENERATION_FAILED"
             retryable = True
@@ -383,12 +408,42 @@ class LLMGenerationWorkerWorkflow:
                 error_content = "请求状态已变化，本次执行结果已丢弃"
                 error_code = "CHAT_GENERATION_ATTEMPT_REJECTED"
                 retryable = False
-            except Exception:
+            except Exception as persistence_exc:
                 retryable = False
-                logger.exception(
-                    "Chat terminal failure persistence failed: message_id=%s",
-                    assistant_message_id,
+                logger.error(
+                    "Chat terminal failure persistence failed",
+                    extra={
+                        "event": "chat_generation_failure_persistence_failed",
+                        "error_code": "CHAT_FAILURE_PERSISTENCE_FAILED",
+                        "message_id": str(assistant_message_id)
+                        if assistant_message_id
+                        else None,
+                        "error_type": type(persistence_exc).__name__,
+                    },
                 )
+
+        if error_code != "CHAT_GENERATION_ATTEMPT_REJECTED":
+            event_fields: dict[str, object] = {
+                "event": "chat_generation_terminal_failed",
+                "error_code": error_code,
+                "task_name": (
+                    "generate_llm_stream" if channel else "generate_llm_nonstream"
+                ),
+                "duration_ms": duration_ms,
+                "retryable": retryable,
+            }
+            if generation_attempt is not None:
+                event_fields.update(
+                    {
+                        "generation_request_id": str(generation_attempt.request_id),
+                        "task_id": generation_attempt.task_id,
+                        "attempt": generation_attempt.attempt,
+                    }
+                )
+            logger.error(
+                "Chat generation reached terminal failure",
+                extra=event_fields,
+            )
 
         if channel is not None:
             try:
@@ -490,7 +545,7 @@ class LLMGenerationWorkerWorkflow:
             "answer_model_provider": selected_llm.provider_config,
             "answer_model_name": selected_llm.model_name,
             "model_route_confidence": selected_llm.route_confidence,
-            "model_route_reason": selected_llm.route_reason,
+            "model_route_reason_present": bool(selected_llm.route_reason),
             "model_route_fallback": selected_llm.fallback,
         }
 
@@ -522,7 +577,7 @@ class LLMGenerationWorkerWorkflow:
             "model_tier": selected_llm.tier,
             "provider_config": selected_llm.provider_config,
             "route_confidence": selected_llm.route_confidence,
-            "route_reason": selected_llm.route_reason,
+            "route_reason_present": bool(selected_llm.route_reason),
             "route_fallback": selected_llm.fallback,
             "first_token_ms": first_token_ms,
             "guardrail_output_triggered": (
@@ -685,7 +740,7 @@ class LLMGenerationWorkerWorkflow:
                 first_token_latency_ms: int | None = None
                 first_published_from_llm_ms: int | None = None
 
-                in_thinking = False
+                reasoning_filter = StreamingReasoningFilter()
                 thinking_started_time = None
                 thinking_duration_ms = None
                 answer_started_time = None
@@ -706,6 +761,26 @@ class LLMGenerationWorkerWorkflow:
                         await on_step("generate-answer", "running")
                     await self.stream_publisher.publish_chunk(channel, content)
 
+                async def consume_visible_chunk(content: str) -> bool:
+                    nonlocal output_blocked
+                    nonlocal output_decision
+                    if not content:
+                        return False
+                    candidate_content = "".join([*accumulated_content, content])
+                    output_decision = evaluate_output_guardrail(candidate_content)
+                    accumulated_content.append(content)
+                    if output_decision.triggered:
+                        output_blocked = True
+                        await publish_user_chunk(SAFETY_REFUSAL_MESSAGE)
+                        return True
+                    if citation_filter is not None:
+                        cleaned = citation_filter.push(content)
+                        if cleaned is not None:
+                            await publish_user_chunk(cleaned)
+                    else:
+                        await publish_user_chunk(content)
+                    return False
+
                 async with llm_concurrency_slot(
                     {
                         "chat.session_id": payload.session_id,
@@ -715,43 +790,31 @@ class LLMGenerationWorkerWorkflow:
                     }
                 ):
                     async for chunk in selected_llm.service.stream_response(llm_query):
-                        candidate_content = "".join([*accumulated_content, chunk])
-                        output_decision = evaluate_output_guardrail(candidate_content)
-                        if output_decision.triggered:
-                            accumulated_content.append(chunk)
-                            output_blocked = True
-                            await publish_user_chunk(SAFETY_REFUSAL_MESSAGE)
-                            break
-                        accumulated_content.append(chunk)
-
-                        full_so_far = "".join(accumulated_content)
-                        if not in_thinking and thinking_duration_ms is None:
-                            if "<think>" in full_so_far:
-                                in_thinking = True
-                                thinking_started_time = perf_start()
-                                if not thinking_step_running:
-                                    thinking_step_running = True
-                                    await on_step("model-thinking", "running")
-                            elif answer_started_time is None:
-                                answer_started_time = perf_start()
-                        elif in_thinking and "</think>" in full_so_far:
-                            in_thinking = False
+                        visible_chunk = reasoning_filter.push(chunk)
+                        if reasoning_filter.saw_reasoning and not thinking_step_running:
+                            thinking_started_time = perf_start()
+                            thinking_step_running = True
+                            await on_step("model-thinking", "running")
+                        if (
+                            thinking_step_running
+                            and not reasoning_filter.in_reasoning
+                            and not thinking_step_done
+                        ):
+                            assert thinking_started_time is not None
                             thinking_duration_ms = elapsed_ms(thinking_started_time)
+                            thinking_step_done = True
                             answer_started_time = perf_start()
-                            if thinking_step_running and not thinking_step_done:
-                                thinking_step_done = True
-                                await on_step(
-                                    "model-thinking",
-                                    "done",
-                                    {"thinking_duration_ms": thinking_duration_ms},
-                                )
-
-                        if citation_filter is not None:
-                            cleaned = citation_filter.push(chunk)
-                            if cleaned is not None:
-                                await publish_user_chunk(cleaned)
-                        else:
-                            await publish_user_chunk(chunk)
+                            await on_step(
+                                "model-thinking",
+                                "done",
+                                {"thinking_duration_ms": thinking_duration_ms},
+                            )
+                        elif visible_chunk and answer_started_time is None:
+                            answer_started_time = perf_start()
+                        if await consume_visible_chunk(visible_chunk):
+                            break
+                    if not output_blocked:
+                        await consume_visible_chunk(reasoning_filter.finish())
                     if not output_blocked and citation_filter is not None:
                         remaining = citation_filter.flush()
                         if remaining:
@@ -759,7 +822,7 @@ class LLMGenerationWorkerWorkflow:
                 llm_generate_ms = elapsed_ms(llm_started)
 
                 # Finalize thinking and answer durations
-                if in_thinking:
+                if reasoning_filter.in_reasoning:
                     thinking_duration_ms = (
                         elapsed_ms(thinking_started_time)
                         if thinking_started_time is not None
@@ -922,6 +985,7 @@ class LLMGenerationWorkerWorkflow:
                 assistant_message_id=assistant_message_id,
                 idempotency_lock_key=idempotency_lock_key,
                 generation_attempt=generation_attempt,
+                duration_ms=elapsed_ms(worker_started),
                 channel=channel,
             )
             return StreamGenerationResult(success=False, error=result.error)
@@ -1043,7 +1107,7 @@ class LLMGenerationWorkerWorkflow:
                 )
                 return GenerationResult(success=False, error=error_msg)
 
-            original_content = result.content
+            original_content = strip_provider_reasoning(result.content)
             output_decision = evaluate_output_guardrail(original_content)
             full_content = (
                 SAFETY_REFUSAL_MESSAGE
@@ -1150,6 +1214,7 @@ class LLMGenerationWorkerWorkflow:
                 assistant_message_id=assistant_message_id,
                 idempotency_lock_key=idempotency_lock_key,
                 generation_attempt=generation_attempt,
+                duration_ms=elapsed_ms(worker_started),
             )
         finally:
             await heartbeat.stop()

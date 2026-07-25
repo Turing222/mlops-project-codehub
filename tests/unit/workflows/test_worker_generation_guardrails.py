@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 
 from backend.application.chat.stream_events import (
@@ -95,7 +96,11 @@ async def test_worker_output_guardrail_replaces_and_marks_p0(monkeypatch) -> Non
     assert update_kwargs["content"] == result.content
     metadata = update_kwargs["message_metadata"]
     assert metadata["guardrail"]["output"]["triggered"] is True
-    assert metadata["guardrail"]["output"]["original_unsafe_output"] == unsafe_output
+    summary = metadata["guardrail"]["output"]["unsafe_summary"]
+    assert summary["sha256"] == hashlib.sha256(unsafe_output.encode()).hexdigest()
+    assert summary["category"] == "unsafe_output"
+    assert summary["redacted_summary"].startswith("[REDACTED_UNSAFE_OUTPUT")
+    assert unsafe_output not in repr(metadata)
     assert metadata["badcase"]["severity"] == "p0"
     assert metadata["badcase"]["reason"] == "should_refuse_but_answered"
 
@@ -135,7 +140,9 @@ async def test_worker_stream_output_guardrail_blocks_chunk_before_publish(
     update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
     assert update_kwargs["content"] == refusal
     metadata = update_kwargs["message_metadata"]
-    assert metadata["guardrail"]["output"]["original_unsafe_output"] == unsafe_output
+    summary = metadata["guardrail"]["output"]["unsafe_summary"]
+    assert summary["sha256"] == hashlib.sha256(unsafe_output.encode()).hexdigest()
+    assert unsafe_output not in repr(metadata)
 
 
 async def test_worker_stream_persists_stream_guardrail_decision(monkeypatch) -> None:
@@ -179,5 +186,7 @@ async def test_worker_stream_persists_stream_guardrail_decision(monkeypatch) -> 
     )
     metadata = update_kwargs["message_metadata"]
     assert metadata["guardrail"]["output"]["triggered"] is True
-    assert metadata["guardrail"]["output"]["original_unsafe_output"] == "unsafe partial"
+    summary = metadata["guardrail"]["output"]["unsafe_summary"]
+    assert summary["sha256"] == hashlib.sha256(b"unsafe partial").hexdigest()
+    assert "unsafe partial" not in repr(metadata)
     assert decisions == [GuardrailDecision(False)]

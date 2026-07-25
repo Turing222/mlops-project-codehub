@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from unittest.mock import AsyncMock
 
@@ -136,12 +137,13 @@ async def test_worker_nonstream_planner_preflight_refusal_skips_llm(
     uow.chat_repo.update_message_status.return_value = object()
     llm_service = NonStreamingLLM(LLMResultDTO(content="should not run"))
     rag_service = RecordingRAGService([make_rag_hit()])
+    planner_reason_marker = "planner-reason-AKIA1111111111111111-pii-13812345678"
     planner = RecordingRAGPlanner(
         RAGExecutionPlan(
             should_use_rag=True,
             answer_route="refuse",
             route_confidence=0.9,
-            planner_refusal_reason="明显无法回答",
+            planner_refusal_reason=planner_reason_marker,
         )
     )
     workflow = LLMGenerationWorkerWorkflow(
@@ -174,6 +176,7 @@ async def test_worker_nonstream_planner_preflight_refusal_skips_llm(
     assert slot_calls == []
     update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
     assert update_kwargs["search_context"]["planner_refusal"] is True
+    assert planner_reason_marker not in repr(update_kwargs)
     assert update_kwargs["message_metadata"]["badcase"]["reason"] == (
         "planner_preflight_refusal"
     )
@@ -189,12 +192,13 @@ async def test_worker_stream_planner_preflight_refusal_skips_llm(
     uow.chat_repo.update_message_status.return_value = object()
     llm_service = StreamingLLM(["should not stream"])
     rag_service = RecordingRAGService([make_rag_hit()])
+    planner_reason_marker = "planner-reason-AKIA1111111111111111-pii-13812345678"
     planner = RecordingRAGPlanner(
         RAGExecutionPlan(
             should_use_rag=True,
             answer_route="refuse",
             route_confidence=0.9,
-            planner_refusal_reason="明显无法回答",
+            planner_refusal_reason=planner_reason_marker,
         )
     )
     workflow = LLMGenerationWorkerWorkflow(
@@ -231,6 +235,8 @@ async def test_worker_stream_planner_preflight_refusal_skips_llm(
     assert slot_calls == []
     update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
     assert update_kwargs["search_context"]["planner_refusal"] is True
+    assert planner_reason_marker not in repr(redis.published)
+    assert planner_reason_marker not in repr(update_kwargs)
     assert update_kwargs["message_metadata"]["badcase"]["reason"] == (
         "planner_preflight_refusal"
     )
@@ -697,11 +703,17 @@ async def test_worker_generation_uses_planner_fallback_plan(monkeypatch) -> None
 
 async def test_worker_generation_uses_planner_fallback_on_exception(
     monkeypatch,
+    caplog,
 ) -> None:
     redis = FakeRedis()
 
     rag_service = RecordingRAGService([make_rag_hit()])
-    planner = RecordingRAGPlanner(error=ValueError("LLM API failed"))
+    secret_marker = "planner-echo-AKIA1111111111111111-pii-13812345678"
+    planner = RecordingRAGPlanner(error=ValueError(secret_marker))
+    caplog.set_level(
+        logging.WARNING,
+        logger="backend.application.chat.worker_rag_orchestrator",
+    )
     uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(
@@ -731,3 +743,5 @@ async def test_worker_generation_uses_planner_fallback_on_exception(
         kb_id=payload.kb_id,
         top_k=4,
     )
+    assert secret_marker not in caplog.text
+    assert secret_marker not in repr([record.__dict__ for record in caplog.records])
