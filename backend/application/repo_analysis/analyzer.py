@@ -6,6 +6,7 @@ from typing import Literal
 from backend.ai.providers.llm.pydantic_ai_models import create_pydantic_ai_model
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
+from backend.config.settings import settings
 from backend.models.schemas.repo_analysis_schema import (
     README_ONLY_CAVEAT,
     ClaimedCapability,
@@ -43,7 +44,13 @@ class RepoCredibilityAnalyzer:
                 evidence=evidence,
             ), "pydantic_ai"
         except Exception as exc:
-            logger.warning("Repo credibility analyzer fallback: %s", exc)
+            logger.warning(
+                "Repo credibility analyzer fallback",
+                extra={
+                    "event": "repo_credibility_analyzer_degraded",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return self._fallback_assessment(
                 subject=subject,
                 evidence=evidence,
@@ -73,6 +80,7 @@ class RepoCredibilityAnalyzer:
         if self._agent is None:
             try:
                 from pydantic_ai import Agent, PromptedOutput
+                from pydantic_ai.models.instrumented import InstrumentationSettings
             except ImportError as exc:
                 raise RuntimeError("pydantic-ai 未安装") from exc
 
@@ -86,7 +94,10 @@ class RepoCredibilityAnalyzer:
                 ),
                 output_type=PromptedOutput(ReadmeCredibilityAssessment),
                 instructions=_INSTRUCTIONS,
-                instrument=True,
+                instrument=InstrumentationSettings(
+                    include_binary_content=False,
+                    include_content=settings.TELEMETRY_CAPTURE_CONTENT,
+                ),
                 name="repo_readme_credibility_analyzer",
             )
         return self._agent

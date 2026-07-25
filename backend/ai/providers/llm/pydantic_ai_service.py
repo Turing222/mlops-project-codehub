@@ -13,6 +13,7 @@ from typing import Any
 from backend.ai.providers.llm.pydantic_ai_models import create_pydantic_ai_model
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import LLMProfile, get_llm_model_config
+from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractLLMService
 from backend.core.circuit_breaker import CircuitBreaker
 from backend.core.exceptions import AppException, app_service_error
@@ -156,16 +157,25 @@ class PydanticAILLMService(AbstractLLMService):
         except Exception as exc:
             await self._circuit.on_failure()
             logger.error(
-                "Pydantic AI 流式请求失败: session_id=%s, error=%s",
-                query.session_id,
-                str(exc),
-                exc_info=True,
+                "Pydantic AI stream request failed",
+                extra={
+                    "event": "llm_provider_request_failed",
+                    "session_id": str(query.session_id),
+                    "provider": self.provider_name,
+                    "model": self.model_name,
+                    "error_type": type(exc).__name__,
+                    "stream": True,
+                },
             )
             raise app_service_error(
                 "LLM 服务调用失败",
                 code="LLM_SERVICE_ERROR",
-                details={"session_id": str(query.session_id), "error": str(exc)},
-            ) from exc
+                details={
+                    "session_id": str(query.session_id),
+                    "provider": self.provider_name,
+                    "error_type": type(exc).__name__,
+                },
+            ) from None
 
     async def generate_response(
         self,
@@ -222,16 +232,25 @@ class PydanticAILLMService(AbstractLLMService):
         except Exception as exc:
             await self._circuit.on_failure()
             logger.error(
-                "Pydantic AI 非流式请求失败: session_id=%s, error=%s",
-                query.session_id,
-                str(exc),
-                exc_info=True,
+                "Pydantic AI non-stream request failed",
+                extra={
+                    "event": "llm_provider_request_failed",
+                    "session_id": str(query.session_id),
+                    "provider": self.provider_name,
+                    "model": self.model_name,
+                    "error_type": type(exc).__name__,
+                    "stream": False,
+                },
             )
             raise app_service_error(
                 "LLM 服务调用失败",
                 code="LLM_SERVICE_ERROR",
-                details={"session_id": str(query.session_id), "error": str(exc)},
-            ) from exc
+                details={
+                    "session_id": str(query.session_id),
+                    "provider": self.provider_name,
+                    "error_type": type(exc).__name__,
+                },
+            ) from None
 
         return LLMResultDTO(
             content=content,
@@ -245,6 +264,7 @@ class PydanticAILLMService(AbstractLLMService):
     def _create_agent(self, instructions: str | None):
         try:
             from pydantic_ai import Agent
+            from pydantic_ai.models.instrumented import InstrumentationSettings
         except ImportError as exc:
             raise app_service_error(
                 "Pydantic AI 未安装",
@@ -260,7 +280,10 @@ class PydanticAILLMService(AbstractLLMService):
         return Agent(
             model,
             instructions=instructions,
-            instrument=True,
+            instrument=InstrumentationSettings(
+                include_binary_content=False,
+                include_content=settings.TELEMETRY_CAPTURE_CONTENT,
+            ),
             name="llm",
         )
 

@@ -136,31 +136,34 @@ class BifrostRerankService(AbstractRerankService):
             ) as response:
                 data = response.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
-            error_body = exc.read().decode("utf-8", errors="replace")
             logger.warning(
-                "Bifrost rerank API HTTP 错误: status=%s body=%s",
-                exc.code,
-                error_body[:500],
+                "Bifrost rerank API HTTP failure",
+                extra={
+                    "event": "rag_rerank_provider_failed",
+                    "error_code": "BIFROST_RERANK_HTTP_ERROR",
+                    "status_code": exc.code,
+                    "error_type": type(exc).__name__,
+                },
             )
             raise app_service_error(
                 "Bifrost rerank API 调用失败",
                 code="BIFROST_RERANK_HTTP_ERROR",
-                details={"status_code": exc.code, "body": error_body[:500]},
-            ) from exc
+                details={"status_code": exc.code},
+            ) from None
         except OSError as exc:
             raise app_service_error(
                 "Bifrost rerank API 网络错误",
                 code="BIFROST_RERANK_NETWORK_ERROR",
-                details={"error": str(exc)},
-            ) from exc
+                details={"error_type": type(exc).__name__},
+            ) from None
 
         try:
             decoded = json.loads(data)
-        except json.JSONDecodeError as exc:
+        except json.JSONDecodeError:
             raise app_service_error(
                 "Bifrost rerank API 返回非法 JSON",
                 code="BIFROST_RERANK_INVALID_JSON",
-            ) from exc
+            ) from None
         if not isinstance(decoded, dict):
             raise app_service_error(
                 "Bifrost rerank API 返回格式错误",

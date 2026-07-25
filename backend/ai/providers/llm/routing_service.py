@@ -61,9 +61,14 @@ class LLMRoutingService(AbstractLLMService):
                 if chunk_seen:
                     logger.warning(
                         "LLM stream candidate failed after chunks were sent; "
-                        "cannot switch safely: candidate=%s",
-                        candidate.label,
-                        exc_info=True,
+                        "cannot switch safely",
+                        extra={
+                            "event": "llm_route_candidate_failed",
+                            "candidate": candidate.label,
+                            "error_type": type(exc).__name__,
+                            "stream": True,
+                            "chunk_seen": True,
+                        },
                     )
                     raise
 
@@ -71,9 +76,14 @@ class LLMRoutingService(AbstractLLMService):
                     break
 
                 logger.warning(
-                    "LLM stream candidate failed, switching to next: candidate=%s",
-                    candidate.label,
-                    exc_info=True,
+                    "LLM stream candidate failed, switching to next",
+                    extra={
+                        "event": "llm_route_candidate_failed",
+                        "candidate": candidate.label,
+                        "error_type": type(exc).__name__,
+                        "stream": True,
+                        "chunk_seen": False,
+                    },
                 )
 
         raise app_service_error(
@@ -100,9 +110,14 @@ class LLMRoutingService(AbstractLLMService):
                     break
 
                 logger.warning(
-                    "LLM candidate failed, switching to next: candidate=%s",
-                    candidate.label,
-                    exc_info=True,
+                    "LLM candidate failed, switching to next",
+                    extra={
+                        "event": "llm_route_candidate_failed",
+                        "candidate": candidate.label,
+                        "error_type": type(exc).__name__,
+                        "stream": False,
+                        "chunk_seen": False,
+                    },
                 )
 
         raise app_service_error(
@@ -116,7 +131,6 @@ def _error_details(label: str, exc: Exception) -> dict[str, str]:
     status_code = getattr(_root_cause(exc), "status_code", None)
     details = {
         "candidate": label,
-        "error": str(exc),
         "type": type(exc).__name__,
     }
     if status_code is not None:

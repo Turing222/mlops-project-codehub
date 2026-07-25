@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
+from pydantic_ai.models.instrumented import InstrumentationSettings
 
 from backend.models.schemas.chat.payloads import FeatureFlags
 from backend.services.rag_planning_service import (
@@ -405,6 +406,9 @@ def test_rag_planning_service_uses_prompted_output(
     assert captured["model"] == "model"
     assert type(captured["output_type"]).__name__ == "PromptedOutput"
     assert captured["output_type"].outputs is RAGExecutionPlan
+    assert isinstance(captured["instrument"], InstrumentationSettings)
+    assert captured["instrument"].include_content is False
+    assert captured["instrument"].include_binary_content is False
 
 
 async def test_rag_planning_service_returns_fallback_on_invalid_output(

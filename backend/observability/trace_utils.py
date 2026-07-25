@@ -107,13 +107,21 @@ def trace_span(
     name: str,
     attributes: Mapping[str, Any] | None = None,
 ) -> Iterator[Span]:
-    """创建业务 span，并在异常时记录错误状态。"""
+    """创建业务 span，并在异常时记录不含异常原文的错误状态。"""
     with _TRACER.start_as_current_span(name) as span:
         if attributes:
             set_span_attributes(span, attributes)
         try:
             yield span
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(Status(StatusCode.ERROR, str(exc)))
+            # Provider/SDK exception messages may echo prompts, retrieved context,
+            # or model output.  Keep only a bounded type label in telemetry.
+            span.add_event(
+                "exception",
+                {
+                    "exception.type": type(exc).__name__,
+                    "exception.escaped": True,
+                },
+            )
+            span.set_status(Status(StatusCode.ERROR, "operation_failed"))
             raise

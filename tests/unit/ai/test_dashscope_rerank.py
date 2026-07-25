@@ -153,7 +153,7 @@ def test_post_rerank_raises_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert exc_info.value.code == "DASHSCOPE_RERANK_HTTP_ERROR"
     assert exc_info.value.details["status_code"] == 400
-    assert exc_info.value.details["body"] == "dashscope error"
+    assert "body" not in exc_info.value.details
 
 
 def test_post_rerank_raises_network_error(monkeypatch: pytest.MonkeyPatch) -> None:

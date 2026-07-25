@@ -130,7 +130,6 @@ async def generate_llm_stream_task(*args: object) -> None:
             ),
             langfuse_generation(
                 name="generate_llm_stream",
-                input_payload=generation_payload,
                 model=generation_payload.get("billing_model_name"),
                 metadata={"stream": True, "session_id": str(payload.session_id)},
             ) as recorder,
@@ -157,7 +156,6 @@ async def generate_llm_stream_task(*args: object) -> None:
                     ) + usage_dict.get("completion_tokens", 0)
 
                 recorder.record(
-                    output=result.output,
                     usage=usage_dict if usage_dict else None,
                     model=result.model_name,
                     metadata=result.langfuse_metadata,
@@ -239,7 +237,6 @@ async def generate_llm_nonstream_task(*args: object) -> GenerationResult:
             ),
             langfuse_generation(
                 name="generate_llm_nonstream",
-                input_payload=generation_payload,
                 model=generation_payload.get("billing_model_name"),
                 metadata={"stream": False, "session_id": str(payload.session_id)},
             ) as recorder,
@@ -253,7 +250,6 @@ async def generate_llm_nonstream_task(*args: object) -> GenerationResult:
             )
             if result.success:
                 recorder.record(
-                    output=result.content,
                     usage=_build_usage_details(result),
                     model=result.model_name,
                     metadata=result.langfuse_metadata,

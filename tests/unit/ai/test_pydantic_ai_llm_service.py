@@ -9,12 +9,14 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
+from pydantic_ai.models.instrumented import InstrumentationSettings
 
 from backend.ai.providers.llm.factory import LLMProviderFactory
 from backend.ai.providers.llm.pydantic_ai_models import create_pydantic_ai_model
 from backend.ai.providers.llm.pydantic_ai_service import PydanticAILLMService
 from backend.ai.providers.llm.routing_service import LLMRoutingService
 from backend.config.llm import get_llm_model_config
+from backend.config.settings import settings
 from backend.core.exceptions import AppException
 from backend.models.schemas.chat.dto import LLMQueryDTO
 
@@ -41,6 +43,30 @@ def test_build_agent_input_splits_system_history_and_current_user() -> None:
     assert "用户: 上一问" in prompt
     assert "助手: 上一答" in prompt
     assert prompt.endswith("当前问题")
+
+
+def test_create_agent_disables_otel_content_capture_by_default(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_agent(model: object, **kwargs: object) -> object:
+        captured["model"] = model
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr("pydantic_ai.Agent", fake_agent)
+    monkeypatch.setattr(
+        "backend.ai.providers.llm.pydantic_ai_service.create_pydantic_ai_model",
+        lambda **_kwargs: "model",
+    )
+    monkeypatch.setattr(settings, "TELEMETRY_CAPTURE_CONTENT", False)
+    service = PydanticAILLMService(api_key="test-key", model_name="test-model")
+
+    service._create_agent(None)
+
+    instrumentation = captured["instrument"]
+    assert isinstance(instrumentation, InstrumentationSettings)
+    assert instrumentation.include_content is False
+    assert instrumentation.include_binary_content is False
 
 
 async def test_generate_response_uses_pydantic_agent(monkeypatch) -> None:
@@ -161,9 +187,13 @@ async def test_stream_response_yields_delta_chunks(monkeypatch) -> None:
     assert chunks == ["Gemini ", "chunk"]
 
 
-async def test_generate_response_marks_circuit_failure(monkeypatch) -> None:
+async def test_generate_response_marks_circuit_failure_without_content_leak(
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     service = PydanticAILLMService(api_key="test-key", model_name="gemini-test")
     calls = {"failure": 0}
+    secret_marker = "provider-echo-AKIA1111111111111111-pii-13812345678"
 
     class FakeCircuit:
         async def acquire(self):
@@ -177,15 +207,18 @@ async def test_generate_response_marks_circuit_failure(monkeypatch) -> None:
 
     class FakeAgent:
         async def run(self, prompt: str, **kwargs):
-            raise RuntimeError("provider failed")
+            raise RuntimeError(secret_marker)
 
     service._circuit = FakeCircuit()
     monkeypatch.setattr(service, "_create_agent", lambda instructions: FakeAgent())
 
-    with pytest.raises(AppException):
+    with pytest.raises(AppException) as exc_info:
         await service.generate_response(make_query())
 
     assert calls["failure"] == 1
+    assert secret_marker not in caplog.text
+    assert secret_marker not in repr(exc_info.value.details)
+    assert exc_info.value.details["error_type"] == "RuntimeError"
 
 
 async def test_stream_midfailure_marks_circuit_failure_not_success(monkeypatch) -> None:
@@ -293,12 +326,14 @@ def test_circuit_breaker_config_can_be_injected() -> None:
     assert service._circuit.cooldown_seconds == 11
 
 
-def test_create_agent_enables_pydantic_ai_instrumentation() -> None:
+def test_create_agent_enables_content_safe_pydantic_ai_instrumentation() -> None:
     service = PydanticAILLMService(api_key="test-key", model_name="gemini-test")
 
     agent = service._create_agent("instructions")
 
-    assert agent.instrument is True
+    assert isinstance(agent.instrument, InstrumentationSettings)
+    assert agent.instrument.include_content is False
+    assert agent.instrument.include_binary_content is False
     assert agent.name == "llm"
 
 

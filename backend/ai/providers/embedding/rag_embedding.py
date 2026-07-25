@@ -147,16 +147,23 @@ class OpenAICompatibleEmbedder(AbstractRAGEmbedder):
         except AppException:
             raise
         except Exception as exc:
-            logger.error("RAG embedding API 调用失败: %s", exc, exc_info=True)
+            logger.error(
+                "RAG embedding API request failed",
+                extra={
+                    "event": "rag_embedding_failed",
+                    "error_code": "RAG_EMBEDDING_API_ERROR",
+                    "error_type": type(exc).__name__,
+                    "model": self.model_name,
+                },
+            )
             raise app_service_error(
                 "RAG embedding API 调用失败",
                 code="RAG_EMBEDDING_API_ERROR",
                 details={
                     "model": self.model_name,
-                    "base_url": self.base_url,
-                    "error": str(exc),
+                    "error_type": type(exc).__name__,
                 },
-            ) from exc
+            ) from None
 
 
 class GoogleGenAIEmbedder(AbstractRAGEmbedder):
@@ -249,16 +256,25 @@ class GoogleGenAIEmbedder(AbstractRAGEmbedder):
         except AppException:
             raise
         except Exception as exc:
-            logger.error("Google embedding API 调用失败: %s", exc, exc_info=True)
+            logger.error(
+                "Google embedding API request failed",
+                extra={
+                    "event": "rag_embedding_failed",
+                    "error_code": "GOOGLE_EMBEDDING_API_ERROR",
+                    "error_type": type(exc).__name__,
+                    "model": self.model_name,
+                    "task_type": task_type,
+                },
+            )
             raise app_service_error(
                 "Google embedding API 调用失败",
                 code="GOOGLE_EMBEDDING_API_ERROR",
                 details={
                     "model": self.model_name,
                     "task_type": task_type,
-                    "error": str(exc),
+                    "error_type": type(exc).__name__,
                 },
-            ) from exc
+            ) from None
 
     def _embed_documents_sync(self, texts: list[str]) -> list[list[float]]:
         payloads = [text.strip() for text in texts]
@@ -334,16 +350,25 @@ class GoogleGenAIEmbedder(AbstractRAGEmbedder):
         except AppException:
             raise
         except Exception as exc:
-            logger.error("Google embedding API 调用失败: %s", exc, exc_info=True)
+            logger.error(
+                "Google embedding API request failed",
+                extra={
+                    "event": "rag_embedding_failed",
+                    "error_code": "GOOGLE_EMBEDDING_API_ERROR",
+                    "error_type": type(exc).__name__,
+                    "model": self.model_name,
+                    "task_type": "RETRIEVAL_DOCUMENT",
+                },
+            )
             raise app_service_error(
                 "Google embedding API 调用失败",
                 code="GOOGLE_EMBEDDING_API_ERROR",
                 details={
                     "model": self.model_name,
                     "task_type": "RETRIEVAL_DOCUMENT",
-                    "error": str(exc),
+                    "error_type": type(exc).__name__,
                 },
-            ) from exc
+            ) from None
 
 
 class MockRAGEmbedder(AbstractRAGEmbedder):

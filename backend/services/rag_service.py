@@ -98,7 +98,13 @@ class RAGService(AbstractRAGService):
         except AppException:
             raise
         except Exception as exc:
-            logger.warning("RAG 检索失败，降级为无检索上下文: %s", exc)
+            logger.warning(
+                "RAG retrieval failed; using no retrieved context",
+                extra={
+                    "event": "rag_retrieval_degraded",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return []
 
         return self._format_hits(hits, default_retrieval_mode="vector")
@@ -130,7 +136,13 @@ class RAGService(AbstractRAGService):
                     index_base=0,
                 )
             except Exception as exc:
-                logger.warning("Native rerank 失败，降级为候选原始排序: %s", exc)
+                logger.warning(
+                    "Native rerank failed; preserving candidate order",
+                    extra={
+                        "event": "rag_rerank_degraded",
+                        "error_type": type(exc).__name__,
+                    },
+                )
 
         return select_rerank_fallback_candidates(candidates, limit)
 
@@ -169,7 +181,13 @@ class RAGService(AbstractRAGService):
         except AppException:
             raise
         except Exception as exc:
-            logger.warning("RAG rerank 候选检索失败，降级为普通检索: %s", exc)
+            logger.warning(
+                "RAG rerank candidate retrieval failed; using ordinary retrieval",
+                extra={
+                    "event": "rag_retrieval_degraded",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return await self.retrieve(query_text=query_text, kb_id=kb_id, top_k=limit)
 
         if not candidates:
@@ -199,7 +217,13 @@ class RAGService(AbstractRAGService):
                 )
                 return reranked
         except Exception as exc:
-            logger.warning("RAG rerank 失败，降级为候选原始排序: %s", exc)
+            logger.warning(
+                "RAG rerank failed; preserving candidate order",
+                extra={
+                    "event": "rag_rerank_degraded",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return select_rerank_fallback_candidates(candidates, limit)
 
     async def retrieve_fulltext(
@@ -233,7 +257,13 @@ class RAGService(AbstractRAGService):
         except AppException:
             raise
         except Exception as exc:
-            logger.warning("RAG 全文检索失败，降级为无检索上下文: %s", exc)
+            logger.warning(
+                "RAG full-text retrieval failed; using no retrieved context",
+                extra={
+                    "event": "rag_retrieval_degraded",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return []
 
         return self._format_hits(hits, default_retrieval_mode="fulltext")
@@ -269,7 +299,13 @@ class RAGService(AbstractRAGService):
         except AppException:
             raise
         except Exception as exc:
-            logger.warning("RAG 混合检索失败，降级为无检索上下文: %s", exc)
+            logger.warning(
+                "RAG hybrid retrieval failed; using no retrieved context",
+                extra={
+                    "event": "rag_retrieval_degraded",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return []
 
         return self._format_hits(hits, default_retrieval_mode="hybrid")
