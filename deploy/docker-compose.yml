@@ -314,7 +314,7 @@ services:
       <<: [ *backend-aws-env, *secret-file-env ]
       TASKIQ_HEALTH_MIN_PROCESSES: "2"
       # Single source of truth for prod task modules; the image CMD consumes it.
-      TASKIQ_MODULES: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks backend.worker.tasks.chat_recovery_tasks"
+      TASKIQ_MODULES: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks backend.worker.tasks.chat_recovery_tasks backend.worker.tasks.operability_tasks"
       TASKIQ_WORKERS: "2"
       TASKIQ_WAIT_TASKS_TIMEOUT: "105"
       TASKIQ_SHUTDOWN_TIMEOUT: "10"
@@ -351,12 +351,12 @@ services:
     # SIGINT: taskiq scheduler ignores SIGTERM; asyncio.run only cancels the main task on SIGINT, triggering graceful shutdown.
     stop_signal: SIGINT
     stop_grace_period: 30s
-    command: sh -c 'exec taskiq scheduler backend.worker.scheduler_entrypoint:build_scheduler $${TASKIQ_SCHEDULER_MODULES:-backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.chat_recovery_tasks}'
+    command: sh -c 'exec taskiq scheduler backend.worker.scheduler_entrypoint:build_scheduler $${TASKIQ_SCHEDULER_MODULES:-backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.chat_recovery_tasks backend.worker.tasks.operability_tasks}'
     env_file: *deploy-env-file
     secrets: *app-secrets
     environment:
       <<: [ *backend-aws-env, *secret-file-env ]
-      TASKIQ_SCHEDULER_MODULES: "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.chat_recovery_tasks"
+      TASKIQ_SCHEDULER_MODULES: "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.chat_recovery_tasks backend.worker.tasks.operability_tasks"
     healthcheck:
       test: [ "CMD-SHELL", "python -c 'from backend.worker.scheduler_entrypoint import validate_scheduler_schedules; validate_scheduler_schedules()' || exit 1" ]
       interval: 60s

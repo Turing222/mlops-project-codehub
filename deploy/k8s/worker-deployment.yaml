@@ -32,7 +32,7 @@ spec:
             - name: TASKIQ_HEALTH_MIN_PROCESSES
               value: "2"
             - name: TASKIQ_MODULES
-              value: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks backend.worker.tasks.chat_recovery_tasks"
+              value: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks backend.worker.tasks.chat_recovery_tasks backend.worker.tasks.operability_tasks"
             - name: TASKIQ_WORKERS
               value: "2"
             - name: TASKIQ_WAIT_TASKS_TIMEOUT

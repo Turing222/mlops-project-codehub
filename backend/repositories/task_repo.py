@@ -9,7 +9,7 @@ from collections.abc import Collection, Sequence
 from datetime import UTC, datetime
 
 from pydantic import BaseModel
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.orm.task import (
@@ -469,3 +469,31 @@ class TaskRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+    async def get_oldest_actionable_kb_task_at(
+        self,
+        *,
+        due_at: datetime,
+    ) -> datetime | None:
+        actionable_at = case(
+            (TaskJob.status == TaskStatus.PENDING, TaskJob.created_at),
+            (
+                TaskJob.status == TaskStatus.PROCESSING,
+                func.coalesce(TaskJob.lease_expires_at, TaskJob.updated_at),
+            ),
+        )
+        stmt = select(func.min(actionable_at)).where(
+            TaskJob.action_type == "KB_INGESTION",
+            or_(
+                TaskJob.status == TaskStatus.PENDING,
+                and_(
+                    TaskJob.status == TaskStatus.PROCESSING,
+                    or_(
+                        TaskJob.lease_expires_at <= due_at,
+                        TaskJob.lease_expires_at.is_(None),
+                    ),
+                ),
+            ),
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()

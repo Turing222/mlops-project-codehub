@@ -174,6 +174,25 @@ class ChatRepository:
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
+    async def get_oldest_due_generation_recovery_at(
+        self,
+        *,
+        due_at: datetime,
+    ) -> datetime | None:
+        stmt = select(func.min(ChatGenerationRequest.recovery_due_at)).where(
+            ChatGenerationRequest.status.in_(
+                (
+                    ChatGenerationStatus.PREPARED,
+                    ChatGenerationStatus.QUEUED,
+                    ChatGenerationStatus.RUNNING,
+                )
+            ),
+            ChatGenerationRequest.recovery_due_at.is_not(None),
+            ChatGenerationRequest.recovery_due_at <= due_at,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def try_queue_generation_request(
         self,
         *,

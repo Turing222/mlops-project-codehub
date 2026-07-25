@@ -135,6 +135,10 @@ class ChatRepositoryProtocol(Protocol):
         self, *, due_at: datetime.datetime, limit: int = 100
     ) -> Sequence[ChatGenerationRequest]: ...
 
+    async def get_oldest_due_generation_recovery_at(
+        self, *, due_at: datetime.datetime
+    ) -> datetime.datetime | None: ...
+
     async def try_queue_generation_request(
         self,
         *,
@@ -503,6 +507,10 @@ class TaskRepositoryProtocol(Protocol):
         limit: int,
     ) -> Sequence[TaskJob]: ...
 
+    async def get_oldest_actionable_kb_task_at(
+        self, *, due_at: datetime.datetime
+    ) -> datetime.datetime | None: ...
+
 
 class TaskOutboxRepositoryProtocol(Protocol):
     async def get(self, outbox_id: uuid.UUID) -> TaskOutbox | None: ...
@@ -510,6 +518,10 @@ class TaskOutboxRepositoryProtocol(Protocol):
     async def get_for_task_event(
         self, *, task_id: uuid.UUID, event_type: str
     ) -> TaskOutbox | None: ...
+
+    async def get_oldest_due_at(
+        self, *, due_at: datetime.datetime
+    ) -> datetime.datetime | None: ...
 
     async def create(
         self,

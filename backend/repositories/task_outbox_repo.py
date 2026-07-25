@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from pydantic import BaseModel
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.orm.task import TaskOutbox, TaskOutboxStatus
@@ -39,6 +39,32 @@ class TaskOutboxRepository:
         stmt = select(TaskOutbox).where(
             TaskOutbox.task_id == task_id,
             TaskOutbox.event_type == event_type,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_oldest_due_at(self, *, due_at: datetime) -> datetime | None:
+        due_timestamp = case(
+            (
+                TaskOutbox.status == TaskOutboxStatus.PENDING,
+                TaskOutbox.next_attempt_at,
+            ),
+            (
+                TaskOutbox.status == TaskOutboxStatus.PUBLISHING,
+                TaskOutbox.lease_expires_at,
+            ),
+        )
+        stmt = select(func.min(due_timestamp)).where(
+            or_(
+                and_(
+                    TaskOutbox.status == TaskOutboxStatus.PENDING,
+                    TaskOutbox.next_attempt_at <= due_at,
+                ),
+                and_(
+                    TaskOutbox.status == TaskOutboxStatus.PUBLISHING,
+                    TaskOutbox.lease_expires_at <= due_at,
+                ),
+            )
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

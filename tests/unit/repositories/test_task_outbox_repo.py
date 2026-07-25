@@ -12,6 +12,25 @@ from backend.models.orm.task import TaskOutbox, TaskOutboxStatus
 from backend.repositories.task_outbox_repo import TaskOutboxRepository
 
 
+async def test_get_oldest_due_at_uses_pending_and_expired_publish_facts() -> None:
+    session = AsyncMock()
+    due_at = datetime(2026, 7, 17, tzinfo=UTC)
+    expected = due_at - timedelta(minutes=2)
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = expected
+    session.execute.return_value = result_proxy
+    repo = TaskOutboxRepository(session)
+
+    observed = await repo.get_oldest_due_at(due_at=due_at)
+
+    assert observed == expected
+    stmt = session.execute.await_args.args[0]
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "task_outbox.status = 'pending'" in sql
+    assert "task_outbox.next_attempt_at" in sql
+    assert "task_outbox.lease_expires_at" in sql
+
+
 async def test_claim_due_batch_sets_publish_lease_and_increments_attempt() -> None:
     session = AsyncMock()
     session.add = MagicMock()

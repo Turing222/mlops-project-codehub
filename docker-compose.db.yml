@@ -367,7 +367,7 @@ services:
       <<: [ *infra-env, *feature-env, *secret-file-env ]
       BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-info}
       TASKIQ_HEALTH_MIN_PROCESSES: "2"
-      TASKIQ_MODULES: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks backend.worker.tasks.chat_recovery_tasks"
+      TASKIQ_MODULES: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks backend.worker.tasks.chat_recovery_tasks backend.worker.tasks.operability_tasks"
       TASKIQ_WORKERS: "2"
       TASKIQ_WAIT_TASKS_TIMEOUT: "105"
       TASKIQ_SHUTDOWN_TIMEOUT: "10"

@@ -14,7 +14,8 @@ def test_validate_scheduler_schedules_discovers_required_tasks(monkeypatch) -> N
     monkeypatch.setenv(
         "TASKIQ_SCHEDULER_MODULES",
         "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks "
-        "backend.worker.tasks.chat_recovery_tasks",
+        "backend.worker.tasks.chat_recovery_tasks "
+        "backend.worker.tasks.operability_tasks",
     )
 
     scheduler_entrypoint.validate_scheduler_schedules()
@@ -49,5 +50,18 @@ def test_scheduler_requires_chat_generation_recovery_schedule() -> None:
     ) in scheduler_entrypoint.REQUIRED_SCHEDULE_KEYS
     assert (
         "backend.worker.tasks.chat_recovery_tasks"
+        in scheduler_entrypoint.DEFAULT_SCHEDULER_MODULES
+    )
+
+
+def test_scheduler_requires_t1_lite_heartbeat_schedule() -> None:
+    from backend.worker import scheduler_entrypoint
+
+    assert (
+        "emit_t1_lite_operability_heartbeat",
+        "t1_lite_operability_heartbeat_every_minute",
+    ) in scheduler_entrypoint.REQUIRED_SCHEDULE_KEYS
+    assert (
+        "backend.worker.tasks.operability_tasks"
         in scheduler_entrypoint.DEFAULT_SCHEDULER_MODULES
     )

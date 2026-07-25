@@ -370,8 +370,25 @@ async def test_get_due_generation_requests_rejects_unbounded_limit(
             due_at=datetime.now(UTC),
             limit=501,
         )
-
     mock_async_session.execute.assert_not_awaited()
+
+
+async def test_get_oldest_due_generation_uses_recovery_fact(
+    repo: ChatRepository,
+) -> None:
+    due_at = datetime(2026, 7, 17, tzinfo=UTC)
+    expected = due_at - timedelta(minutes=3)
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = expected
+    repo.session.execute.return_value = result_proxy
+
+    observed = await repo.get_oldest_due_generation_recovery_at(due_at=due_at)
+
+    assert observed == expected
+    stmt = repo.session.execute.await_args.args[0]
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "min(chat_generation_requests.recovery_due_at)" in sql
+    assert "status IN ('prepared', 'queued', 'running')" in sql
 
 
 async def test_queue_generation_request_uses_actor_attempt_cas(

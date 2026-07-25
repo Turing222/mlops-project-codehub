@@ -126,3 +126,22 @@ async def test_kb_claim_increments_attempt_and_matches_structured_file(
     assert "task_jobs.knowledge_file_id =" in sql
     assert "task_jobs.status = 'pending'" in sql
     assert "attempt_count=(task_jobs.attempt_count + 1)" in sql
+
+
+async def test_oldest_actionable_kb_task_uses_pending_or_expired_lease(
+    repo_ctx: tuple[TaskRepository, AsyncMock],
+) -> None:
+    repo, session = repo_ctx
+    due_at = datetime(2026, 7, 17, tzinfo=UTC)
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = due_at - timedelta(minutes=4)
+    session.execute.return_value = result_proxy
+
+    observed = await repo.get_oldest_actionable_kb_task_at(due_at=due_at)
+
+    assert observed == due_at - timedelta(minutes=4)
+    stmt = session.execute.await_args.args[0]
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "task_jobs.action_type = 'KB_INGESTION'" in sql
+    assert "task_jobs.status = 'pending'" in sql
+    assert "task_jobs.lease_expires_at" in sql
