@@ -14,6 +14,10 @@
 1. [基础边界（PR1–PR3）](plans/frontend-architecture-cleanup/01-foundation-boundaries-plan.md)（已完成）：认证身份生命周期、Knowledge Query、Repo recent-runs。
 2. [Chat Controller 拆分（PR4–PR6）](plans/frontend-architecture-cleanup/02-chat-controller-decomposition-plan.md)（已完成）：依次抽取 ingestion、session、stream，并在 PR6 后停手。
 
+进行中：
+
+3. [UI 现代化升级（Phase A–C）](plans/ui-modernization/README.md)（Planned，2026-07-26 立项）：落地 `design/` L1 设计系统——token 层、应用外壳、标杆页与全站覆盖。
+
 ## Standards
 
 - [API](standards/api.md): API 封装、schema、错误、trace 和幂等约定。
