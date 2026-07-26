@@ -3,23 +3,9 @@ name: Smoke CI
 on:
   push:
     branches: [main, master]
+  # Docker smoke 是 main 的 required check：不能带路径过滤，否则
+  # 纯文档/配置 PR 会因该 check 永不上报而卡死在 BLOCKED。
   pull_request:
-    paths:
-      - "Dockerfile"
-      - "docker-compose*.yml"
-      - "Makefile"
-      - "pyproject.toml"
-      - "uv.lock"
-      - "frontend/package.json"
-      - "frontend/pnpm-lock.yaml"
-      - "frontend/apps/**/Dockerfile"
-      - ".env.features.template"
-      - ".env.smoke.template"
-      - "scripts/smoke/**"
-      - "scripts/image/**"
-      - "scripts/lib/common.sh"
-      - "tests/smoke/**"
-      - ".github/workflows/smoke-ci.yml"
   workflow_dispatch:
 
 permissions:
