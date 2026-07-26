@@ -13,6 +13,16 @@
       "$type": "color",
       "$value": { "light": "rgba(22, 119, 255, 0.15)", "dark": "rgba(22, 119, 255, 0.15)" }
     },
+    "primary-active": {
+      "$type": "color",
+      "$value": { "light": "#1262d1", "dark": "#1262d1" },
+      "$description": "Web derives per-brand: color-mix(in srgb, primary 82%, #000). Listed value is the default-blue result."
+    },
+    "primary-border": {
+      "$type": "color",
+      "$value": { "light": "rgba(22, 119, 255, 0.35)", "dark": "rgba(22, 119, 255, 0.35)" },
+      "$description": "Web derives per-brand: color-mix(in srgb, primary 35%, transparent)."
+    },
     "bg-page": {
       "$type": "color",
       "$value": { "light": "#fafbfc", "dark": "#141414" }
@@ -69,6 +79,36 @@
     "admin-header-border": {
       "$type": "color",
       "$value": { "light": "#334155", "dark": "#334155" }
+    },
+    "admin-header-text": {
+      "$type": "color",
+      "$value": { "light": "#f1f5f9", "dark": "#f1f5f9" }
+    },
+    "admin-header-text-muted": {
+      "$type": "color",
+      "$value": { "light": "#94a3b8", "dark": "#94a3b8" }
+    },
+    "status-pass": {
+      "$type": "color",
+      "$value": { "light": "#15803d", "dark": "#4ade80" },
+      "$description": "Semantic verdict colors; -bg/-border variants derived as documented in index.css"
+    },
+    "status-warn": {
+      "$type": "color",
+      "$value": { "light": "#b06000", "dark": "#fbbf24" }
+    },
+    "status-fail": {
+      "$type": "color",
+      "$value": { "light": "#b91c1c", "dark": "#f87171" }
+    },
+    "status-info": {
+      "$type": "color",
+      "$value": { "light": "#1a73e8", "dark": "#8ab4f8" }
+    },
+    "code-block": {
+      "$type": "color",
+      "$value": { "light": "#0f172a", "dark": "#0f172a" },
+      "$description": "Terminal-style code block background; text #e2e8f0 both modes"
     },
     "overlay": {
       "$type": "color",

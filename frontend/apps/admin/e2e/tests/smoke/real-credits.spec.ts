@@ -13,7 +13,8 @@ test.describe('Real backend: Credits Center', () => {
     await page.goto('/credits');
 
     // Verify guest placeholder elements are visible
-    await expect(page.getByText('积分中心', { exact: true })).toBeVisible();
+    // B1 起 AppShell 顶栏也含「积分中心」(导航项 + 页名),guest 标题限定在 main 内查找
+    await expect(page.getByRole('main').getByText('积分中心', { exact: true })).toBeVisible();
     await expect(page.getByText('登录后探索积分中心', { exact: false })).toBeVisible();
 
     // 2. Log in through the real backend credentials path.
@@ -33,8 +34,11 @@ test.describe('Real backend: Credits Center', () => {
     // 5. Verify transaction log contains the checkin record
     await expect(page.locator('text=每日签到').first()).toBeVisible();
 
-    // 6. Test Navigation Back to Chat/Home
-    await page.getByRole('button', { name: '返回主页' }).click();
+    // 6. Test Navigation Back to Chat/Home(B1 起经 AppShell 全局导航,原「返回主页」按钮已移除)
+    await page
+        .getByRole('navigation', { name: '全局导航' })
+        .getByRole('button', { name: '对话' })
+        .click();
     await expect(page).toHaveURL('/');
   });
 });

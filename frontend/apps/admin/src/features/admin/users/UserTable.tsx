@@ -110,6 +110,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
             dataSource={users}
             rowKey="id"
             loading={loading}
+            scroll={{ x: 900 }}
             pagination={false}
             locale={{
                 emptyText: (

@@ -3,6 +3,11 @@
     "sans": {
       "$type": "fontFamily",
       "$value": ["Inter", "Segoe UI", "system-ui", "-apple-system", "sans-serif"]
+    },
+    "mono": {
+      "$type": "fontFamily",
+      "$value": ["SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", "Courier", "monospace"],
+      "$description": "Code blocks, token counts, trace panels"
     }
   },
   "font-size": {

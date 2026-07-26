@@ -18,7 +18,13 @@ import styles from './ChatPage.module.css';
 const ChatPage: React.FC = () => {
     const { user, isAuthenticated, logout, setShowAuthModal } = useAuth();
     const navigate = useNavigate();
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    // 窄屏(<=768,layout.json breakpoint.md)默认折叠,展开态为浮层
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(
+        () =>
+            typeof window !== 'undefined' &&
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(max-width: 768px)').matches,
+    );
     const [tracePanelCollapsed, setTracePanelCollapsed] = useState(false);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [isKBModalOpen, setIsKBModalOpen] = useState(false);

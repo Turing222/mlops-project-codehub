@@ -186,7 +186,7 @@ describe('Internationalization (i18n) System', () => {
 });
 
 describe('Theme Store to Document.documentElement Linkage', () => {
-    it('should synchronize theme and brand colors to document.documentElement', () => {
+    it('should synchronize theme and brand attributes to document.documentElement', () => {
         act(() => {
             useThemeStore.getState().setTheme('dark');
             useThemeStore.getState().setBrandColor('#0d9488');
@@ -194,10 +194,19 @@ describe('Theme Store to Document.documentElement Linkage', () => {
 
         render(<App />);
 
+        // A3 起主题真相在 CSS:JS 只写属性,变量由 index.css 的
+        // [data-theme] / [data-brand] 块推导(jsdom 不做样式计算,不断言变量值)。
         expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-        expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('#0d9488');
-        expect(document.documentElement.style.getPropertyValue('--color-primary-hover')).toBe('#0d9488cc');
-        expect(document.documentElement.style.getPropertyValue('--color-primary-shadow')).toBe('#0d948826');
-        expect(document.documentElement.style.getPropertyValue('--color-primary-gradient-end')).toBe('#0284c7');
+        expect(document.documentElement.getAttribute('data-brand')).toBe('teal');
+    });
+
+    it('falls back to the default brand for unknown colors', () => {
+        act(() => {
+            useThemeStore.getState().setBrandColor('#123456');
+        });
+
+        render(<App />);
+
+        expect(document.documentElement.getAttribute('data-brand')).toBe('blue');
     });
 });

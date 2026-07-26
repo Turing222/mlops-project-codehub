@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { message as antdMessage } from 'antd';
 import { useTranslation } from 'react-i18next';
 import {
@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Trash2,
 } from 'lucide-react';
+import AppShell from '../../components/shell/AppShell';
 import { useAuth } from '../../context/useAuth';
 import {
   clearRecentRepoRuns,
@@ -21,7 +22,6 @@ import RepoAnalysisCard from './RepoAnalysisCard';
 import styles from './RepoCheckPage.module.css';
 
 const RepoCheckPage: React.FC = () => {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { t } = useTranslation();
   const { isAuthenticated, setShowAuthModal } = useAuth();
@@ -89,21 +89,18 @@ const RepoCheckPage: React.FC = () => {
   };
 
   return (
+    <AppShell
+      pageTitle={t('repo_check.page_title', '仓库可信度初筛')}
+      pageIcon={<ShieldCheck size={18} />}
+    >
     <div className={styles.page}>
       <div className={styles.shell}>
-        <button
-          className={styles.backButton}
-          onClick={() => {
-            if (queryRunId) {
-              setSearchParams({});
-            } else {
-              navigate('/');
-            }
-          }}
-        >
-          <ArrowLeft size={16} />
-          {queryRunId ? t('repo_check.back_to_submit', '返回输入页') : t('credits.back_home', '返回主页')}
-        </button>
+        {queryRunId ? (
+          <button className={styles.backButton} onClick={() => setSearchParams({})}>
+            <ArrowLeft size={16} />
+            {t('repo_check.back_to_submit', '返回输入页')}
+          </button>
+        ) : null}
 
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
@@ -184,6 +181,7 @@ const RepoCheckPage: React.FC = () => {
         )}
       </div>
     </div>
+    </AppShell>
   );
 };
 

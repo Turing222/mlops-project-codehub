@@ -1,4 +1,39 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* Inter 自托管(latin 子集,来源 @fontsource/inter;中文走系统栈) */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('/fonts/inter-latin-300-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/inter-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/inter-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/inter-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/inter-latin-700-normal.woff2') format('woff2');
+}
 
 *,
 *::before,
@@ -9,11 +44,13 @@
 }
 
 :root {
-  /* Dynamic Palette Custom Properties (Managed dynamically by JS theme store, fallbacks declared here) */
+  /* 品牌色由 [data-brand] 切换(见文件末尾的品牌块);其余 primary 系全部派生 */
   --color-primary: #1677ff;
-  --color-primary-hover: #4096ff;
-  --color-primary-shadow: rgba(22, 119, 255, 0.15);
-  
+  --color-primary-gradient-end: #722ed1;
+  --color-primary-hover: color-mix(in srgb, var(--color-primary) 80%, transparent);
+  --color-primary-shadow: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  --color-primary-subtle: color-mix(in srgb, var(--color-primary) 15%, transparent);
+
   --color-bg-page: #fafbfc;
   --color-bg-container: #ffffff;
   --color-bg-subtle: #fafafa;
@@ -34,7 +71,113 @@
 
   --color-coin: #d97706;
 
-  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* primary 派生态(随品牌色自动变化;代表值登记于 design/tokens/colors.json) */
+  --color-primary-active: color-mix(in srgb, var(--color-primary) 82%, #000);
+  --color-primary-border: color-mix(in srgb, var(--color-primary) 35%, transparent);
+
+  /* == 以下为 design/tokens/*.json 的 CSS 落地;新增档位先改 JSON 再改这里 == */
+
+  /* spacing(spacing.json,4px 栅格) */
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  /* radius(radius.json) */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 20px;
+  --radius-full: 9999px;
+  --radius-bubble-tail: 4px;
+
+  /* typography(typography.json) */
+  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', Courier, monospace;
+  --font-size-xs: 11px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --line-height-tight: 1.5;
+  --line-height-relaxed: 1.6;
+
+  /* motion(motion.json) */
+  --duration-micro: 150ms;
+  --duration-fast: 200ms;
+  --duration-standard: 250ms;
+  --duration-enter: 300ms;
+  --duration-page: 400ms;
+  --easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --easing-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --easing-emphasis: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --easing-linear: linear;
+
+  /* shadow(layout.json#shadow) */
+  --shadow-bubble: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.25);
+
+  /* layout(layout.json#layout) */
+  --layout-chat-header-height: 56px;
+  --layout-chat-content-max-width: 800px;
+  --layout-chat-avatar-size: 36px;
+  --layout-chat-assistant-avatar-size: 42px;
+  --layout-chat-sidebar-expanded: 260px;
+  --layout-chat-sidebar-collapsed: 64px;
+  --layout-admin-header-height: 56px;
+  --layout-admin-content-max-width: 1600px;
+  --layout-modal-profile-width: 720px;
+  --layout-modal-profile-height: 520px;
+  --layout-modal-sidebar-width: 200px;
+
+  /* 语义状态色(pass/warn/fail/info;RepoCheck 判定与徽章) */
+  --color-status-pass: #15803d;
+  --color-status-pass-bg: #e6f4ea;
+  --color-status-pass-border: #ceead6;
+  --color-status-warn: #b06000;
+  --color-status-warn-bg: #fef7e0;
+  --color-status-warn-border: #feebc8;
+  --color-status-fail: #b91c1c;
+  --color-status-fail-bg: #fee2e2;
+  --color-status-fail-border: #fecaca;
+  --color-status-info: #1a73e8;
+  --color-status-info-bg: #e8f0fe;
+  --color-status-info-border: #d2e3fc;
+
+  /* 终端风代码块(双模式同值) */
+  --color-code-block-bg: #0f172a;
+  --color-code-block-text: #e2e8f0;
+
+  /* admin 深色壳(colors.json admin-header 系;双模式同值) */
+  --color-admin-header: #1e293b;
+  --color-admin-header-border: #334155;
+  --color-admin-header-text: #f1f5f9;
+  --color-admin-header-text-muted: #94a3b8;
+
+  /* sidebar(A0 决策:中性底,品牌只出现在选中态) */
+  --color-sidebar-bg: var(--color-bg-subtle);
+  --color-sidebar-border: var(--color-border);
+  --color-sidebar-hover: rgba(0, 0, 0, 0.05);
+  --color-sidebar-active: var(--color-primary-subtle);
+  --color-sidebar-text: var(--color-text-main);
+  --color-sidebar-text-muted: var(--color-text-desc);
+
+  /* scrollbar(跟随主题) */
+  --scrollbar-thumb: #d9d9d9;
+  --scrollbar-thumb-hover: #bfbfbf;
+
+  font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
   color: var(--color-text-main);
@@ -64,6 +207,45 @@
   --color-success-bg: rgba(82, 196, 26, 0.08);
 
   --color-coin: #fbbf24;
+
+  --color-sidebar-hover: rgba(255, 255, 255, 0.08);
+
+  --color-status-pass: #4ade80;
+  --color-status-pass-bg: rgba(74, 222, 128, 0.15);
+  --color-status-pass-border: rgba(74, 222, 128, 0.3);
+  --color-status-warn: #fbbf24;
+  --color-status-warn-bg: rgba(251, 191, 36, 0.15);
+  --color-status-warn-border: rgba(251, 191, 36, 0.3);
+  --color-status-fail: #f87171;
+  --color-status-fail-bg: rgba(248, 113, 113, 0.15);
+  --color-status-fail-border: rgba(248, 113, 113, 0.3);
+  --color-status-info: #8ab4f8;
+  --color-status-info-bg: rgba(138, 180, 248, 0.15);
+  --color-status-info-border: rgba(138, 180, 248, 0.3);
+
+  --scrollbar-thumb: #424242;
+  --scrollbar-thumb-hover: #555555;
+}
+
+/* 品牌预设(与 src/theme/brand.ts 一一对应;blue 即 :root 默认) */
+[data-brand='indigo'] {
+  --color-primary: #4f46e5;
+  --color-primary-gradient-end: #9333ea;
+}
+
+[data-brand='purple'] {
+  --color-primary: #722ed1;
+  --color-primary-gradient-end: #db2777;
+}
+
+[data-brand='teal'] {
+  --color-primary: #0d9488;
+  --color-primary-gradient-end: #0284c7;
+}
+
+[data-brand='orange'] {
+  --color-primary: #ea580c;
+  --color-primary-gradient-end: #e11d48;
 }
 
 body {
@@ -87,15 +269,6 @@ a:hover {
   color: var(--color-primary-hover);
 }
 
-/* Antd overrides */
-.ant-btn-primary {
-  box-shadow: 0 1px 3px var(--color-primary-shadow) !important;
-}
-
-.ant-spin-dot-item {
-  background-color: var(--color-primary) !important;
-}
-
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;
@@ -106,10 +279,31 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #bfbfbf;
+  background: var(--scrollbar-thumb-hover);
+}
+/* --- 键盘导航焦点可见性(antd 组件自带,此处兜底手写交互元素) --- */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* --- 减少动态效果偏好 --- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

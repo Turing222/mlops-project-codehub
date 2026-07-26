@@ -6,14 +6,14 @@
 
 全部打勾 = L1 完成，达到个人项目中上水平：
 
-- [ ] `design/tokens/` 六类 token 齐全，亮暗色双模式
-- [ ] `design/principles.md` 定稿，Chat / Admin 气质词明确
-- [ ] Figma 文件含 **5 个标杆帧**（清单见 Phase 2–3）
-- [ ] Figma Variables 与 `colors.json` 数值一致
-- [ ] Web 标杆页代码与 Figma 视觉偏差 < 主观「一眼无明显违和」
-- [ ] `design/showcase/` 含 **4 张截图**（Chat/Admin × Light/Dark）
-- [ ] Admin 硬编码色至少迁移 **header + card** 到 CSS 变量
-- [ ] 能用一句话向他人解释设计系统结构
+- [x] `design/tokens/` 六类 token 齐全，亮暗色双模式（2026-07-26 Phase A2 落地 index.css）
+- [x] `design/principles.md` 定稿，Chat / Admin 气质词明确（calm·fluid / dense·crisp，2026-07 全站落地）
+- [ ] Figma 文件含 **5 个标杆帧**（deferred：本轮走「代码即标杆」路线，Web 实现直接对齐 patterns；需要 Figma 交付时再补）
+- [ ] Figma Variables 与 `colors.json` 数值一致（deferred，同上）
+- [ ] Web 标杆页代码与 Figma 视觉偏差 < 主观「一眼无明显违和」（deferred，同上；代码线以 patterns/*.md 为准验收）
+- [x] `design/showcase/` 含 **4 张截图**（Chat/Admin × Light/Dark）（2026-07-27 Phase C4，截图 harness 产出）
+- [x] Admin 硬编码色至少迁移 **header + card** 到 CSS 变量（2026-07-26 Phase A4）
+- [x] 能用一句话向他人解释设计系统结构（见 Phase 5.2 三句话；token JSON → index.css 变量 → 双轨 patterns）
 
 ---
 
@@ -40,8 +40,8 @@
 
 ### 1.2 代码对齐（可选同日完成）
 
-- [ ] 对照 `tokens/motion.json`，在 `index.css` 增加 motion 变量（见下方片段）
-- [ ] 确认 `theme-store` 的 `brandColor` 仍覆盖 primary
+- [x] 对照 `tokens/motion.json`，在 `index.css` 增加 motion 变量（实现为 `--duration-*` + `--easing-*` 分离命名，已同步 JSON）
+- [x] 确认 `theme-store` 的 `brandColor` 仍覆盖 primary（A3 起经 `data-brand` 属性 + CSS 枚举实现）
 
 **`index.css` 建议追加（motion token 化）：**
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ConfigProvider, Spin, theme as antdTheme } from 'antd';
+import { ConfigProvider, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import enUS from 'antd/locale/en_US';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -11,119 +11,13 @@ import { useAuth } from './context/useAuth';
 import ChatPage from './pages/Chat';
 import GoogleCallbackPage from './pages/Auth/GoogleCallbackPage';
 import AuthModal from './pages/Auth/AuthModal';
+import CenteredLoading from './components/CenteredLoading';
 import { useThemeStore } from './stores/theme-store';
+import { brandKeyFor } from './theme/brand';
 
 const LazyAdminDashboard = React.lazy(() => import('./pages/Admin'));
 const LazyCreditsPage = React.lazy(() => import('./pages/Credits'));
 const LazyRepoCheckPage = React.lazy(() => import('./pages/RepoCheck'));
-
-const BRAND_PALETTES = {
-  '#1677ff': {
-    gradientEnd: '#722ed1',
-    light: {
-      page: '#f3f8ff',
-      container: '#ffffff',
-      subtle: '#e8f2ff',
-      border: '#cfe3ff',
-      sidebar: '#87b7f4',
-      sidebarHover: 'rgba(255, 255, 255, 0.14)',
-      sidebarActive: 'rgba(255, 255, 255, 0.22)',
-    },
-    dark: {
-      page: '#101923',
-      container: '#162230',
-      subtle: '#1c3045',
-      border: '#284461',
-      sidebar: '#0b3d80',
-      sidebarHover: 'rgba(255, 255, 255, 0.12)',
-      sidebarActive: 'rgba(255, 255, 255, 0.2)',
-    },
-  },
-  '#4f46e5': {
-    gradientEnd: '#9333ea',
-    light: {
-      page: '#f6f5ff',
-      container: '#ffffff',
-      subtle: '#ecebff',
-      border: '#d9d6ff',
-      sidebar: '#8981eb',
-      sidebarHover: 'rgba(255, 255, 255, 0.14)',
-      sidebarActive: 'rgba(255, 255, 255, 0.22)',
-    },
-    dark: {
-      page: '#171529',
-      container: '#201d38',
-      subtle: '#2b2750',
-      border: '#413a75',
-      sidebar: '#312e81',
-      sidebarHover: 'rgba(255, 255, 255, 0.12)',
-      sidebarActive: 'rgba(255, 255, 255, 0.2)',
-    },
-  },
-  '#722ed1': {
-    gradientEnd: '#db2777',
-    light: {
-      page: '#faf5ff',
-      container: '#ffffff',
-      subtle: '#f1e4ff',
-      border: '#dfc8fb',
-      sidebar: '#9b65f2',
-      sidebarHover: 'rgba(255, 255, 255, 0.14)',
-      sidebarActive: 'rgba(255, 255, 255, 0.22)',
-    },
-    dark: {
-      page: '#1e1329',
-      container: '#2a1a38',
-      subtle: '#3a2450',
-      border: '#573579',
-      sidebar: '#4c1d95',
-      sidebarHover: 'rgba(255, 255, 255, 0.12)',
-      sidebarActive: 'rgba(255, 255, 255, 0.2)',
-    },
-  },
-  '#0d9488': {
-    gradientEnd: '#0284c7',
-    light: {
-      page: '#f0fdfa',
-      container: '#ffffff',
-      subtle: '#ccfbf1',
-      border: '#99e6d8',
-      sidebar: '#0f766e',
-      sidebarHover: 'rgba(255, 255, 255, 0.14)',
-      sidebarActive: 'rgba(255, 255, 255, 0.22)',
-    },
-    dark: {
-      page: '#0d1f1e',
-      container: '#132b29',
-      subtle: '#1a3a36',
-      border: '#285c56',
-      sidebar: '#115e59',
-      sidebarHover: 'rgba(255, 255, 255, 0.12)',
-      sidebarActive: 'rgba(255, 255, 255, 0.2)',
-    },
-  },
-  '#ea580c': {
-    gradientEnd: '#e11d48',
-    light: {
-      page: '#fff7ed',
-      container: '#ffffff',
-      subtle: '#ffedd5',
-      border: '#fed7aa',
-      sidebar: '#e36432',
-      sidebarHover: 'rgba(255, 255, 255, 0.14)',
-      sidebarActive: 'rgba(255, 255, 255, 0.22)',
-    },
-    dark: {
-      page: '#29180f',
-      container: '#382113',
-      subtle: '#4a2b16',
-      border: '#78451f',
-      sidebar: '#9a3412',
-      sidebarHover: 'rgba(255, 255, 255, 0.12)',
-      sidebarActive: 'rgba(255, 255, 255, 0.2)',
-    },
-  },
-} as const;
 
 // 管理员路由守卫
 const AdminRouteGuard: React.FC = () => {
@@ -136,7 +30,7 @@ const AdminRouteGuard: React.FC = () => {
   }, [isLoading, isAuthenticated, setShowAuthModal]);
 
   if (isLoading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }}><Spin size="large" /></div>;
+    return <CenteredLoading />;
   }
 
   if (!isAuthenticated) {
@@ -148,7 +42,7 @@ const AdminRouteGuard: React.FC = () => {
   }
 
   return (
-    <React.Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }}><Spin size="large" /></div>}>
+    <React.Suspense fallback={<CenteredLoading />}>
       <LazyAdminDashboard />
     </React.Suspense>
   );
@@ -161,34 +55,31 @@ const App: React.FC = () => {
   const antdLocale = i18n.language === 'en-US' ? enUS : zhCN;
 
   React.useEffect(() => {
-    const palette = BRAND_PALETTES[brandColor as keyof typeof BRAND_PALETTES] ?? BRAND_PALETTES['#1677ff'];
-    const modePalette = palette[theme];
-
-    // 同步设置全局 CSS 变量
+    // 主题真相在 CSS:JS 只写两个属性,变量全部由 index.css 按属性推导。
     document.documentElement.setAttribute('data-theme', theme);
-    document.documentElement.style.setProperty('--color-primary', brandColor);
-    document.documentElement.style.setProperty('--color-primary-hover', `${brandColor}cc`);
-    document.documentElement.style.setProperty('--color-primary-shadow', `${brandColor}26`);
-    document.documentElement.style.setProperty('--color-primary-gradient-end', palette.gradientEnd);
-    document.documentElement.style.setProperty('--color-bg-page', modePalette.page);
-    document.documentElement.style.setProperty('--color-bg-container', modePalette.container);
-    document.documentElement.style.setProperty('--color-bg-subtle', modePalette.subtle);
-    document.documentElement.style.setProperty('--color-border', modePalette.border);
-    document.documentElement.style.setProperty('--color-sidebar-bg', modePalette.sidebar);
-    document.documentElement.style.setProperty('--color-sidebar-border', 'rgba(255, 255, 255, 0.24)');
-    document.documentElement.style.setProperty('--color-sidebar-hover', modePalette.sidebarHover);
-    document.documentElement.style.setProperty('--color-sidebar-active', modePalette.sidebarActive);
+    document.documentElement.setAttribute('data-brand', brandKeyFor(brandColor));
   }, [theme, brandColor]);
 
   return (
     <ConfigProvider
       locale={antdLocale}
       theme={{
+        cssVar: {},
         algorithm: theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         token: {
           colorPrimary: brandColor,
-          borderRadius: 10,
+          // admin.md「与 antd 的关系」:borderRadius ← radius/sm(8)
+          borderRadius: 8,
           fontFamily: "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif",
+        },
+        components: {
+          Button: {
+            primaryShadow: '0 1px 3px var(--color-primary-shadow)',
+          },
+          Table: {
+            rowHoverBg: 'var(--color-bg-subtle)',
+            headerColor: 'var(--color-text-desc)',
+          },
         },
       }}
     >
@@ -207,14 +98,14 @@ const App: React.FC = () => {
 
               {/* 积分中心 */}
               <Route path="/credits" element={
-                <React.Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }}><Spin size="large" /></div>}>
+                <React.Suspense fallback={<CenteredLoading />}>
                   <LazyCreditsPage />
                 </React.Suspense>
               } />
 
               {/* AI repo credibility check */}
               <Route path="/repo-check" element={
-                <React.Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }}><Spin size="large" /></div>}>
+                <React.Suspense fallback={<CenteredLoading />}>
                   <LazyRepoCheckPage />
                 </React.Suspense>
               } />

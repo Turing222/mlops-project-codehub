@@ -1,0 +1,19 @@
+.container {
+    width: 100%;
+    margin: 0 auto;
+    padding: var(--space-4) var(--space-6);
+}
+
+.admin {
+    max-width: var(--layout-admin-content-max-width);
+}
+
+.content {
+    max-width: 880px;
+}
+
+@media (max-width: 480px) {
+    .container {
+        padding: var(--space-3);
+    }
+}
