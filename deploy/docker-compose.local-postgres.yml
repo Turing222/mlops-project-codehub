@@ -6,7 +6,8 @@ x-logging: &default-logging
   options:
     awslogs-group: ${DEPLOY_CW_LOG_GROUP:-/dewflow/prod}
     awslogs-region: ${DEPLOY_AWS_REGION:-us-east-1}
-    awslogs-stream-prefix: ${DEPLOY_CW_LOG_STREAM_PREFIX:-dewflow}
+    # plain-docker awslogs has no awslogs-stream-prefix (ECS-only); tag names the stream
+    tag: '${DEPLOY_CW_LOG_STREAM_PREFIX:-dewflow}/{{.Name}}'
 
 x-security: &default-security
   security_opt:
