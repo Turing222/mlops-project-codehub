@@ -20,11 +20,14 @@ work-items/
         <review-slug>.md
       debug/
         <debug-slug>.md
+  archive/
+    <work-item-slug>/
 ```
 
 - `<work-item-slug>` 使用 kebab-case。
 - 只有 `task-plan` 可以创建新的 `work-items/active/<work-item-slug>/`。
 - `review` / `debug` 只能附着到已有 work item，不负责定义 work-item identity。
+- `status: done` 的 work item 整目录迁入 `archive/`，内容保持原样、不加人工日期字段；完成与迁移时间以 git 历史为准。
 
 ## 什么时候需要 work item
 
