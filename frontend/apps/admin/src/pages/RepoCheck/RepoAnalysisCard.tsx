@@ -13,7 +13,7 @@ import {
 import { upsertRecentRepoRun } from '../../features/repo-check/recent-runs';
 import { useRepoAnalysisRunQuery } from '../../query/hooks/repo-analysis';
 import type { EvidenceItem, RepoAnalysisStatus } from '../../schemas/repo-analysis';
-import styles from './RepoCheckPage.module.css';
+import styles from './RepoAnalysisCard.module.css';
 
 interface RepoAnalysisCardProps {
   runId: string;

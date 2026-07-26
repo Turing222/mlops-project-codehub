@@ -3,7 +3,7 @@
   background: var(--color-bg-page);
   color: var(--color-text-main);
   padding: 32px 20px 56px;
-  animation: repoPageFadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: repoPageFadeIn 0.45s var(--easing-enter) both;
 }
 
 .shell {
@@ -11,16 +11,14 @@
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-5);
 }
 
-.backButton,
-.actions button,
-.inputBar button {
+.backButton,.inputBar button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
   border: 1px solid var(--color-border);
   background: var(--color-bg-container);
   color: var(--color-text-main);
@@ -30,12 +28,11 @@
 
 .backButton {
   align-self: flex-start;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 8px 14px;
 }
 
-.backButton:hover,
-.actions button:hover {
+.backButton:hover {
   transform: translateY(-1px);
   border-color: var(--color-primary);
   color: var(--color-primary);
@@ -44,30 +41,29 @@
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
+  gap: var(--space-5);
   padding: 28px;
   border: 1px solid var(--color-border);
   background: var(--color-bg-container);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .heroCopy {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .eyebrow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--color-primary);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
 }
 
-.hero h1,
-.verdictPanel h2 {
+.hero h1 {
   margin: 0;
   letter-spacing: 0;
 }
@@ -86,11 +82,11 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 10px;
   border: 1px solid var(--color-border);
   background: var(--color-bg-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .inputBar input {
@@ -99,12 +95,12 @@
   outline: none;
   background: transparent;
   color: inherit;
-  font-size: 15px;
+  font-size: var(--font-size-md);
 }
 
 .inputBar button {
   min-height: 40px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 0 16px;
   background: var(--color-primary);
   color: var(--color-text-light);
@@ -117,422 +113,18 @@
   cursor: not-allowed;
 }
 
-.timeline {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-container);
-  color: var(--color-text-desc);
-}
-
-.stepIcon {
-  display: inline-flex;
-}
-
-.step.running {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.step.done {
-  border-color: var(--color-status-pass);
-  color: var(--color-status-pass);
-}
-
-.step.error {
-  border-color: var(--color-status-fail);
-  color: var(--color-status-fail);
-}
-
-.running svg {
-  animation: spin 1s linear infinite;
-}
-
-.loadingPanel,
-.errorPanel {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 16px;
-  border-radius: 8px;
-  background: var(--color-bg-container);
-  border: 1px solid var(--color-border);
-}
-
-.errorPanel {
-  border-color: var(--color-status-fail-border);
-  color: var(--color-status-fail);
-}
-
-.reportGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.8fr);
-  gap: 16px;
-  animation: reveal 0.25s ease-out;
-}
-
-.verdictPanel,
-.sidePanel,
-.findingsPanel,
-.markdownPanel,
-.jsonPanel {
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-container);
-  border-radius: 8px;
-  padding: 20px;
-}
-
-.verdictPanel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.panelHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.kicker {
-  display: block;
-  color: var(--color-primary);
-  font-size: 12px;
-  font-weight: 800;
-  margin-bottom: 4px;
-}
-
-.statusBadge {
-  border-radius: 999px;
-  padding: 5px 10px;
-  font-size: 12px;
-  font-weight: 700;
-  background: var(--color-bg-subtle);
-}
-
-.statusBadge.succeeded {
-  color: var(--color-status-pass);
-  background: var(--color-status-pass-bg);
-}
-
-.statusBadge.failed {
-  color: var(--color-status-fail);
-  background: var(--color-status-fail-bg);
-}
-
-.summary,
-.verdict {
-  margin: 0;
-  line-height: 1.65;
-}
-
-.summary {
-  color: var(--color-text-desc);
-}
-
-.metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.metric {
-  min-height: 72px;
-  border-radius: 8px;
-  background: var(--color-bg-subtle);
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.metric span {
-  color: var(--color-text-desc);
-  font-size: 12px;
-}
-
-.metric strong {
-  font-size: 15px;
-  overflow-wrap: anywhere;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.actions button {
-  border-radius: 8px;
-  padding: 9px 13px;
-}
-
-.sidePanel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.sidePanel h3,
-.findingsPanel h3,
-.markdownPanel h3,
-.jsonPanel h3 {
-  margin: 0;
-}
-
-.signalList {
-  margin: 0;
-  padding-left: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  color: var(--color-text-desc);
-}
-
-.emptyText {
-  margin: 0;
-  color: var(--color-text-desc);
-}
-
-.findingsPanel,
-.markdownPanel,
-.jsonPanel {
-  grid-column: 1 / -1;
-}
-
-.findingsList {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.finding {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 14px;
-  background: var(--color-bg-subtle);
-}
-
-.finding summary {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.finding p {
-  line-height: 1.65;
-  color: var(--color-text-desc);
-}
-
-.positive,
-.neutral,
-.warning,
-.risk {
-  font-size: 12px;
-}
-
-.positive {
-  color: var(--color-status-pass);
-}
-
-.neutral {
-  color: var(--color-text-desc);
-}
-
-.warning {
-  color: var(--color-status-warn);
-}
-
-.risk {
-  color: var(--color-status-fail);
-}
-
-.evidenceRefs {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.evidenceRef {
-  display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  padding: 10px;
-  border-radius: 8px;
-  background: var(--color-bg-container);
-}
-
-.evidenceRef code {
-  overflow-wrap: anywhere;
-}
-
-.markdownPanel pre,
-.jsonPanel pre {
-  max-height: 520px;
-  overflow: auto;
-  margin: 14px 0 0;
-  padding: 16px;
-  border-radius: 8px;
-  background: var(--color-code-block-bg);
-  color: var(--color-code-block-text);
-  line-height: 1.55;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes reveal {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @media (max-width: 840px) {
-  .reportGrid,
-  .timeline,
-  .metrics {
-    grid-template-columns: 1fr;
-  }
-
   .inputBar {
     grid-template-columns: auto minmax(0, 1fr);
   }
-
-  .evidenceRef {
-    grid-template-columns: 1fr;
-  }
 }
-
-.mdContainer {
-  margin: 14px 0 0;
-  padding: 20px;
-  border-radius: 8px;
-  background: var(--color-bg-subtle);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-main);
-  font-size: 14.5px;
-  line-height: 1.75;
-}
-
-:global([data-theme='dark']) .mdContainer {
-  background: rgba(255, 255, 255, 0.01);
-}
-
-.mdH1 {
-  font-size: 20px;
-  font-weight: 700;
-  margin: 0 0 16px 0;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-main);
-}
-
-.mdH2 {
-  font-size: 16.5px;
-  font-weight: 650;
-  margin: 24px 0 12px 0;
-  color: var(--color-text-main);
-}
-
-.mdH3 {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 18px 0 8px 0;
-  color: var(--color-text-main);
-}
-
-.mdP {
-  margin: 0 0 12px 0;
-  color: var(--color-text-desc);
-}
-
-.mdLi {
-  margin: 6px 0;
-  list-style-type: disc;
-  margin-left: 20px;
-  color: var(--color-text-desc);
-}
-
-.durationTag {
-  font-size: 11px;
-  color: var(--color-primary);
-  background: var(--color-primary-shadow);
-  padding: 3px 8px;
-  border-radius: 4px;
-  margin-left: auto;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  min-width: 102px;
-  justify-content: center;
-  white-space: nowrap;
-}
-
-.evidenceBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 11.5px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.badgeClaim {
-  background: var(--color-status-pass-bg);
-  color: var(--color-status-pass);
-  border: 1px solid var(--color-status-pass-border);
-}
-
-
-.badgeMissing {
-  background: var(--color-status-warn-bg);
-  color: var(--color-status-warn);
-  border: 1px solid var(--color-status-warn-border);
-}
-
-
-.badgeMeta {
-  background: var(--color-status-info-bg);
-  color: var(--color-status-info);
-  border: 1px solid var(--color-status-info-border);
-}
-
 
 /* --- Recent Audits Section & Cards --- */
 .recentSection {
-  margin-top: 40px;
+  margin-top: var(--space-8);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .recentHeader {
@@ -541,7 +133,7 @@
   justify-content: space-between;
   border-bottom: 2px solid var(--color-border);
   padding-bottom: 10px;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .recentHeader h3 {
@@ -563,7 +155,7 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all var(--duration-fast) var(--easing-standard);
 }
 
 .clearHistoryBtn:hover {
@@ -576,20 +168,20 @@
 .recentGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .recentCard {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 18px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background: var(--color-bg-container);
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all var(--duration-standard) var(--easing-standard);
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.01);
   position: relative;
   overflow: hidden;
@@ -605,11 +197,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .cardTop h4 {
-  font-size: 15px;
+  font-size: var(--font-size-md);
   font-weight: 600;
   margin: 0;
   color: var(--color-text-main);
@@ -628,7 +220,6 @@
   border-radius: 6px;
   flex-shrink: 0;
 }
-
 
 .cardMeta {
   display: flex;
@@ -659,18 +250,15 @@
   font-weight: 600;
 }
 
-
-
-
 .cardFooter {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-desc);
   border-top: 1px solid var(--color-border);
   padding-top: 10px;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 /* --- Premium Empty History Dashboard --- */
@@ -679,14 +267,14 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 48px 24px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px dashed var(--color-border);
   background: var(--color-bg-subtle);
   color: var(--color-text-desc);
   text-align: center;
-  transition: all 0.25s ease;
+  transition: all var(--duration-standard) ease;
 }
 
 .emptyHistory:hover {
@@ -705,61 +293,13 @@
 .emptyIcon {
   color: var(--color-primary);
   opacity: 0.6;
-  transition: transform 0.3s ease;
+  transition: transform var(--duration-enter) ease;
 }
 
 .emptyHistory:hover .emptyIcon {
   transform: scale(1.1) rotate(5deg);
   opacity: 0.95;
 }
-
-/* --- Inline Value Badges inside Markdown --- */
-.inlineValBadge {
-  border: 1px solid var(--color-border);
-  line-height: 1.3;
-}
-
-.badgeLow {
-  background: var(--color-status-pass-bg);
-  color: var(--color-status-pass);
-  border-color: var(--color-status-pass-border);
-}
-
-
-.badgeMedium {
-  background: var(--color-status-warn-bg);
-  color: var(--color-status-warn);
-  border-color: var(--color-status-warn-border);
-}
-
-
-.badgeHigh {
-  background: var(--color-status-fail-bg);
-  color: var(--color-status-fail);
-  border-color: var(--color-status-fail-border);
-}
-
-
-.badgePositive {
-  background: var(--color-status-pass-bg);
-  color: var(--color-status-pass);
-  border-color: var(--color-status-pass-border);
-}
-
-
-.badgeNeutral {
-  background: var(--color-bg-subtle);
-  color: var(--color-text-main);
-  border-color: var(--color-border);
-}
-
-
-.badgeWarning {
-  background: var(--color-status-warn-bg);
-  color: var(--color-status-warn);
-  border-color: var(--color-status-warn-border);
-}
-
 
 @keyframes repoPageFadeIn {
   from {
