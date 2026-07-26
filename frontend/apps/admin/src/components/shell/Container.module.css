@@ -11,3 +11,9 @@
 .content {
     max-width: 880px;
 }
+
+@media (max-width: 480px) {
+    .container {
+        padding: var(--space-3);
+    }
+}

@@ -338,3 +338,20 @@
     background: var(--color-sidebar-hover);
     color: var(--color-sidebar-text);
 }
+
+/* --- 窄屏(<=768):展开态浮层化,折叠态保持在流内 --- */
+@media (max-width: 768px) {
+    .sidebar:not(.collapsed-sidebar) {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        z-index: 30;
+        box-shadow: var(--shadow-modal);
+    }
+
+    .session-item,
+    .sidebar-nav-item {
+        min-height: 44px;
+    }
+}

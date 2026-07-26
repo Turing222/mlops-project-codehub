@@ -1,5 +1,17 @@
 {
   "$description": "Layout constants. Product-specific max-widths and chrome heights.",
+  "breakpoint": {
+    "md": {
+      "$type": "dimension",
+      "$value": "768px",
+      "$description": "Tablet and below: shell nav collapses to drawer; chat sidebar overlays"
+    },
+    "sm": {
+      "$type": "dimension",
+      "$value": "480px",
+      "$description": "Phone: tightened paddings, hidden secondary chrome, touch targets >= 44px"
+    }
+  },
   "layout": {
     "chat": {
       "header-height": { "$type": "dimension", "$value": "56px" },

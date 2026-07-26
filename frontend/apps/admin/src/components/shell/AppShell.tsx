@@ -1,6 +1,7 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Coins, MessageSquare, Shield, ShieldCheck } from 'lucide-react';
+import { Drawer } from 'antd';
+import { Coins, Menu, MessageSquare, Shield, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/useAuth';
 import styles from './AppShell.module.css';
@@ -24,6 +25,12 @@ const AppShell: React.FC<AppShellProps> = ({ pageTitle, pageIcon, rootClassName,
     const location = useLocation();
     const { user } = useAuth();
     const { t } = useTranslation();
+    const [drawerOpen, setDrawerOpen] = React.useState(false);
+
+    const goTo = (path: string) => {
+        setDrawerOpen(false);
+        navigate(path);
+    };
 
     const navItems = [
         { path: '/', label: t('nav.chat', '对话'), icon: <MessageSquare size={16} /> },
@@ -40,8 +47,16 @@ const AppShell: React.FC<AppShellProps> = ({ pageTitle, pageIcon, rootClassName,
                 <div className={styles['header-left']}>
                     <button
                         type="button"
+                        className={styles['drawer-trigger']}
+                        onClick={() => setDrawerOpen(true)}
+                        aria-label={t('nav.open_menu', '打开导航')}
+                    >
+                        <Menu size={20} />
+                    </button>
+                    <button
+                        type="button"
                         className={styles.logo}
-                        onClick={() => navigate('/')}
+                        onClick={() => goTo('/')}
                         aria-label={t('nav.chat', '对话')}
                     >
                         <Shield size={20} color="var(--color-primary)" />
@@ -55,7 +70,7 @@ const AppShell: React.FC<AppShellProps> = ({ pageTitle, pageIcon, rootClassName,
                                 className={`${styles['nav-item']} ${
                                     location.pathname === item.path ? styles['nav-item-active'] : ''
                                 }`.trim()}
-                                onClick={() => navigate(item.path)}
+                                onClick={() => goTo(item.path)}
                                 aria-current={location.pathname === item.path ? 'page' : undefined}
                             >
                                 {item.icon}
@@ -67,7 +82,7 @@ const AppShell: React.FC<AppShellProps> = ({ pageTitle, pageIcon, rootClassName,
                 <div className={styles['header-right']}>
                     <span className={`${styles['page-title']} header-title`}>
                         {pageIcon}
-                        {pageTitle}
+                        <span>{pageTitle}</span>
                     </span>
                     {user?.username ? (
                         <span className={styles['header-user']}>{user.username}</span>
@@ -75,6 +90,30 @@ const AppShell: React.FC<AppShellProps> = ({ pageTitle, pageIcon, rootClassName,
                 </div>
             </header>
             <main className={styles.main}>{children}</main>
+            <Drawer
+                placement="left"
+                width={240}
+                open={drawerOpen}
+                onClose={() => setDrawerOpen(false)}
+                title="Dewflow"
+                styles={{ body: { padding: 'var(--space-2)' } }}
+            >
+                <nav className={styles['drawer-nav']} aria-label={t('nav.aria_label', '全局导航')}>
+                    {navItems.map((item) => (
+                        <button
+                            key={item.path}
+                            type="button"
+                            className={`${styles['drawer-nav-item']} ${
+                                location.pathname === item.path ? styles['drawer-nav-item-active'] : ''
+                            }`.trim()}
+                            onClick={() => goTo(item.path)}
+                        >
+                            {item.icon}
+                            <span>{item.label}</span>
+                        </button>
+                    ))}
+                </nav>
+            </Drawer>
         </div>
     );
 };

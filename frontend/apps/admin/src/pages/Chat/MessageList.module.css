@@ -679,3 +679,25 @@
     white-space: nowrap;
 }
 
+
+/* --- 窄屏收紧 --- */
+@media (max-width: 768px) {
+    .chat-bubble {
+        max-width: 85%;
+    }
+
+    .input-area {
+        padding: var(--space-2) var(--space-3);
+    }
+}
+
+@media (max-width: 480px) {
+    .chat-avatar,
+    .assistant-avatar-wrapper {
+        display: none;
+    }
+
+    .chat-bubble {
+        max-width: 92%;
+    }
+}
