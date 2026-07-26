@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ConfigProvider, Spin, theme as antdTheme } from 'antd';
+import { ConfigProvider, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import enUS from 'antd/locale/en_US';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -11,6 +11,7 @@ import { useAuth } from './context/useAuth';
 import ChatPage from './pages/Chat';
 import GoogleCallbackPage from './pages/Auth/GoogleCallbackPage';
 import AuthModal from './pages/Auth/AuthModal';
+import CenteredLoading from './components/CenteredLoading';
 import { useThemeStore } from './stores/theme-store';
 import { brandKeyFor } from './theme/brand';
 
@@ -29,7 +30,7 @@ const AdminRouteGuard: React.FC = () => {
   }, [isLoading, isAuthenticated, setShowAuthModal]);
 
   if (isLoading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }}><Spin size="large" /></div>;
+    return <CenteredLoading />;
   }
 
   if (!isAuthenticated) {
@@ -41,7 +42,7 @@ const AdminRouteGuard: React.FC = () => {
   }
 
   return (
-    <React.Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }}><Spin size="large" /></div>}>
+    <React.Suspense fallback={<CenteredLoading />}>
       <LazyAdminDashboard />
     </React.Suspense>
   );
@@ -92,14 +93,14 @@ const App: React.FC = () => {
 
               {/* 积分中心 */}
               <Route path="/credits" element={
-                <React.Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }}><Spin size="large" /></div>}>
+                <React.Suspense fallback={<CenteredLoading />}>
                   <LazyCreditsPage />
                 </React.Suspense>
               } />
 
               {/* AI repo credibility check */}
               <Route path="/repo-check" element={
-                <React.Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }}><Spin size="large" /></div>}>
+                <React.Suspense fallback={<CenteredLoading />}>
                   <LazyRepoCheckPage />
                 </React.Suspense>
               } />

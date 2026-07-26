@@ -1,7 +1,7 @@
 .page {
   min-height: 100vh;
   background: var(--color-bg-page);
-  color: var(--color-text-main, #172033);
+  color: var(--color-text-main);
   padding: 32px 20px 56px;
   animation: repoPageFadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -23,7 +23,7 @@
   gap: 8px;
   border: 1px solid var(--color-border);
   background: var(--color-bg-container);
-  color: var(--color-text-main, #172033);
+  color: var(--color-text-main);
   cursor: pointer;
   transition: transform 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
@@ -78,7 +78,7 @@
 
 .hero p {
   margin: 0;
-  color: var(--color-text-desc, #64748b);
+  color: var(--color-text-desc);
   max-width: 720px;
 }
 
@@ -107,7 +107,7 @@
   border-radius: 8px;
   padding: 0 16px;
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-text-light);
   border-color: var(--color-primary);
   font-weight: 700;
 }
@@ -132,7 +132,7 @@
   border-radius: 8px;
   border: 1px solid var(--color-border);
   background: var(--color-bg-container);
-  color: var(--color-text-desc, #64748b);
+  color: var(--color-text-desc);
 }
 
 .stepIcon {
@@ -145,13 +145,13 @@
 }
 
 .step.done {
-  border-color: #16a34a;
-  color: #15803d;
+  border-color: var(--color-status-pass);
+  color: var(--color-status-pass);
 }
 
 .step.error {
-  border-color: #dc2626;
-  color: #dc2626;
+  border-color: var(--color-status-fail);
+  color: var(--color-status-fail);
 }
 
 .running svg {
@@ -170,8 +170,8 @@
 }
 
 .errorPanel {
-  border-color: #fecaca;
-  color: #b91c1c;
+  border-color: var(--color-status-fail-border);
+  color: var(--color-status-fail);
 }
 
 .reportGrid {
@@ -222,13 +222,13 @@
 }
 
 .statusBadge.succeeded {
-  color: #15803d;
-  background: #dcfce7;
+  color: var(--color-status-pass);
+  background: var(--color-status-pass-bg);
 }
 
 .statusBadge.failed {
-  color: #b91c1c;
-  background: #fee2e2;
+  color: var(--color-status-fail);
+  background: var(--color-status-fail-bg);
 }
 
 .summary,
@@ -238,7 +238,7 @@
 }
 
 .summary {
-  color: var(--color-text-desc, #64748b);
+  color: var(--color-text-desc);
 }
 
 .metrics {
@@ -258,7 +258,7 @@
 }
 
 .metric span {
-  color: var(--color-text-desc, #64748b);
+  color: var(--color-text-desc);
   font-size: 12px;
 }
 
@@ -297,12 +297,12 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  color: var(--color-text-desc, #64748b);
+  color: var(--color-text-desc);
 }
 
 .emptyText {
   margin: 0;
-  color: var(--color-text-desc, #64748b);
+  color: var(--color-text-desc);
 }
 
 .findingsPanel,
@@ -335,7 +335,7 @@
 
 .finding p {
   line-height: 1.65;
-  color: var(--color-text-desc, #64748b);
+  color: var(--color-text-desc);
 }
 
 .positive,
@@ -346,19 +346,19 @@
 }
 
 .positive {
-  color: #15803d;
+  color: var(--color-status-pass);
 }
 
 .neutral {
-  color: #475569;
+  color: var(--color-text-desc);
 }
 
 .warning {
-  color: #b45309;
+  color: var(--color-status-warn);
 }
 
 .risk {
-  color: #b91c1c;
+  color: var(--color-status-fail);
 }
 
 .evidenceRefs {
@@ -388,8 +388,8 @@
   margin: 14px 0 0;
   padding: 16px;
   border-radius: 8px;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--color-code-block-bg);
+  color: var(--color-code-block-text);
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -432,9 +432,9 @@
   margin: 14px 0 0;
   padding: 20px;
   border-radius: 8px;
-  background: var(--color-bg-subtle, #f8fafc);
+  background: var(--color-bg-subtle);
   border: 1px solid var(--color-border);
-  color: var(--color-text-main, #172033);
+  color: var(--color-text-main);
   font-size: 14.5px;
   line-height: 1.75;
 }
@@ -449,33 +449,33 @@
   margin: 0 0 16px 0;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-main, #172033);
+  color: var(--color-text-main);
 }
 
 .mdH2 {
   font-size: 16.5px;
   font-weight: 650;
   margin: 24px 0 12px 0;
-  color: var(--color-text-main, #172033);
+  color: var(--color-text-main);
 }
 
 .mdH3 {
   font-size: 15px;
   font-weight: 600;
   margin: 18px 0 8px 0;
-  color: var(--color-text-main, #172033);
+  color: var(--color-text-main);
 }
 
 .mdP {
   margin: 0 0 12px 0;
-  color: var(--color-text-desc, #64748b);
+  color: var(--color-text-desc);
 }
 
 .mdLi {
   margin: 6px 0;
   list-style-type: disc;
   margin-left: 20px;
-  color: var(--color-text-desc, #64748b);
+  color: var(--color-text-desc);
 }
 
 .durationTag {
@@ -507,40 +507,25 @@
 }
 
 .badgeClaim {
-  background: #e6f4ea;
-  color: #137333;
-  border: 1px solid #ceead6;
+  background: var(--color-status-pass-bg);
+  color: var(--color-status-pass);
+  border: 1px solid var(--color-status-pass-border);
 }
 
-:global([data-theme='dark']) .badgeClaim {
-  background: rgba(19, 115, 51, 0.15);
-  color: #81c995;
-  border-color: rgba(129, 201, 149, 0.3);
-}
 
 .badgeMissing {
-  background: #fef7e0;
-  color: #b06000;
-  border: 1px solid #feebc8;
+  background: var(--color-status-warn-bg);
+  color: var(--color-status-warn);
+  border: 1px solid var(--color-status-warn-border);
 }
 
-:global([data-theme='dark']) .badgeMissing {
-  background: rgba(176, 96, 0, 0.15);
-  color: #fdd663;
-  border-color: rgba(253, 214, 99, 0.3);
-}
 
 .badgeMeta {
-  background: #e8f0fe;
-  color: #1a73e8;
-  border: 1px solid #d2e3fc;
+  background: var(--color-status-info-bg);
+  color: var(--color-status-info);
+  border: 1px solid var(--color-status-info-border);
 }
 
-:global([data-theme='dark']) .badgeMeta {
-  background: rgba(26, 115, 232, 0.15);
-  color: #8ab4f8;
-  border-color: rgba(138, 180, 248, 0.3);
-}
 
 /* --- Recent Audits Section & Cards --- */
 .recentSection {
@@ -563,7 +548,7 @@
   font-size: 16.5px;
   font-weight: 700;
   margin: 0;
-  color: var(--color-text-main, #172033);
+  color: var(--color-text-main);
 }
 
 .clearHistoryBtn {
@@ -574,7 +559,7 @@
   border-radius: 6px;
   border: 1px solid var(--color-border);
   background: var(--color-bg-container);
-  color: var(--color-text-desc, #64748b);
+  color: var(--color-text-desc);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -582,8 +567,8 @@
 }
 
 .clearHistoryBtn:hover {
-  border-color: #ef4444;
-  color: #ef4444;
+  border-color: var(--color-status-fail);
+  color: var(--color-status-fail);
   background: rgba(239, 68, 68, 0.04);
   transform: translateY(-0.5px);
 }
@@ -627,7 +612,7 @@
   font-size: 15px;
   font-weight: 600;
   margin: 0;
-  color: var(--color-text-main, #172033);
+  color: var(--color-text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -637,24 +622,20 @@
 .cardTop span {
   font-size: 11.5px;
   font-weight: 700;
-  color: #d97706;
-  background: rgba(217, 119, 6, 0.07);
+  color: var(--color-status-warn);
+  background: var(--color-status-warn-bg);
   padding: 2px 6px;
   border-radius: 6px;
   flex-shrink: 0;
 }
 
-:global([data-theme='dark']) .cardTop span {
-  background: rgba(217, 119, 6, 0.15);
-  color: #fbbf24;
-}
 
 .cardMeta {
   display: flex;
   flex-direction: column;
   gap: 6px;
   font-size: 12.5px;
-  color: var(--color-text-desc, #64748b);
+  color: var(--color-text-desc);
 }
 
 .cardMeta span {
@@ -664,38 +645,29 @@
 }
 
 .cardMeta .low {
-  color: #16a34a !important;
+  color: var(--color-status-pass);
   font-weight: 600;
 }
 
 .cardMeta .medium {
-  color: #d97706 !important;
+  color: var(--color-status-warn);
   font-weight: 600;
 }
 
 .cardMeta .high {
-  color: #dc2626 !important;
+  color: var(--color-status-fail);
   font-weight: 600;
 }
 
-:global([data-theme='dark']) .cardMeta .low {
-  color: #4ade80 !important;
-}
 
-:global([data-theme='dark']) .cardMeta .medium {
-  color: #fbbf24 !important;
-}
 
-:global([data-theme='dark']) .cardMeta .high {
-  color: #f87171 !important;
-}
 
 .cardFooter {
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-size: 11px;
-  color: var(--color-text-desc, #64748b);
+  color: var(--color-text-desc);
   border-top: 1px solid var(--color-border);
   padding-top: 10px;
   margin-top: 4px;
@@ -711,8 +683,8 @@
   padding: 48px 24px;
   border-radius: 12px;
   border: 1px dashed var(--color-border);
-  background: var(--color-bg-subtle, #f8fafc);
-  color: var(--color-text-desc, #64748b);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-desc);
   text-align: center;
   transition: all 0.25s ease;
 }
@@ -748,76 +720,46 @@
 }
 
 .badgeLow {
-  background: #e6f4ea;
-  color: #137333;
-  border-color: #ceead6;
+  background: var(--color-status-pass-bg);
+  color: var(--color-status-pass);
+  border-color: var(--color-status-pass-border);
 }
 
-:global([data-theme='dark']) .badgeLow {
-  background: rgba(19, 115, 51, 0.15);
-  color: #81c995;
-  border-color: rgba(129, 201, 149, 0.3);
-}
 
 .badgeMedium {
-  background: #fef7e0;
-  color: #b06000;
-  border-color: #feebc8;
+  background: var(--color-status-warn-bg);
+  color: var(--color-status-warn);
+  border-color: var(--color-status-warn-border);
 }
 
-:global([data-theme='dark']) .badgeMedium {
-  background: rgba(176, 96, 0, 0.15);
-  color: #fdd663;
-  border-color: rgba(253, 214, 99, 0.3);
-}
 
 .badgeHigh {
-  background: #fce8e6;
-  color: #c5221f;
-  border-color: #fad2cf;
+  background: var(--color-status-fail-bg);
+  color: var(--color-status-fail);
+  border-color: var(--color-status-fail-border);
 }
 
-:global([data-theme='dark']) .badgeHigh {
-  background: rgba(197, 34, 31, 0.15);
-  color: #f28b82;
-  border-color: rgba(242, 139, 130, 0.3);
-}
 
 .badgePositive {
-  background: #e6f4ea;
-  color: #137333;
-  border-color: #ceead6;
+  background: var(--color-status-pass-bg);
+  color: var(--color-status-pass);
+  border-color: var(--color-status-pass-border);
 }
 
-:global([data-theme='dark']) .badgePositive {
-  background: rgba(19, 115, 51, 0.15);
-  color: #81c995;
-  border-color: rgba(129, 201, 149, 0.3);
-}
 
 .badgeNeutral {
-  background: #f1f3f4;
-  color: #3c4043;
-  border-color: #dadce0;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-main);
+  border-color: var(--color-border);
 }
 
-:global([data-theme='dark']) .badgeNeutral {
-  background: rgba(255, 255, 255, 0.05);
-  color: #bdc1c6;
-  border-color: rgba(255, 255, 255, 0.1);
-}
 
 .badgeWarning {
-  background: #fef7e0;
-  color: #b06000;
-  border-color: #feebc8;
+  background: var(--color-status-warn-bg);
+  color: var(--color-status-warn);
+  border-color: var(--color-status-warn-border);
 }
 
-:global([data-theme='dark']) .badgeWarning {
-  background: rgba(176, 96, 0, 0.15);
-  color: #fdd663;
-  border-color: rgba(253, 214, 99, 0.3);
-}
 
 @keyframes repoPageFadeIn {
   from {

@@ -106,6 +106,30 @@
   --layout-modal-profile-height: 520px;
   --layout-modal-sidebar-width: 200px;
 
+  /* 语义状态色(pass/warn/fail/info;RepoCheck 判定与徽章) */
+  --color-status-pass: #15803d;
+  --color-status-pass-bg: #e6f4ea;
+  --color-status-pass-border: #ceead6;
+  --color-status-warn: #b06000;
+  --color-status-warn-bg: #fef7e0;
+  --color-status-warn-border: #feebc8;
+  --color-status-fail: #b91c1c;
+  --color-status-fail-bg: #fee2e2;
+  --color-status-fail-border: #fecaca;
+  --color-status-info: #1a73e8;
+  --color-status-info-bg: #e8f0fe;
+  --color-status-info-border: #d2e3fc;
+
+  /* 终端风代码块(双模式同值) */
+  --color-code-block-bg: #0f172a;
+  --color-code-block-text: #e2e8f0;
+
+  /* admin 深色壳(colors.json admin-header 系;双模式同值) */
+  --color-admin-header: #1e293b;
+  --color-admin-header-border: #334155;
+  --color-admin-header-text: #f1f5f9;
+  --color-admin-header-text-muted: #94a3b8;
+
   /* sidebar(A0 决策:中性底,品牌只出现在选中态) */
   --color-sidebar-bg: var(--color-bg-subtle);
   --color-sidebar-border: var(--color-border);
@@ -150,6 +174,19 @@
   --color-coin: #fbbf24;
 
   --color-sidebar-hover: rgba(255, 255, 255, 0.08);
+
+  --color-status-pass: #4ade80;
+  --color-status-pass-bg: rgba(74, 222, 128, 0.15);
+  --color-status-pass-border: rgba(74, 222, 128, 0.3);
+  --color-status-warn: #fbbf24;
+  --color-status-warn-bg: rgba(251, 191, 36, 0.15);
+  --color-status-warn-border: rgba(251, 191, 36, 0.3);
+  --color-status-fail: #f87171;
+  --color-status-fail-bg: rgba(248, 113, 113, 0.15);
+  --color-status-fail-border: rgba(248, 113, 113, 0.3);
+  --color-status-info: #8ab4f8;
+  --color-status-info-bg: rgba(138, 180, 248, 0.15);
+  --color-status-info-border: rgba(138, 180, 248, 0.3);
 
   --scrollbar-thumb: #424242;
   --scrollbar-thumb-hover: #555555;

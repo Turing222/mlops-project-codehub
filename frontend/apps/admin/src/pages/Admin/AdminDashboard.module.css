@@ -1,6 +1,6 @@
 .admin-layout {
     min-height: 100vh;
-    background: #f5f7fa !important;
+    background: var(--color-bg-page);
 }
 
 /* --- Header --- */
@@ -9,9 +9,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: #1e293b !important;
-    border-bottom: 1px solid #334155;
-    padding: 0 24px !important;
+    background: var(--color-admin-header);
+    border-bottom: 1px solid var(--color-admin-header-border);
+    padding: 0 var(--space-6);
     position: sticky;
     top: 0;
     z-index: 10;
@@ -24,37 +24,37 @@
 }
 
 .admin-header .header-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #f1f5f9;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-admin-header-text);
 }
 
 .admin-header .header-right {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
 }
 
 .admin-header .header-user {
-    font-size: 13px;
-    color: #94a3b8;
+    font-size: var(--font-size-sm);
+    color: var(--color-admin-header-text-muted);
 }
 
 /* --- Content --- */
 
 .admin-content {
-    padding: 16px 24px;
+    padding: var(--space-4) var(--space-6);
     display: flex;
     justify-content: center;
 }
 
 .admin-content .content-card {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    padding: 16px 20px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-    max-width: 1600px;
+    background: var(--color-bg-container);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-4) var(--space-5);
+    box-shadow: var(--shadow-card);
+    max-width: var(--layout-admin-content-max-width);
     width: 100%;
 }
 
@@ -62,40 +62,39 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 20px;
+    margin-bottom: var(--space-5);
     flex-wrap: wrap;
-    gap: 12px;
+    gap: var(--space-3);
 }
 
 .admin-content .card-header h2 {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 18px;
-    font-weight: 600;
-    color: #1a1a2e;
+    gap: var(--space-2);
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-main);
     margin: 0;
 }
 
 /* --- Table --- */
 
 .admin-layout :global(.ant-table-thead)>tr>th {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #666;
+    color: var(--color-text-desc);
 }
 
 .admin-layout :global(.ant-table-tbody)>tr:hover>td {
-    background: rgba(22, 119, 255, 0.04) !important;
+    background: color-mix(in srgb, var(--color-primary) 4%, transparent);
 }
 
 .admin-header .back-btn {
-    color: #e2e8f0 !important;
-    margin-right: 12px;
+    color: var(--color-admin-header-text-muted);
 }
 
 .admin-header .back-btn:hover {
-    color: #fff !important;
+    color: var(--color-admin-header-text);
 }

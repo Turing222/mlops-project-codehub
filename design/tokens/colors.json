@@ -80,6 +80,36 @@
       "$type": "color",
       "$value": { "light": "#334155", "dark": "#334155" }
     },
+    "admin-header-text": {
+      "$type": "color",
+      "$value": { "light": "#f1f5f9", "dark": "#f1f5f9" }
+    },
+    "admin-header-text-muted": {
+      "$type": "color",
+      "$value": { "light": "#94a3b8", "dark": "#94a3b8" }
+    },
+    "status-pass": {
+      "$type": "color",
+      "$value": { "light": "#15803d", "dark": "#4ade80" },
+      "$description": "Semantic verdict colors; -bg/-border variants derived as documented in index.css"
+    },
+    "status-warn": {
+      "$type": "color",
+      "$value": { "light": "#b06000", "dark": "#fbbf24" }
+    },
+    "status-fail": {
+      "$type": "color",
+      "$value": { "light": "#b91c1c", "dark": "#f87171" }
+    },
+    "status-info": {
+      "$type": "color",
+      "$value": { "light": "#1a73e8", "dark": "#8ab4f8" }
+    },
+    "code-block": {
+      "$type": "color",
+      "$value": { "light": "#0f172a", "dark": "#0f172a" },
+      "$description": "Terminal-style code block background; text #e2e8f0 both modes"
+    },
     "overlay": {
       "$type": "color",
       "$value": { "light": "rgba(0, 0, 0, 0.45)", "dark": "rgba(0, 0, 0, 0.55)" }
