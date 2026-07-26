@@ -1,0 +1,140 @@
+name: Deploy Backend
+
+# Backend CD: build/push immutable images to ECR, then deploy to the EC2 host
+# over SSM Run Command (no inbound ports, no long-lived cloud secrets in CI).
+# The EC2 host runs the same `make deploy-ec2-*` commands as a manual deploy;
+# see scripts/deploy/ec2-remote-deploy.sh and docs/platform/deploy-ec2.md.
+#
+# Triggers:
+#   - push tag v*         -> build + deploy that release (production approval gate)
+#   - workflow_dispatch   -> with image_tag: redeploy/rollback an existing image
+#                            without image_tag: build current ref, then deploy
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Existing ECR image tag to redeploy/rollback (skips build)"
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-backend-production
+  cancel-in-progress: false
+
+jobs:
+  build-push:
+    name: Build and push backend images
+    if: github.event_name == 'push' || inputs.image_tag == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      image_tag: ${{ steps.release_meta.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve immutable image tag
+        id: release_meta
+        run: echo "image_tag=$(git describe --tags --always --abbrev=12)" >> "$GITHUB_OUTPUT"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to ECR
+        run: |
+          aws ecr get-login-password --region "${{ vars.AWS_REGION }}" \
+            | docker login --username AWS --password-stdin "${{ vars.ECR_REGISTRY }}"
+
+      - name: Build backend images
+        env:
+          IMAGE_TAG: ${{ steps.release_meta.outputs.image_tag }}
+        run: |
+          BACKEND_IMAGE_REPOSITORY="${{ vars.ECR_REGISTRY }}/dewflow-backend" \
+            make image-build-release
+
+      - name: Push backend images
+        env:
+          IMAGE_TAG: ${{ steps.release_meta.outputs.image_tag }}
+        run: |
+          docker push "${{ vars.ECR_REGISTRY }}/dewflow-backend:${IMAGE_TAG}-web"
+          docker push "${{ vars.ECR_REGISTRY }}/dewflow-backend:${IMAGE_TAG}-ai"
+
+  deploy:
+    name: Deploy to EC2 production
+    needs: [build-push]
+    if: >-
+      always() &&
+      (needs.build-push.result == 'success' || needs.build-push.result == 'skipped')
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag || needs.build-push.outputs.image_tag }}
+      GIT_SHA: ${{ github.sha }}
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy over SSM and wait for result
+        run: |
+          set -euo pipefail
+          test -n "$IMAGE_TAG" || { echo "IMAGE_TAG is empty" >&2; exit 1; }
+
+          remote_script=$(cat <<EOF
+          set -euo pipefail
+          export HOME=/root
+          cd /opt/dewflow/repo
+          git fetch --force --tags origin main
+          if git rev-parse -q --verify "refs/tags/${IMAGE_TAG}" >/dev/null; then
+            git checkout --force "refs/tags/${IMAGE_TAG}"
+          else
+            git checkout --force "${GIT_SHA}"
+          fi
+          ECR_REGISTRY="${{ vars.ECR_REGISTRY }}" AWS_REGION="${{ vars.AWS_REGION }}" \
+            bash scripts/deploy/ec2-remote-deploy.sh "${IMAGE_TAG}"
+          EOF
+          )
+
+          command_id=$(aws ssm send-command \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy-backend ${IMAGE_TAG}" \
+            --timeout-seconds 3600 \
+            --cloud-watch-output-config \
+              CloudWatchLogGroupName=/dewflow/ssm,CloudWatchOutputEnabled=true \
+            --parameters "$(jq -n --arg c "$remote_script" \
+              '{commands: [("bash -c " + ($c | @sh))], executionTimeout: ["3600"]}')" \
+            --query 'Command.CommandId' --output text)
+          echo "ssm command: $command_id"
+
+          status="InProgress"
+          while [ "$status" = "InProgress" ] || [ "$status" = "Pending" ] || [ "$status" = "Delayed" ]; do
+            sleep 15
+            status=$(aws ssm get-command-invocation \
+              --command-id "$command_id" --instance-id "$EC2_INSTANCE_ID" \
+              --query 'Status' --output text)
+            echo "deploy status: $status"
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" --instance-id "$EC2_INSTANCE_ID" \
+            --query 'StandardOutputContent' --output text
+          if [ "$status" != "Success" ]; then
+            echo '--- remote stderr (tail) ---'
+            aws ssm get-command-invocation \
+              --command-id "$command_id" --instance-id "$EC2_INSTANCE_ID" \
+              --query 'StandardErrorContent' --output text
+            exit 1
+          fi

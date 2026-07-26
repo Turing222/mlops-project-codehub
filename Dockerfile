@@ -80,6 +80,10 @@ COPY --from=builder-web --chown=appuser:appgroup /app/alembic ./alembic
 COPY --from=builder-web --chown=appuser:appgroup /app/configs ./configs
 COPY --from=builder-web --chown=appuser:appgroup /app/backend ./backend
 
+# RDS verify-full trust anchor (public AWS CA bundle, not a secret)
+ADD --chown=appuser:appgroup --chmod=444 \
+    https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /app/certs/rds-global-bundle.pem
+
 USER appuser
 
 RUN /app/.venv/bin/python -c "import backend.main; print('✅ Web image: backend.main OK')"
@@ -120,6 +124,10 @@ ENV PATH="/app/.venv/bin:$PATH" \
 COPY --from=builder-worker --chown=appuser:appgroup /app/.venv /app/.venv
 COPY --from=builder-worker --chown=appuser:appgroup /app/configs ./configs
 COPY --from=builder-worker --chown=appuser:appgroup /app/backend ./backend
+
+# RDS verify-full trust anchor (public AWS CA bundle, not a secret)
+ADD --chown=appuser:appgroup --chmod=444 \
+    https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /app/certs/rds-global-bundle.pem
 
 USER appuser
 
