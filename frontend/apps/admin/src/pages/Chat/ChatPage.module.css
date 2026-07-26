@@ -3,7 +3,7 @@
     height: 100vh;
     overflow: hidden;
     background: var(--color-bg-page);
-    animation: chatPageFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: chatPageFadeIn var(--duration-page) cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .chat-workspace {
@@ -40,12 +40,12 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
 }
 
 .chat-header-title {
     font-weight: 600;
-    font-size: 15px;
+    font-size: var(--font-size-md);
     color: var(--color-text-main);
     white-space: nowrap;
     overflow: hidden;
@@ -53,7 +53,7 @@
 }
 
 .chat-header-tokens {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--color-text-desc);
     background: var(--color-bg-subtle);
     padding: 2px 6px;
@@ -63,10 +63,10 @@
 }
 
 .chat-header-badge {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 500;
     padding: 2px 8px;
-    border-radius: 20px;
+    border-radius: var(--radius-pill);
     display: inline-flex;
     align-items: center;
     border: 1px solid transparent;
@@ -98,7 +98,7 @@
 }
 
 .user-menu-btn {
-    border-radius: 12px !important;
+    border-radius: var(--radius-md) !important;
     height: 40px !important;
     padding: 0 8px !important;
     display: flex !important;
@@ -110,14 +110,14 @@
 }
 
 .credit-btn {
-    border-radius: 12px !important;
+    border-radius: var(--radius-md) !important;
     height: 40px !important;
     padding: 0 12px !important;
     display: flex !important;
     align-items: center !important;
     background: var(--color-bg-subtle) !important;
     border: 1px solid var(--color-border) !important;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transition: all var(--duration-fast) cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 .credit-btn:hover {
@@ -130,7 +130,7 @@
 .credit-btn-content {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     color: var(--color-text-main);
 }
 
@@ -140,7 +140,7 @@
 }
 
 .credit-value {
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--color-text-main);
 }
@@ -163,7 +163,7 @@
     border-radius: 10px;
     background: var(--color-primary);
     color: var(--color-text-light);
-    font-size: 14px;
+    font-size: var(--font-size-base);
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -193,7 +193,7 @@
 .token-usage-text {
     display: flex;
     justify-content: space-between;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     margin-bottom: 4px;
     color: var(--color-text-desc);
 }
@@ -209,7 +209,7 @@
     height: 100%;
     background: var(--color-primary);
     border-radius: 3px;
-    transition: width 0.3s ease;
+    transition: width var(--duration-enter) ease;
 }
 
 /* --- User Hover Popover --- */
@@ -218,17 +218,17 @@
     padding: 4px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
 }
 
 .user-popover-header {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
     padding: 6px 8px 12px 8px;
     margin: -6px -8px 0 -8px;
     border-bottom: 1px solid var(--color-border);
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-fast) ease;
     border-radius: 8px 8px 0 0;
 }
 
@@ -237,12 +237,12 @@
 }
 
 .popover-avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
+    width: var(--layout-chat-avatar-size);
+    height: var(--layout-chat-avatar-size);
+    border-radius: var(--radius-sm);
     background: var(--color-primary);
     color: var(--color-text-light);
-    font-size: 15px;
+    font-size: var(--font-size-md);
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -257,7 +257,7 @@
 }
 
 .popover-username {
-    font-size: 14px;
+    font-size: var(--font-size-base);
     font-weight: 600;
     color: var(--color-text-main);
     overflow: hidden;
@@ -266,7 +266,7 @@
 }
 
 .popover-email {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--color-text-desc);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -286,23 +286,23 @@
 }
 
 .popover-section-title {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     color: var(--color-text-desc);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
 }
 
 .popover-section-title-link {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     color: var(--color-text-desc);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all var(--duration-fast) cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .popover-section-title-link:hover {
@@ -316,7 +316,7 @@
 .popover-link-btn {
     padding: 0 !important;
     height: auto !important;
-    font-size: 11px !important;
+    font-size: var(--font-size-xs) !important;
 }
 
 .popover-credit-balance-card {
@@ -325,12 +325,12 @@
     align-items: center;
     background: var(--color-bg-subtle);
     padding: 8px 12px;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--color-border);
 }
 
 .popover-credit-balance-value {
-    font-size: 18px;
+    font-size: var(--font-size-xl);
     font-weight: 700;
     color: var(--color-text-main);
 }
@@ -338,14 +338,14 @@
 .popover-recharge-btn {
     height: 24px !important;
     padding: 0 8px !important;
-    font-size: 11px !important;
+    font-size: var(--font-size-xs) !important;
     border-radius: 6px !important;
 }
 
 .popover-token-usage {
     display: flex;
     justify-content: space-between;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--color-text-desc);
 }
 
@@ -360,13 +360,13 @@
     height: 100%;
     background: var(--color-primary);
     border-radius: 3px;
-    transition: width 0.3s ease;
+    transition: width var(--duration-enter) ease;
 }
 
 .popover-actions {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
     padding-top: 8px;
     border-top: 1px solid var(--color-border);
 }
@@ -376,7 +376,7 @@
     justify-content: flex-start !important;
     display: flex !important;
     align-items: center !important;
-    gap: 8px;
+    gap: var(--space-2);
     border-radius: 6px !important;
     height: 32px !important;
     padding: 0 8px !important;

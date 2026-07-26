@@ -6,13 +6,13 @@
 
 全部打勾 = L1 完成，达到个人项目中上水平：
 
-- [ ] `design/tokens/` 六类 token 齐全，亮暗色双模式
+- [x] `design/tokens/` 六类 token 齐全，亮暗色双模式（2026-07-26 Phase A2 落地 index.css）
 - [ ] `design/principles.md` 定稿，Chat / Admin 气质词明确
 - [ ] Figma 文件含 **5 个标杆帧**（清单见 Phase 2–3）
 - [ ] Figma Variables 与 `colors.json` 数值一致
 - [ ] Web 标杆页代码与 Figma 视觉偏差 < 主观「一眼无明显违和」
 - [ ] `design/showcase/` 含 **4 张截图**（Chat/Admin × Light/Dark）
-- [ ] Admin 硬编码色至少迁移 **header + card** 到 CSS 变量
+- [x] Admin 硬编码色至少迁移 **header + card** 到 CSS 变量（2026-07-26 Phase A4）
 - [ ] 能用一句话向他人解释设计系统结构
 
 ---
@@ -40,8 +40,8 @@
 
 ### 1.2 代码对齐（可选同日完成）
 
-- [ ] 对照 `tokens/motion.json`，在 `index.css` 增加 motion 变量（见下方片段）
-- [ ] 确认 `theme-store` 的 `brandColor` 仍覆盖 primary
+- [x] 对照 `tokens/motion.json`，在 `index.css` 增加 motion 变量（实现为 `--duration-*` + `--easing-*` 分离命名，已同步 JSON）
+- [x] 确认 `theme-store` 的 `brandColor` 仍覆盖 primary（A3 起经 `data-brand` 属性 + CSS 枚举实现）
 
 **`index.css` 建议追加（motion token 化）：**
 
