@@ -59,7 +59,7 @@ jobs:
 
       - name: Validate credit-scheduler entrypoint module loads
         env:
-          TASKIQ_SCHEDULER_MODULES: backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks
+          TASKIQ_SCHEDULER_MODULES: backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.chat_recovery_tasks backend.worker.tasks.operability_tasks
         run: |
           docker run --rm --entrypoint python \
             -e TASKIQ_SCHEDULER_MODULES \
