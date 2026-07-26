@@ -360,7 +360,7 @@ const MessageList: React.FC<MessageListProps> = ({
                                 <div className={`${styles['chat-bubble']} ${styles['assistant-bubble']}`}>
                                     <div className={`${styles['message-text']} message-text`}>
                                         {renderMessageContent(streamingText)}
-                                        <span className={styles['cursor-blink']}>|</span>
+                                        <span className={`${styles['cursor-blink']} cursor-blink`}>|</span>
                                     </div>
                                 </div>
                             </div>

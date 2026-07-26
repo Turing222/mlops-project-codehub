@@ -12,8 +12,14 @@ type ThemeStoreActions = {
     resetAll: () => void;
 };
 
+// 首次访问跟随系统偏好;用户显式选择过(persist 有值)则以持久化状态为准。
+const prefersDark = () =>
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-color-scheme: dark)').matches;
+
 const initialState: ThemeStoreState = {
-    theme: 'light',
+    theme: prefersDark() ? 'dark' : 'light',
     brandColor: '#1677ff', // 默认经典蓝 (#1677ff)
 };
 
