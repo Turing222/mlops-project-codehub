@@ -1,6 +1,6 @@
 # Phase C — 全站覆盖 + 交付物
 
-> 状态：Planned
+> 状态：Implemented（2026-07-27，待用户 review）
 >
 > 预估：15–20h
 >

@@ -1,6 +1,6 @@
 # 前端 UI 现代化升级（Phase A–C）
 
-> 状态：Planned（2026-07-26 立项）
+> 状态：Phase A/B Done，Phase C implemented 待 review（2026-07-27）
 >
 > 分支：`feat/frontend-ui-modernization`
 >
