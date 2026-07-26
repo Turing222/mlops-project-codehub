@@ -68,12 +68,17 @@ const App: React.FC = () => {
         algorithm: theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         token: {
           colorPrimary: brandColor,
-          borderRadius: 10,
+          // admin.md「与 antd 的关系」:borderRadius ← radius/sm(8)
+          borderRadius: 8,
           fontFamily: "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif",
         },
         components: {
           Button: {
             primaryShadow: '0 1px 3px var(--color-primary-shadow)',
+          },
+          Table: {
+            rowHoverBg: 'var(--color-bg-subtle)',
+            headerColor: 'var(--color-text-desc)',
           },
         },
       }}
