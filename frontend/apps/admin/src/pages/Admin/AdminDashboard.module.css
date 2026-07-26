@@ -1,54 +1,9 @@
 .admin-layout {
     min-height: 100vh;
-    background: var(--color-bg-page);
 }
 
-/* --- Header --- */
 
-.admin-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--color-admin-header);
-    border-bottom: 1px solid var(--color-admin-header-border);
-    padding: 0 var(--space-6);
-    position: sticky;
-    top: 0;
-    z-index: 10;
-}
-
-.admin-header .header-left {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.admin-header .header-title {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-admin-header-text);
-}
-
-.admin-header .header-right {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-}
-
-.admin-header .header-user {
-    font-size: var(--font-size-sm);
-    color: var(--color-admin-header-text-muted);
-}
-
-/* --- Content --- */
-
-.admin-content {
-    padding: var(--space-4) var(--space-6);
-    display: flex;
-    justify-content: center;
-}
-
-.admin-content .content-card {
+.content-card {
     background: var(--color-bg-container);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
@@ -58,24 +13,7 @@
     width: 100%;
 }
 
-.admin-content .card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-5);
-    flex-wrap: wrap;
-    gap: var(--space-3);
-}
 
-.admin-content .card-header h2 {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-main);
-    margin: 0;
-}
 
 /* --- Table --- */
 
@@ -91,10 +29,4 @@
     background: color-mix(in srgb, var(--color-primary) 4%, transparent);
 }
 
-.admin-header .back-btn {
-    color: var(--color-admin-header-text-muted);
-}
 
-.admin-header .back-btn:hover {
-    color: var(--color-admin-header-text);
-}

@@ -29,7 +29,7 @@
 | 裸 px 字面量 | 954 个（无任何 spacing / radius / font-size 变量） |
 | `@media` 查询 | 6 个（等同没有响应式） |
 | `focus-visible` / `prefers-reduced-motion` | 0 / 0（但有 32 个 `@keyframes`） |
-| 打包体积 | 469 KB gzip，上限 573 KB，余量 ~104 KB |
+| 打包体积 | 469 KB gzip，上限 504 KB，余量 ~104 KB |
 
 ### 已确认的结构性缺陷
 
@@ -105,7 +105,7 @@ Phase A 设计基础层（8–12h）
 每一档都必须同时满足：
 
 1. `make frontend-check-full` 全绿（lint + typecheck + unit + build + bundle-check + mock e2e）。
-2. `make frontend-bundle-check` 未突破 573 KB gzip 上限。
+2. `make frontend-bundle-check` 未突破 504 KB gzip 上限。
 3. 5 个品牌色 × 亮/暗 = 10 套组合手工过一遍，无对比度失效或色串。
 4. 本档新增/变更的 token 已同步进 `design/tokens/*.json`。
 5. 视觉走查用 Playwright 截图对比（见 §6），不靠肉眼记忆。

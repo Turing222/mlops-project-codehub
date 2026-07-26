@@ -1,8 +1,8 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Spin, message as antdMessage } from 'antd';
-import { ArrowLeft, Coins, CheckCircle2, Calendar, ClipboardList, LogIn } from 'lucide-react';
+import { Coins, CheckCircle2, Calendar, ClipboardList, LogIn } from 'lucide-react';
+import AppShell from '../../components/shell/AppShell';
 import { useAuth } from '../../context/useAuth';
 import { AppHttpError } from '../../lib/http/errors';
 import {
@@ -15,7 +15,6 @@ import styles from './CreditsPage.module.css';
 
 const CreditsPage: React.FC = () => {
   const { isAuthenticated, setShowAuthModal } = useAuth();
-  const navigate = useNavigate();
   const { t } = useTranslation();
 
   // Queries
@@ -86,14 +85,9 @@ const CreditsPage: React.FC = () => {
   // Handle unauthorized state (Glassmorphism landing page)
   if (!isAuthenticated) {
     return (
+      <AppShell pageTitle={t('credits.title')} pageIcon={<Coins size={18} />}>
       <div className={styles['credits-page']}>
         <div className={styles.container}>
-          <div className={styles['back-header']}>
-            <button className={styles['back-btn']} onClick={() => navigate('/')}>
-              <ArrowLeft size={16} />
-              {t('credits.back_home')}
-            </button>
-          </div>
           <div className={styles['guest-view']}>
             <div className={styles['guest-icon-wrapper']}>
               <Coins size={36} />
@@ -109,6 +103,7 @@ const CreditsPage: React.FC = () => {
           </div>
         </div>
       </div>
+      </AppShell>
     );
   }
 
@@ -145,16 +140,9 @@ const CreditsPage: React.FC = () => {
   const isCheckedInToday = credits?.is_checked_in_today ?? false;
 
   return (
+    <AppShell pageTitle={t('credits.title')} pageIcon={<Coins size={18} />}>
     <div className={styles['credits-page']}>
       <div className={styles.container}>
-        {/* Back navigation */}
-        <div className={styles['back-header']}>
-          <button className={styles['back-btn']} onClick={() => navigate('/')}>
-            <ArrowLeft size={16} />
-            {t('credits.back_home')}
-          </button>
-        </div>
-
         {/* Hero Card */}
         <div className={styles['hero-card']}>
           <div className={styles['balance-section']}>
@@ -280,6 +268,7 @@ const CreditsPage: React.FC = () => {
         </div>
       </div>
     </div>
+    </AppShell>
   );
 };
 

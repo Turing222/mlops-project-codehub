@@ -71,7 +71,7 @@ Sidebar 视觉与悬停节奏、滚动行为。动效全部取用 A2 落地的 m
 
 全部满足才进入 Phase C：
 
-1. `make frontend-check-full` 全绿；bundle ≤ 573 KB gzip。
+1. `make frontend-check-full` 全绿；bundle ≤ 504 KB gzip。
 2. 5 品牌 × 亮暗 10 套组合走查通过。
 3. 截图 before/after 已归档（外壳统一在 5 页截图中肉眼可辨）。
 4. `design/patterns/chat.md` 与 `admin.md` 的验收条目全部勾选。

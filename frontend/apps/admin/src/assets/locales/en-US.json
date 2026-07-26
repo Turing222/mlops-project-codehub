@@ -231,5 +231,12 @@
     "evidence_detail_not_found": "Evidence details not found",
     "empty_text": "None",
     "chat_input_tip": "Enter a public GitHub repository URL (e.g. https://github.com/owner/repo) and hit Enter to analyze..."
+  },
+  "nav": {
+    "chat": "Chat",
+    "credits": "Credits",
+    "repo_check": "Repo Check",
+    "admin": "Admin",
+    "aria_label": "Global navigation"
   }
 }

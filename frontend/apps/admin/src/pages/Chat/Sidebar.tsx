@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Spin, Tooltip } from 'antd';
-import { Plus, MessageSquare, Clock, ChevronLeft, ChevronRight, Inbox, Sun, Moon, ShieldCheck } from 'lucide-react';
+import { Plus, MessageSquare, Clock, ChevronLeft, ChevronRight, Inbox, Sun, Moon, ShieldCheck, Coins, Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ChatSession } from '../../types/chat';
 import { useChatSessionsQuery } from '../../query/hooks/chat';
@@ -26,7 +26,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     onToggle,
 }) => {
     const navigate = useNavigate();
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, user } = useAuth();
     const { data, isLoading: loading } = useChatSessionsQuery();
     const sessions = data?.items || [];
     const { theme, setTheme } = useThemeStore();
@@ -74,7 +74,25 @@ const Sidebar: React.FC<SidebarProps> = ({
                         onClick={() => navigate('/repo-check')}
                     />
                 </Tooltip>
-                
+                <Tooltip title={t('nav.credits', '积分中心')} placement="right">
+                    <Button
+                        className={styles['collapsed-action-btn']}
+                        type="text"
+                        icon={<Coins size={20} />}
+                        onClick={() => navigate('/credits')}
+                    />
+                </Tooltip>
+                {user?.is_superuser ? (
+                    <Tooltip title={t('nav.admin', '管理后台')} placement="right">
+                        <Button
+                            className={styles['collapsed-action-btn']}
+                            type="text"
+                            icon={<Shield size={20} />}
+                            onClick={() => navigate('/admin')}
+                        />
+                    </Tooltip>
+                ) : null}
+
                 <div style={{ flex: 1 }} />
 
                 <div className={styles['collapsed-footer']}>
@@ -141,6 +159,28 @@ const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                 </div>
             </div>
+
+            {/* 全局导航(跨页入口;管理后台仅超管可见) */}
+            <nav className={styles['sidebar-nav']} aria-label={t('nav.aria_label', '全局导航')}>
+                <button
+                    type="button"
+                    className={styles['sidebar-nav-item']}
+                    onClick={() => navigate('/credits')}
+                >
+                    <Coins size={16} />
+                    <span>{t('nav.credits', '积分中心')}</span>
+                </button>
+                {user?.is_superuser ? (
+                    <button
+                        type="button"
+                        className={styles['sidebar-nav-item']}
+                        onClick={() => navigate('/admin')}
+                    >
+                        <Shield size={16} />
+                        <span>{t('nav.admin', '管理后台')}</span>
+                    </button>
+                ) : null}
+            </nav>
 
             <div className={styles['sidebar-section-title']}>
                 <Clock size={14} />

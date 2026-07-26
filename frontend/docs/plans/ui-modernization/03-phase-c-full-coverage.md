@@ -84,7 +84,7 @@ A4 已把它自建的 slate/green/red/amber 色板收编为语义 token，但输
 
 ## Phase C 完成门（本轮收官）
 
-1. `make frontend-check-full` 全绿；bundle ≤ 573 KB gzip。
+1. `make frontend-check-full` 全绿；bundle ≤ 504 KB gzip。
 2. 全站硬编码 hex 不超出 README §5 的保留清单；无死 CSS 变量。
 3. 5 页 × 亮暗 × 3 视口截图全部归档，768 / 390 走查通过。
 4. `design/L1-checklist.md` 收官；`design/showcase/` 交付。

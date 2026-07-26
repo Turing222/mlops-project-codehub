@@ -231,5 +231,12 @@
     "evidence_detail_not_found": "未找到证据详情",
     "empty_text": "暂无",
     "chat_input_tip": "请输入公开 GitHub 仓库地址 (例如 https://github.com/owner/repo) 并回车评估..."
+  },
+  "nav": {
+    "chat": "对话",
+    "credits": "积分中心",
+    "repo_check": "仓库分析",
+    "admin": "管理后台",
+    "aria_label": "全局导航"
   }
 }

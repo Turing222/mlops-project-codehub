@@ -308,3 +308,33 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* --- 全局导航组(B1) --- */
+.sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+.sidebar-nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 34px;
+    padding: 0 var(--space-2);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-sidebar-text-muted);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: background var(--duration-micro) ease, color var(--duration-micro) ease;
+    text-align: left;
+}
+
+.sidebar-nav-item:hover {
+    background: var(--color-sidebar-hover);
+    color: var(--color-sidebar-text);
+}
