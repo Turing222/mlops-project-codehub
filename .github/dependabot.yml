@@ -11,6 +11,13 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    groups:
+      uv-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
     ignore:
       - dependency-name: "*"
         update-types:
@@ -28,6 +35,14 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    groups:
+      docker-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "npm"
     directory: "/frontend"
@@ -40,6 +55,13 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    groups:
+      npm-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
     ignore:
       - dependency-name: "*"
         update-types:
@@ -57,6 +79,14 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    groups:
+      docker-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -69,3 +99,11 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
