@@ -35,14 +35,19 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    # 基础镜像跟随 requires-python == 3.12.*，minor tag 跳版会让镜像构建失败。
     groups:
-      docker-minor-patch:
+      docker-patch:
         applies-to: version-updates
         patterns:
           - "*"
         update-types:
-          - "minor"
           - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "npm"
     directory: "/frontend"
@@ -80,13 +85,17 @@ updates:
       - "dependencies"
       - "security"
     groups:
-      docker-minor-patch:
+      docker-patch:
         applies-to: version-updates
         patterns:
           - "*"
         update-types:
-          - "minor"
           - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "github-actions"
     directory: "/"
