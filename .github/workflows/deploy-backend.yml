@@ -115,7 +115,7 @@ jobs:
             --cloud-watch-output-config \
               CloudWatchLogGroupName=/dewflow/ssm,CloudWatchOutputEnabled=true \
             --parameters "$(jq -n --arg c "$remote_script" \
-              '{commands: [$c], executionTimeout: ["3600"]}')" \
+              '{commands: [("bash -c " + ($c | @sh))], executionTimeout: ["3600"]}')" \
             --query 'Command.CommandId' --output text)
           echo "ssm command: $command_id"
 
