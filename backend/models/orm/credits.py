@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -46,6 +46,14 @@ class CreditAccount(Base, BaseIdModel, AuditMixin):
     transactions: Mapped[list[CreditTransaction]] = relationship(
         back_populates="account",
         cascade="all, delete-orphan",
+    )
+
+    # 余额非负的最后防线：拦截绕过 service 锁/原子扣减的任意直写。
+    __table_args__ = (
+        CheckConstraint(
+            "balance >= 0",
+            name="balance_non_negative",
+        ),
     )
 
 
@@ -95,6 +103,11 @@ class CreditTransaction(Base, BaseIdModel, AuditMixin):
             "idempotency_key",
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
+        Index(
+            "ix_credit_transactions_account_created",
+            "account_id",
+            "created_at",
         ),
     )
 

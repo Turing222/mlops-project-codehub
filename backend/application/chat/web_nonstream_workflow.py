@@ -6,6 +6,7 @@
 """
 
 import logging
+import uuid
 
 import redis.asyncio as redis
 
@@ -18,7 +19,11 @@ from backend.core.exceptions import (
     AppException,
     app_service_error,
 )
-from backend.models.enums import MessageStatus
+from backend.models.enums import (
+    ChatGenerationDispatchMode,
+    ChatGenerationStatus,
+    MessageStatus,
+)
 from backend.models.schemas.chat.api import (
     ChatQueryResponse,
     MessageResponse,
@@ -104,6 +109,39 @@ class ChatNonStreamWorkflow:
             self._feature_flag_service,
             self._session_manager,
         )
+        existing_request = await orchestrator.resolve_existing_generation_request(
+            command=command
+        )
+        if existing_request is not None:
+            if (
+                existing_request.status == ChatGenerationStatus.SUCCEEDED
+                and existing_request.assistant_message_id is not None
+            ):
+                async with self.uow.read_context():
+                    msg = await self.uow.chat_repo.get_message(
+                        existing_request.assistant_message_id
+                    )
+                    session = await self.uow.chat_repo.get_session(
+                        existing_request.session_id
+                    )
+                if msg is not None and session is not None:
+                    return ChatQueryResponse(
+                        session_id=session.id,
+                        session_title=session.title,
+                        answer=MessageResponse.model_validate(msg),
+                    )
+            raise app_service_error(
+                "该请求正在处理或已结束，请刷新页面查看状态",
+                code="CHAT_REQUEST_PROCESSING",
+                details={
+                    "client_request_id": client_request_id,
+                    "request_status": (
+                        existing_request.status.value
+                        if isinstance(existing_request.status, ChatGenerationStatus)
+                        else str(existing_request.status)
+                    ),
+                },
+            )
         idempotency = await orchestrator.check_idempotency(
             command=command,
             trace_attrs=trace_attrs,
@@ -121,31 +159,10 @@ class ChatNonStreamWorkflow:
                     code="CHAT_REQUEST_PROCESSING",
                     details={"client_request_id": client_request_id},
                 )
-            async with self.uow.read_context():
-                msg = await self.uow.chat_repo.get_message_by_client_request_id(
-                    client_request_id,
-                    user_id,
-                )
-                if msg and msg.status == MessageStatus.SUCCESS:
-                    session = await self.uow.chat_repo.get_session(msg.session_id)
-                    if session is None:
-                        raise app_service_error(
-                            "会话不存在",
-                            code="CHAT_SESSION_NOT_FOUND",
-                        )
-                    return ChatQueryResponse(
-                        session_id=session.id,
-                        session_title=session.title,
-                        answer=MessageResponse.model_validate(msg),
-                    )
-                status_value = msg.status.value if msg and msg.status else "NOT_FOUND"
             raise app_service_error(
-                "该请求正在处理或已结束，请刷新页面后重试",
+                "该请求正在处理，请稍后刷新页面",
                 code="CHAT_REQUEST_PROCESSING",
-                details={
-                    "client_request_id": client_request_id,
-                    "message_status": status_value,
-                },
+                details={"client_request_id": client_request_id},
             )
 
         # ── 会话与消息创建 ────────────────────────────────────────
@@ -155,24 +172,35 @@ class ChatNonStreamWorkflow:
             idempotency=idempotency,
             trace_attrs=trace_attrs,
             span_prefix="chat.nonstream",
+            dispatch_mode=ChatGenerationDispatchMode.NONSTREAM,
         )
         session = prepared.session
         assistant_msg = prepared.assistant_message
+        task_id = uuid.uuid4().hex
 
         try:
+            generation_attempt = await orchestrator.queue_generation_request(
+                prepared=prepared,
+                user_id=user_id,
+                task_id=task_id,
+            )
             with trace_span(
                 "chat.nonstream.dispatch_task",
                 {
                     **prepared.trace_attrs,
                     "chat.assistant_message_id": assistant_msg.id,
+                    "task.id": task_id,
                 },
             ):
                 result = await self.dispatcher.enqueue_nonstream(
-                    prepared.generation_payload.model_dump(mode="json"),
-                    inject_trace_context(),
-                    str(assistant_msg.id),
-                    str(user_id),
-                    prepared.lock_key,
+                    generation_payload=prepared.generation_payload.model_dump(
+                        mode="json"
+                    ),
+                    trace_context=inject_trace_context(),
+                    assistant_message_id=str(assistant_msg.id),
+                    user_id=str(user_id),
+                    idempotency_lock_key=prepared.lock_key,
+                    generation_attempt=generation_attempt,
                 )
         except AppException:
             await orchestrator.release_idempotency(idempotency)
@@ -180,8 +208,12 @@ class ChatNonStreamWorkflow:
         except Exception as exc:
             await orchestrator.release_idempotency(idempotency)
             raise app_service_error(
-                "LLM 服务调用失败，请稍后重试",
-                code="LLM_SERVICE_ERROR",
+                "请求已接受，正在恢复派发，请稍后刷新",
+                code="CHAT_DISPATCH_RECOVERY_PENDING",
+                details={
+                    "generation_request_id": str(prepared.generation_request.id),
+                    "attempt": prepared.generation_request.attempt,
+                },
             ) from exc
 
         if not result or not result.success:

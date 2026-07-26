@@ -47,6 +47,7 @@ class TracingMiddleware:
         scope["state"]["request_id"] = request_id
         scope["state"]["trace_id"] = trace_id
         scope["state"]["process_start"] = start
+        response_logged = False
 
         set_current_span_attributes(
             {
@@ -55,8 +56,10 @@ class TracingMiddleware:
         )
 
         async def send_with_headers(message: dict) -> None:
+            nonlocal response_logged
             if message["type"] == "http.response.start":
                 process_time_ms = (time.perf_counter() - start) * 1000
+                status_code = int(message["status"])
                 headers_list = [
                     h
                     for h in message.get("headers", [])
@@ -73,17 +76,47 @@ class TracingMiddleware:
                     {
                         "app.request_id": request_id,
                         "app.process_time_ms": process_time_ms,
+                        "http.response.status_code": status_code,
                     }
                 )
+                route = getattr(scope.get("route"), "path", None)
+                event_fields: dict[str, object] = {
+                    "event": "api_request_completed",
+                    "http_request_id": request_id,
+                    "method": str(scope.get("method") or ""),
+                    "route": str(route or scope.get("path") or ""),
+                    "status_code": status_code,
+                    "duration_ms": round(process_time_ms, 3),
+                }
+                if status_code >= 500:
+                    event_fields["error_code"] = f"HTTP_{status_code}"
+                logger.log(
+                    logging.ERROR if status_code >= 500 else logging.INFO,
+                    "API request completed",
+                    extra=event_fields,
+                )
+                response_logged = True
             await send(message)
 
         try:
             await self.app(scope, receive, send_with_headers)  # type: ignore[arg-type]
         except Exception:
-            logger.debug(
-                "Exception propagating through tracing middleware",
-                extra={"request_id": request_id},
-            )
+            if not response_logged:
+                logger.error(
+                    "API request failed before a response started",
+                    extra={
+                        "event": "api_request_completed",
+                        "error_code": "UNHANDLED_API_EXCEPTION",
+                        "http_request_id": request_id,
+                        "method": str(scope.get("method") or ""),
+                        "route": str(scope.get("path") or ""),
+                        "status_code": 500,
+                        "duration_ms": round(
+                            (time.perf_counter() - start) * 1000,
+                            3,
+                        ),
+                    },
+                )
             set_current_span_attributes(
                 {"app.request_id": request_id, "error.type": "exception"}
             )

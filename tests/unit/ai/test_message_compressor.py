@@ -5,8 +5,6 @@
 
 from unittest.mock import AsyncMock
 
-import pytest
-
 from backend.ai.core.message_compressor import MessageCompressor
 from backend.ai.core.token_counter import count_messages_tokens
 
@@ -82,20 +80,17 @@ class TestCompress:
 
 
 class TestCompressAsync:
-    @pytest.mark.asyncio
     async def test_short_content_noop(self) -> None:
         compressor = MessageCompressor()
         result = await compressor.compress_async("短文本", 100)
         assert result == "短文本"
 
-    @pytest.mark.asyncio
     async def test_without_summarizer_falls_back_to_truncate(self) -> None:
         compressor = MessageCompressor()
         content = "A" * 200
         result = await compressor.compress_async(content, 50)
         assert len(result) <= 50
 
-    @pytest.mark.asyncio
     async def test_with_summarizer_calls_llm(self) -> None:
         mock_summarize = AsyncMock(return_value="LLM 摘要结果")
         compressor = MessageCompressor(summarizer=mock_summarize)
@@ -104,7 +99,6 @@ class TestCompressAsync:
         assert result == "LLM 摘要结果"
         mock_summarize.assert_awaited_once_with(content, 30)
 
-    @pytest.mark.asyncio
     async def test_summarizer_failure_falls_back_to_truncate(self) -> None:
         mock_summarize = AsyncMock(side_effect=RuntimeError("LLM 挂了"))
         compressor = MessageCompressor(summarizer=mock_summarize)
@@ -115,13 +109,11 @@ class TestCompressAsync:
 
 
 class TestCompressBatch:
-    @pytest.mark.asyncio
     async def test_empty_messages(self) -> None:
         compressor = MessageCompressor()
         result = await compressor.compress_batch([], 100, "gpt-4")
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_fits_budget_no_compression(self) -> None:
         compressor = MessageCompressor()
         messages = [
@@ -132,7 +124,6 @@ class TestCompressBatch:
         result = await compressor.compress_batch(messages, budget, "gpt-4")
         assert result == messages
 
-    @pytest.mark.asyncio
     async def test_drops_oldest_when_over_budget(self) -> None:
         compressor = MessageCompressor()
         old_msg = {"role": "user", "content": "旧消息" * 100}
@@ -143,7 +134,6 @@ class TestCompressBatch:
         assert len(result) == 1
         assert result[0] == recent_msg
 
-    @pytest.mark.asyncio
     async def test_compresses_when_single_message_too_large(self) -> None:
         compressor = MessageCompressor()
         huge_msg = {"role": "user", "content": "A" * 10000}
@@ -153,7 +143,6 @@ class TestCompressBatch:
         assert result[0]["role"] == "user"
         assert len(result[0]["content"]) <= 60
 
-    @pytest.mark.asyncio
     async def test_keeps_recent_messages_when_over_budget(self) -> None:
         compressor = MessageCompressor()
         messages = [

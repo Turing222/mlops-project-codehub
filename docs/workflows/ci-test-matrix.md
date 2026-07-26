@@ -7,7 +7,7 @@
 - [dev-test-flow.md](dev-test-flow.md) — 本地从改代码到 smoke 的执行顺序
 - [automation-standard.md](../standards/automation-standard.md) — Makefile / scripts / CI 约定
 - [deploy-ec2.md](../platform/deploy-ec2.md) — 生产部署与 branch protection 前提
-- [frontend-cicd-assessment-2026-06-14.md](../assessments/frontend-cicd-assessment-2026-06-14.md) — 前端 CI/CD 评估与缺口来源
+- [2026-06-14-frontend-cicd.md](../assessments/2026-06-14-frontend-cicd.md) — 前端 CI/CD 评估与缺口来源
 
 **状态**：设计已认可（2026-06-14）；workflow / branch protection 按下文分期实施，本文不代表现网已全部生效。
 
@@ -25,7 +25,7 @@
 ## 2. 四层环境
 
 | 层级 | 名称 | 本地入口 | 验证的核心问题 |
-|------|------|----------|----------------|
+| --- | --- | --- | --- |
 | **L1** | 开发 smoke | `make env-smoke-*`、`make verify-smoke` | 镜像能 build、compose 能起、后端 HTTP smoke 通 |
 | **L2** | 真实后端契约 | `make frontend-e2e-smoke` | 登录 / 聊天 / 积分等前后端契约（Playwright + 真 API） |
 | **L3** | 准生产演练 | `make deploy-local-prod-*` | 生产 compose 形态（S3 overlay、logging、frontend-fallback、secret 挂载） |
@@ -59,7 +59,7 @@ flowchart TB
 本地 **`make flow-local`** 是开发者的一站式聚合；CI **刻意拆分**为多个 workflow，不要求一条 job 复刻全流程。
 
 | 本地步骤 | Makefile / 脚本 | CI 归属（workflow） | 终态：是否 required on `main` |
-|----------|-----------------|---------------------|--------------------------------|
+| --- | --- | --- | --- |
 | 静态 + 单测 + 前端 build/bundle | `make flow-fast` / `make frontend-check` | `static-ci.yml` → Backend static / Frontend static | **是** |
 | **开 PR 前本地预演（static + PR gate）** | `make flow-pr-preflight` | `static-ci.yml` + `pr-gate-ci.yml` | — |
 | 后端 integration（CI profile） | `make flow-ci` 内 `qa-test-ci` | `pr-gate-ci.yml` → PR gate | **是**（PR） |
@@ -78,7 +78,7 @@ flowchart TB
 ### 本地专用、CI 不复制
 
 | 命令 | 说明 |
-|------|------|
+| --- | --- |
 | `make flow-local` | 本地聚合；日志落盘见 `scripts/flow/local_check.sh` |
 | `make flow-pr-preflight` | 开 PR 前预演 static-ci + pr-gate（无 Docker smoke） |
 | PR 描述模板 | [pr-description.md](pr-description.md) |
@@ -92,7 +92,7 @@ flowchart TB
 ## 4. 现有 Workflow 清单
 
 | Workflow 文件 | Job 名（GitHub Checks 显示名） | 触发 | 当前职责 |
-|---------------|-------------------------------|------|----------|
+| --- | --- | --- | --- |
 | `static-ci.yml` | Backend static / Frontend static | 全 PR + main push | lint、typecheck、单测、build、bundle-check、Pages 形态 build |
 | `pr-gate-ci.yml` | PR gate | PR（非 draft） | `qa-test-ci` + `frontend-e2e-mock` |
 | `smoke-ci.yml` | Docker smoke | main push；PR path 过滤 | Docker 全栈 + `verify-smoke` |
@@ -111,7 +111,7 @@ Cloudflare Pages **不等待** GitHub CI；合并到 `main` 时的 required chec
 ### 5.1 推荐 required checks（`main`）
 
 | Check 名 | 来源 | 优先级 |
-|----------|------|--------|
+| --- | --- | --- |
 | Backend static | static-ci | 已有 |
 | Frontend static | static-ci | 已有 |
 | PR gate | pr-gate-ci | 已有 |
@@ -121,7 +121,7 @@ Cloudflare Pages **不等待** GitHub CI；合并到 `main` 时的 required chec
 ### 5.2 不建议设为 required
 
 | Check | 原因 |
-|-------|------|
+| --- | --- |
 | Local-prod rehearsal（P3） | 慢、资源重、易 flaky；改 weekly + 失败告警 |
 | Security CI 全量 | 已有独立节奏；可按 org 策略单独 required |
 | Post-deploy Pages verify | 发生在合并之后，不能挡合并 |
@@ -149,7 +149,7 @@ APPLY_BRANCH_PROTECTION=true bash scripts/ci/bootstrap_github_gate.sh
 ### 6.1 前端 e2e-smoke（L2）
 
 | 名称 | 类型 | 用途 | 推荐值 |
-|------|------|------|--------|
+| --- | --- | --- | --- |
 | `E2E_SMOKE_USER` | Secret | Playwright 登录用户 | `seed_admin` 或 `seed_member`（须与 `make seed-dev` 一致） |
 | `E2E_SMOKE_PASS` | Secret | 登录密码 | `SeedPass123!`（与 `scripts/seed/dev_seed.py` 中 `SEED_PASSWORD` 同步） |
 
@@ -160,13 +160,13 @@ Fork PR 无法读仓库 secrets → `frontend-e2e-smoke-ci` job 会 skip（by de
 ### 6.2 Branch protection 审计
 
 | 名称 | 类型 | 用途 |
-|------|------|------|
+| --- | --- | --- |
 | `BRANCH_PROTECTION_READ_TOKEN` | Secret | fine-grained PAT，Administration:Read，供 `guard-branch-protection` |
 
 ### 6.3 Pages 发布后验证（L4）
 
 | 名称 | 类型 | 用途 |
-|------|------|------|
+| --- | --- | --- |
 | `DEPLOY_FRONTEND_BASE_URL` | Variable | Pages 前端 origin |
 | `DEPLOY_BASE_URL` | Variable | API origin（split-origin） |
 
@@ -175,7 +175,7 @@ Fork PR 无法读仓库 secrets → `frontend-e2e-smoke-ci` job 会 skip（by de
 ### 6.4 本地 / smoke / 准生产 secrets（不进 CI artifact）
 
 | 目录 | 场景 |
-|------|------|
+| --- | --- |
 | `secrets/smoke/` | `docker-compose.db.yml` smoke |
 | `secrets/local-prod/` | `deploy-local-prod-*` |
 | `secrets/ec2/` | 真 EC2 部署 |
@@ -187,7 +187,7 @@ CI 的 L1/L2 使用内联 test env 或 mock provider，**不**挂载开发者本
 ## 7. 环境与 Provider 差异（刻意接受）
 
 | 维度 | 本地 `flow-local` / smoke | CI L1 `smoke-ci` | CI L2 `frontend-e2e-smoke-ci` |
-|------|---------------------------|------------------|--------------------------------|
+| --- | --- | --- | --- |
 | 运行时 | Docker compose 全栈 | Docker compose 全栈 | GH services + uvicorn + taskiq |
 | LLM | 常為 bifrost（`.env.smoke`） | mock | mock |
 | 前端 | Vite dev（e2e） | 不测前端 SPA | Vite dev + Playwright |
@@ -199,7 +199,7 @@ CI 的 L1/L2 使用内联 test env 或 mock provider，**不**挂载开发者本
 ## 8. 分期路线图
 
 | 阶段 | 内容 | 交付物 | 阻塞发布？ |
-|------|------|--------|------------|
+| --- | --- | --- | --- |
 | **P0 配置** | 配 `E2E_SMOKE_*`、`DEPLOY_*` Variables、`BRANCH_PROTECTION_READ_TOKEN` | `scripts/ci/bootstrap_github_gate.sh` + Settings 手动 PAT | 间接 |
 | **P1 门禁对齐** | branch protection + `required_status_checks.txt` | 已落地仓库侧；GitHub Settings 待执行 bootstrap | **是**（合并） |
 | **P2 smoke 加深** | `smoke-ci` 增加 `seed-dev` + `run_with_smoke_env.sh pytest`（与 flow-local 同 marker） | smoke-ci.yml 变更 | **是**（main） |
@@ -267,7 +267,7 @@ steps（示意）:
 ## 11. 明确不做（避免范围蔓延）
 
 | 项 | 原因 |
-|----|------|
+| --- | --- |
 | CI 单 job 完整复刻 `flow-local` | 慢、难维护、与分层原则冲突 |
 | 每个 PR 跑 `deploy-local-prod` 全栈 | 太重；用 P3 低频即可 |
 | CI 与本地统一 bifrost 真 LLM | 配额、密钥、flaky；契约层用 mock 足够 |
@@ -278,5 +278,5 @@ steps（示意）:
 ## 12. 变更记录
 
 | 日期 | 说明 |
-|------|------|
+| --- | --- |
 | 2026-06-14 | P0/P1 仓库侧：`required_status_checks.txt`、`bootstrap_github_gate.sh`、`guard-branch-protection` 读文件 |

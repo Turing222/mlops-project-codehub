@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { sendQueryStreamAPI } from './chat';
+import { sendQueryStreamAPI, sendRetryStreamAPI } from './chat';
 import { API_URLS, getApiBaseUrl, resolveApiUrl } from './urls';
 import request, { createAuthorizedHeaders } from '../lib/http/client';
 import { AUTH_UNAUTHORIZED_EVENT, notifyUnauthorized } from '../lib/http/auth';
@@ -106,6 +106,31 @@ describe('request configuration', () => {
             'https://api.example.com/api/v1/chat/query_stream',
             expect.objectContaining({
                 method: 'POST',
+            }),
+        );
+    });
+
+    it('sends explicit retry with durable identity and expected attempt', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response('', { status: 200, statusText: 'OK' }),
+        );
+        useAuthStore.getState().setToken('test-token');
+        vi.stubGlobal('fetch', fetchMock);
+
+        await sendRetryStreamAPI({
+            generationRequestId: 'request-1',
+            expectedAttempt: 3,
+        });
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            API_URLS.CHAT.REQUEST_RETRY('request-1'),
+            expect.objectContaining({
+                method: 'POST',
+                headers: expect.objectContaining({
+                    Authorization: 'Bearer test-token',
+                    [REQUEST_ID_HEADER]: expect.any(String),
+                }),
+                body: JSON.stringify({ expected_attempt: 3 }),
             }),
         );
     });

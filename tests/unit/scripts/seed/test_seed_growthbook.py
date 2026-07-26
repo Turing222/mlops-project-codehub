@@ -1,4 +1,7 @@
-"""Unit tests for GrowthBook seed payload generation."""
+"""GrowthBook seed payload unit tests.
+
+职责：验证 GrowthBook seed payload 生成与合并；边界：纯函数，无 HTTP；副作用：无。
+"""
 
 from scripts.seed.seed_growthbook import (
     _build_flag_payload,

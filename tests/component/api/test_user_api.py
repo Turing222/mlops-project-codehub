@@ -1,3 +1,8 @@
+"""User API component tests.
+
+职责：验证 user 端点的 ASGI 装配与请求/响应序列化；边界：用 dependency override 与 ASGITransport，不连真实下游；副作用：无。
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -113,7 +118,6 @@ async def client(api_context):
         yield ac
 
 
-@pytest.mark.asyncio
 async def test_read_users_me_success(client, api_context):
     response = await client.get("/api/v1/users/me")
     assert response.status_code == 200
@@ -123,7 +127,6 @@ async def test_read_users_me_success(client, api_context):
     assert body["email"] == api_context.current_user.email
 
 
-@pytest.mark.asyncio
 async def test_read_user_by_username_success(client, api_context):
     target = make_user(username="target_user", email="target@example.com")
     api_context.user_service.get_by_username.return_value = target
@@ -138,7 +141,6 @@ async def test_read_user_by_username_success(client, api_context):
     api_context.user_service.get_by_email.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_read_user_by_email_success(client, api_context):
     target = make_user(username="target_user", email="target@example.com")
     api_context.user_service.get_by_email.return_value = target
@@ -153,7 +155,6 @@ async def test_read_user_by_email_success(client, api_context):
     api_context.user_service.get_by_username.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_read_user_not_found_returns_404(client, api_context):
     api_context.user_service.get_by_username.return_value = None
 
@@ -163,7 +164,6 @@ async def test_read_user_not_found_returns_404(client, api_context):
     assert response.json()["message"] == "用户不存在"
 
 
-@pytest.mark.asyncio
 async def test_update_user_success(client, api_context):
     user_id = uuid.uuid4()
     updated = make_user(id=user_id, username="new_name", email="new@example.com")
@@ -184,7 +184,6 @@ async def test_update_user_success(client, api_context):
     assert call_kwargs["user_in"].username == "new_name"
 
 
-@pytest.mark.asyncio
 async def test_update_user_not_found_returns_404(client, api_context):
     api_context.user_service.user_update.return_value = None
     user_id = uuid.uuid4()
@@ -198,7 +197,6 @@ async def test_update_user_not_found_returns_404(client, api_context):
     assert response.json()["message"] == "用户不存在"
 
 
-@pytest.mark.asyncio
 async def test_create_user_success(client, api_context):
     created = make_user(username="fresh_user", email="fresh@example.com")
     api_context.user_service.user_register_with_personal_workspace.return_value = (
@@ -221,7 +219,6 @@ async def test_create_user_success(client, api_context):
     api_context.user_service.user_register_with_personal_workspace.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_create_user_returns_400_when_service_returns_none(client, api_context):
     api_context.user_service.user_register_with_personal_workspace.return_value = None
     payload = {
@@ -237,7 +234,6 @@ async def test_create_user_returns_400_when_service_returns_none(client, api_con
     assert response.json()["message"] == "用户创建失败"
 
 
-@pytest.mark.asyncio
 async def test_create_user_invalid_payload_returns_422(client):
     payload = {
         "username": "fresh_user",
@@ -251,7 +247,6 @@ async def test_create_user_invalid_payload_returns_422(client):
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_csv_upload_success(client, api_context):
     api_context.import_service.import_from_upload.return_value = UserImportResponse(
         filename="users.csv",
@@ -274,13 +269,11 @@ async def test_csv_upload_success(client, api_context):
     api_context.import_service.import_from_upload.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_csv_upload_missing_file_returns_422(client):
     response = await client.post("/api/v1/users/csv_upload", files={})
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_superuser_required_on_admin_endpoint(client, api_context):
     def deny_superuser():
         raise app_forbidden("权限不足")

@@ -1,0 +1,84 @@
+# Keep this file fully English. It is the machine-readable source of truth for
+# work-item resume state; put Chinese narrative in task-plan.md instead.
+slug: t1-lite-alerting-content-safety
+title: T1-Lite Alerting and Content Safety
+status: active
+
+goal: Deliver a controlled-internal T1-Lite baseline through minimum actionable alerting and content-safe telemetry defaults without new SMS production work or production recovery evidence.
+
+completion_chain:
+  - The approved T1-Lite boundary is recorded in the roadmap and owns the transferred minimum-alerting scope.
+  - Critical alert-producing paths emit stable top-level event, error, task, attempt, and duration fields without raw user content.
+  - API failures and latency, queue backlog, end-to-end worker and scheduler liveness, terminal task failures, and Redis eviction or restart have bounded signals and alarms.
+  - At least one non-recovery controlled signal reaches a CloudWatch Alarm and a confirmed SNS receiver.
+  - Default telemetry omits query, history, output, reasoning, and unsafe raw content, while ordinary message metadata stores only safe summaries.
+  - Focused tests prove reasoning and unsafe raw content do not reach SSE, ordinary persistence, or telemetry, and the result is described only as controlled-internal T1-Lite.
+
+workstreams:
+  - id: 1
+    title: Persist the approved T1-Lite scope and transfer legacy WS4 ownership.
+    status: done
+    kind: blocking
+    deps: []
+  - id: 2
+    title: Freeze the minimum alert signal and field contract.
+    status: done
+    kind: blocking
+    deps: [1]
+  - id: 3
+    title: Normalize critical structured events and task lifecycle fields.
+    status: done
+    kind: serial
+    deps: [2]
+  - id: 4
+    title: Add a bounded backlog and end-to-end liveness probe.
+    status: done
+    kind: parallel
+    deps: [2]
+  - id: 5
+    title: Configure the minimum CloudWatch Alarm and SNS delivery set.
+    status: in_progress
+    kind: serial
+    deps: [3, 4]
+  - id: 6
+    title: Enforce content-safe telemetry and unsafe metadata defaults.
+    status: done
+    kind: parallel
+    deps: [1]
+  - id: 7
+    title: Strip provider reasoning and add synthetic leak regressions.
+    status: done
+    kind: serial
+    deps: [6]
+  - id: 8
+    title: Validate the T1-Lite alerting and content-safety acceptance matrix.
+    status: pending
+    kind: serial
+    deps: [5, 7]
+
+current_checkpoint:
+  name: local-validation-complete-aws-receiver-pending
+  state: implemented
+  summary: >-
+    WS2 through WS4 and WS6 through WS7 are locally implemented and verified.
+    Focused alerting tests, two real PostgreSQL/Redis/TaskIQ integration tests,
+    232 content-safety tests, 1,049 repository unit tests, 42 component tests,
+    and 316 frontend tests pass. CloudWatch accepted all nine new metric-filter
+    patterns through its read-only test API. AWS target configuration, an
+    applied Alarm, and confirmed SNS receipt remain open, so WS5 is still in
+    progress and this checkpoint is not validated.
+
+open_decisions: []
+
+next_choices:
+  - id: A
+    label: Supply AWS target
+    note: Provide the intended deploy control configuration and a confirmed SNS receiver without committing secrets or receiver identifiers.
+  - id: B
+    label: Validate AWS delivery
+    note: Apply the minimum filters and alarms to the confirmed target, emit one controlled marker, and record out-of-band receipt confirmation.
+
+attached_artifacts:
+  task_plan: task-plan.md
+  reviews: []
+  debug: []

@@ -24,6 +24,14 @@ export default defineConfig({
         environment: 'jsdom',
         globals: true,
         css: true,
+        // RTL_SKIP_AUTO_CLEANUP: setup.ts owns cleanup in act(); avoids sync auto-cleanup
+        // racing React 19 scheduler work after our flush (see src/test/setup.ts).
+        env: {
+            RTL_SKIP_AUTO_CLEANUP: 'true',
+        },
+        // Run test files serially in a single worker: deterministic teardown ordering
+        // keeps the React 19 scheduler flush in setup.ts reliable under v8 coverage.
+        fileParallelism: false,
         setupFiles: ['./src/test/setup.ts'],
         exclude: [
             ...configDefaults.exclude,
@@ -49,20 +57,12 @@ export default defineConfig({
             // “不为覆盖率数字写脆弱测试”一致。include 全量 src 后是“真实口径”：未被测模块
             // 也计入分母（故数值低于只算被测文件的口径）。阈值设在当前实测值下方留波动余量；
             // 覆盖率明显下滑、或新增大块未测代码才触发。实测基线见
-            // docs/assessments/frontend-cicd-assessment-2026-06-14.md §9。
+            // docs/assessments/2026-06-14-frontend-cicd.md §9。
             thresholds: {
                 statements: 40,
                 branches: 30,
                 functions: 35,
                 lines: 40,
-            },
-        },
-        poolOptions: {
-            threads: {
-                singleThread: true,
-            },
-            forks: {
-                singleFork: true,
             },
         },
     },

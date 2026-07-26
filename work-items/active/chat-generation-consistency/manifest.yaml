@@ -1,0 +1,72 @@
+slug: chat-generation-consistency
+title: Chat Generation Consistency and Explicit Retry
+status: active
+
+goal: Make Chat generation, messages, Credits settlement, and explicit retry converge on one durable, authorized request state without broad worker refactoring.
+
+completion_chain:
+  - Product ownership, billing, disconnect, request identity, and retry semantics are frozen before schema work begins.
+  - A durable generation request and PostgreSQL CAS contracts make request identity and the current attempt explainable without Redis as a source of truth.
+  - Web and worker paths commit message state, Credits settlement, and request terminal outcome atomically and reject stale attempts.
+  - Authorized status resolution and explicit retry APIs let the frontend recover from ambiguous transport failures without blind resubmission.
+  - Feature-flagged frontend integration passes the retry fault matrix for live, refreshed, running, and identity-unknown requests.
+  - Focused validation proves the T1-3 boundary and records the remaining T1-4 recovery and T1-5 alert dependencies.
+
+workstreams:
+  - id: 1
+    title: Align the solo execution baseline and freeze T1-3 contracts.
+    status: done
+    kind: blocking
+    deps: []
+  - id: 2
+    title: Characterize current retry and settlement failures with regression coverage.
+    status: done
+    kind: serial
+    deps: [1]
+  - id: 3
+    title: PR 1 add the durable generation request schema and repository CAS contracts.
+    status: done
+    kind: serial
+    deps: [2]
+  - id: 4
+    title: PR 2 switch web and worker paths to atomic terminal settlement.
+    status: done
+    kind: serial
+    deps: [3]
+  - id: 5
+    title: PR 3 add authorized retry APIs and frontend integration behind a backend flag.
+    status: done
+    kind: serial
+    deps: [4]
+  - id: 6
+    title: Validate rollout behavior and hand off T1-4 recovery dependencies.
+    status: done
+    kind: serial
+    deps: [5]
+
+current_checkpoint:
+  name: t1-3-rollout-matrix-validated
+  state: validated
+  summary: All six workstreams are done. Flag-off and missing-flag paths fail closed, while flag-on retries a refreshed historical failure through the durable request identity and expected-attempt contract without falling back to query_stream. The focused retry matrix, full frontend Vitest and mock Playwright suites, and disposable PostgreSQL and Redis contracts pass. T1-4 PREPARED/lease recovery and T1-5 alert delivery remain explicit handoffs rather than claimed T1-3 capabilities.
+
+open_decisions:
+  - id: quality-baseline-disposition
+    note: Clear the pre-existing Ruff format debt and scripts/qa/check_serena_mcp.py bare loop in a separate T1-1 cleanup before PR 1 is merged; focused T1-3 regression work may proceed meanwhile.
+  - id: chat-explicit-retry-rollout
+    note: The solo maintainer owns rollout. The validated WS6 checkpoint is committed; keep chat-explicit-retry default-off until a controlled observation window starts, enable it only for the maintainer or test cohort first, retain it as the rollback switch, and remove the frontend branch and backend registration together only after the window is clean.
+
+next_choices:
+  - id: A
+    label: Start controlled rollout
+    note: Enable chat-explicit-retry only for the maintainer or test cohort, verify live and refreshed retry once, and keep the flag as the immediate rollback switch.
+  - id: B
+    label: Clear quality baseline debt
+    note: During the observation window, fix the seven pre-existing Ruff format differences and the bounded-loop QA blocker in a separate T1-1 commit so future flow-fast failures are actionable.
+  - id: C
+    label: Open T1-4 recovery work
+    note: After the rollout baseline is stable, scope the PREPARED reconciler and lease-expiry recovery as a separate work item; do not fold automatic replay into this validated T1-3 checkpoint.
+
+attached_artifacts:
+  task_plan: task-plan.md
+  reviews: []
+  debug: []

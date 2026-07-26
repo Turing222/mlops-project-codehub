@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.requires_taskiq]
+pytestmark = pytest.mark.requires_taskiq
 
 
 def _make_generation_payload() -> dict:
@@ -48,10 +48,14 @@ def _make_stream_result():
     return StreamGenerationResult(success=True, output="answer")
 
 
-@pytest.mark.asyncio
 async def test_stream_task_unpacks_new_payload_dict() -> None:
     """New format: single LLMTaskPayload dict as args[0]."""
-    from backend.models.schemas.chat.payloads import LLMTaskPayload
+    import uuid
+
+    from backend.models.schemas.chat.payloads import (
+        GenerationAttemptPayload,
+        LLMTaskPayload,
+    )
     from backend.worker.tasks.llm_tasks import generate_llm_stream_task
 
     gen_payload = _make_generation_payload()
@@ -62,6 +66,12 @@ async def test_stream_task_unpacks_new_payload_dict() -> None:
         assistant_message_id="msg-123",
         user_id="user-456",
         idempotency_lock_key="lock:abc",
+        generation_attempt=GenerationAttemptPayload(
+            request_id=uuid.uuid4(),
+            attempt=1,
+            task_id="stream-task",
+            lease_token="stream-lease",
+        ),
     )
     payload_dict = task_payload.model_dump(mode="json")
 
@@ -83,9 +93,9 @@ async def test_stream_task_unpacks_new_payload_dict() -> None:
     assert call_kwargs["assistant_message_id"] == "msg-123"
     assert call_kwargs["user_id"] == "user-456"
     assert call_kwargs["idempotency_lock_key"] == "lock:abc"
+    assert call_kwargs["generation_attempt"] == task_payload.generation_attempt
 
 
-@pytest.mark.asyncio
 async def test_stream_task_unpacks_old_positional_args() -> None:
     """Old format: multiple positional args."""
     from backend.worker.tasks.llm_tasks import generate_llm_stream_task
@@ -116,7 +126,6 @@ async def test_stream_task_unpacks_old_positional_args() -> None:
     assert call_kwargs["idempotency_lock_key"] == lock_key
 
 
-@pytest.mark.asyncio
 async def test_stream_task_passes_external_context_provider_to_workflow() -> None:
     from backend.models.schemas.chat.payloads import LLMTaskPayload
     from backend.worker.tasks.llm_tasks import generate_llm_stream_task
@@ -152,9 +161,14 @@ async def test_stream_task_passes_external_context_provider_to_workflow() -> Non
     mock_inner.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_nonstream_task_unpacks_new_payload_dict() -> None:
-    from backend.models.schemas.chat.payloads import GenerationResult, LLMTaskPayload
+    import uuid
+
+    from backend.models.schemas.chat.payloads import (
+        GenerationAttemptPayload,
+        GenerationResult,
+        LLMTaskPayload,
+    )
     from backend.worker.tasks.llm_tasks import generate_llm_nonstream_task
 
     gen_payload = _make_generation_payload()
@@ -164,6 +178,12 @@ async def test_nonstream_task_unpacks_new_payload_dict() -> None:
         assistant_message_id="msg-789",
         user_id="user-012",
         idempotency_lock_key="lock:def",
+        generation_attempt=GenerationAttemptPayload(
+            request_id=uuid.uuid4(),
+            attempt=2,
+            task_id="nonstream-task",
+            lease_token="nonstream-lease",
+        ),
     )
     payload_dict = task_payload.model_dump(mode="json")
 
@@ -186,9 +206,9 @@ async def test_nonstream_task_unpacks_new_payload_dict() -> None:
     assert call_kwargs["assistant_message_id"] == "msg-789"
     assert call_kwargs["user_id"] == "user-012"
     assert call_kwargs["idempotency_lock_key"] == "lock:def"
+    assert call_kwargs["generation_attempt"] == task_payload.generation_attempt
 
 
-@pytest.mark.asyncio
 async def test_nonstream_task_unpacks_old_positional_args() -> None:
     """Old format: multiple positional args."""
     from backend.models.schemas.chat.payloads import GenerationResult

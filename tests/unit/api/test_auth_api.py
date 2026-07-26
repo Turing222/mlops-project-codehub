@@ -8,13 +8,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-import pytest
 from fastapi.routing import APIRoute
 
 from backend.api.v1.endpoint import auth_api
 from backend.models.schemas.user_schema import SMSSendRequest
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_sms_send_never_returns_mock_code() -> None:

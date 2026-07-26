@@ -20,6 +20,8 @@ and `span_id`.
 
 - `cloudwatch-setup.sh` creates the log group, SNS topic, CloudWatch Logs metric
   filters, and first-pass alarms from `deploy/.env.ec2`.
+- `cloudwatch-verify-delivery.sh` emits one controlled non-recovery event and
+  waits for the dedicated Alarm; receiver confirmation remains manual evidence.
 - `alarms-cloudwatch.md` documents the first CloudWatch metric filters, alarm
   intent, SNS target shape, and verification commands.
 - `dashboard-promql-export.md` preserves the PromQL / LogQL expressions from

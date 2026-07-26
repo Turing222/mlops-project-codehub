@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Validate local Codex skill structure and references.
 
-职责：校验 skill frontmatter、agent metadata、Markdown 链接和 Make target；边界：仅检查确定性仓库契约，不判断指令语义质量；副作用：只读扫描并通过退出码报告结果。
+职责：校验 skill 结构、路由清单、Markdown 引用、Make target 和 Serena allowlist；边界：仅检查确定性仓库契约，不判断指令语义质量；副作用：只读扫描并通过退出码报告结果。
 """
 
 from __future__ import annotations
 
+import json
 import re
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -18,6 +20,13 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SKILLS_ROOT = PROJECT_ROOT / ".codex" / "skills"
 MAKEFILE_PATH = PROJECT_ROOT / "Makefile"
+SKILL_INDEX_SPECS = (
+    (PROJECT_ROOT / "AGENTS.md", "Local Skills"),
+    (PROJECT_ROOT / "CLAUDE.md", "Task Skills"),
+)
+SERENA_PROJECT_PATH = PROJECT_ROOT / ".serena" / "project.yml"
+CODEX_CONFIG_PATH = PROJECT_ROOT / ".codex" / "config.toml"
+CLAUDE_SETTINGS_PATH = PROJECT_ROOT / ".claude" / "settings.json"
 
 SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
@@ -27,6 +36,9 @@ MAKE_TARGET_RE = re.compile(
 )
 REQUIRED_SKILL_FIELDS = ("name", "description")
 REQUIRED_INTERFACE_FIELDS = ("display_name", "short_description", "default_prompt")
+SKILL_INDEX_RE = re.compile(r"\.codex/skills/([a-z0-9]+(?:-[a-z0-9]+)*)/SKILL\.md")
+MARKDOWN_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
+SERENA_TOOL_PREFIX = "mcp__serena__"
 
 
 @dataclass(frozen=True)
@@ -52,6 +64,68 @@ def _find_key_line(text: str, key: str, start_line: int = 1) -> int:
         if pattern.match(line):
             return line_number
     return start_line
+
+
+def _find_assignment_line(text: str, key: str) -> int:
+    pattern = re.compile(rf'^\s*["\']?{re.escape(key)}["\']?\s*[:=]')
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if pattern.match(line):
+            return line_number
+    return 1
+
+
+def _load_toml_mapping(
+    path: Path, text: str
+) -> tuple[dict[str, object] | None, list[Violation]]:
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as error:
+        return None, [
+            Violation(
+                path=path,
+                line=getattr(error, "lineno", 1),
+                message=f"invalid TOML: {error}",
+            )
+        ]
+    return cast(dict[str, object], data), []
+
+
+def _load_json_mapping(
+    path: Path, text: str
+) -> tuple[dict[str, object] | None, list[Violation]]:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as error:
+        return None, [
+            Violation(
+                path=path, line=error.lineno, message=f"invalid JSON: {error.msg}"
+            )
+        ]
+    if not isinstance(data, dict):
+        return None, [Violation(path, 1, "JSON document must be a mapping")]
+    return cast(dict[str, object], data), []
+
+
+def _nested_value(data: dict[str, object], keys: tuple[str, ...]) -> object | None:
+    value: object = data
+    for key in keys:
+        if not isinstance(value, dict):
+            return None
+        mapping = cast(dict[str, object], value)
+        value = mapping.get(key)
+    return value
+
+
+def _string_list(
+    path: Path, text: str, key: str, value: object
+) -> tuple[set[str] | None, list[Violation]]:
+    line = _find_assignment_line(text, key)
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return None, [Violation(path, line, f"`{key}` must be a list of strings")]
+    items = cast(list[str], value)
+    if len(items) != len(set(items)):
+        return set(items), [Violation(path, line, f"`{key}` contains duplicate tools")]
+    return set(items), []
 
 
 def _load_yaml_mapping(
@@ -243,6 +317,166 @@ def _validate_make_targets(path: Path, make_targets: set[str]) -> list[Violation
     return violations
 
 
+def audit_skill_indexes(
+    skills_root: Path = SKILLS_ROOT,
+    index_specs: tuple[tuple[Path, str], ...] = SKILL_INDEX_SPECS,
+) -> list[Violation]:
+    if not skills_root.is_dir():
+        raise FileNotFoundError(f"skills directory does not exist: {skills_root}")
+
+    skill_names = {path.name for path in skills_root.iterdir() if path.is_dir()}
+    violations: list[Violation] = []
+    for index_path, section_title in index_specs:
+        text = index_path.read_text(encoding="utf-8")
+        section_span = _markdown_section_span(text, section_title)
+        if section_span is None:
+            violations.append(
+                Violation(
+                    index_path,
+                    1,
+                    f"skill index section `{section_title}` does not exist",
+                )
+            )
+            continue
+
+        section_start, section_end = section_span
+        section_text = text[section_start:section_end]
+        indexed_lines: dict[str, int] = {}
+        for match in SKILL_INDEX_RE.finditer(section_text):
+            skill_name = match.group(1)
+            match_start = section_start + match.start()
+            line = text.count("\n", 0, match_start) + 1
+            if skill_name in indexed_lines:
+                violations.append(
+                    Violation(
+                        index_path,
+                        line,
+                        f"skill index lists `{skill_name}` more than once",
+                    )
+                )
+                continue
+            indexed_lines[skill_name] = line
+
+        indexed_names = set(indexed_lines)
+        for skill_name in sorted(skill_names - indexed_names):
+            violations.append(
+                Violation(
+                    index_path,
+                    1,
+                    f"skill index is missing `{skill_name}`",
+                )
+            )
+        for skill_name in sorted(indexed_names - skill_names):
+            violations.append(
+                Violation(
+                    index_path,
+                    indexed_lines[skill_name],
+                    f"skill index references unknown skill `{skill_name}`",
+                )
+            )
+    return violations
+
+
+def _tool_list_difference(expected: set[str], actual: set[str]) -> str:
+    parts: list[str] = []
+    missing = sorted(expected - actual)
+    extra = sorted(actual - expected)
+    if missing:
+        parts.append(f"missing={missing}")
+    if extra:
+        parts.append(f"extra={extra}")
+    return ", ".join(parts)
+
+
+def _markdown_section_span(text: str, title: str) -> tuple[int, int] | None:
+    headings = list(MARKDOWN_HEADING_RE.finditer(text))
+    for index, heading in enumerate(headings):
+        if heading.group(2) != title:
+            continue
+
+        level = len(heading.group(1))
+        section_end = len(text)
+        for following_heading in headings[index + 1 :]:
+            if len(following_heading.group(1)) <= level:
+                section_end = following_heading.start()
+                break
+        return heading.end(), section_end
+    return None
+
+
+def audit_mcp_allowlists(
+    serena_project_path: Path = SERENA_PROJECT_PATH,
+    codex_config_path: Path = CODEX_CONFIG_PATH,
+    claude_settings_path: Path = CLAUDE_SETTINGS_PATH,
+) -> list[Violation]:
+    serena_text = serena_project_path.read_text(encoding="utf-8")
+    codex_text = codex_config_path.read_text(encoding="utf-8")
+    claude_text = claude_settings_path.read_text(encoding="utf-8")
+
+    serena_data, violations = _load_yaml_mapping(serena_project_path, serena_text)
+    codex_data, codex_violations = _load_toml_mapping(codex_config_path, codex_text)
+    claude_data, claude_violations = _load_json_mapping(
+        claude_settings_path, claude_text
+    )
+    violations.extend(codex_violations)
+    violations.extend(claude_violations)
+    if serena_data is None or codex_data is None or claude_data is None:
+        return violations
+
+    fixed_tools, list_violations = _string_list(
+        serena_project_path,
+        serena_text,
+        "fixed_tools",
+        serena_data.get("fixed_tools"),
+    )
+    violations.extend(list_violations)
+    if fixed_tools == set():
+        violations.append(
+            Violation(
+                serena_project_path,
+                _find_assignment_line(serena_text, "fixed_tools"),
+                "`fixed_tools` must not be empty",
+            )
+        )
+        return violations
+    enabled_tools, list_violations = _string_list(
+        codex_config_path,
+        codex_text,
+        "enabled_tools",
+        _nested_value(codex_data, ("mcp_servers", "serena", "enabled_tools")),
+    )
+    violations.extend(list_violations)
+    claude_allow, list_violations = _string_list(
+        claude_settings_path,
+        claude_text,
+        "allow",
+        _nested_value(claude_data, ("permissions", "allow")),
+    )
+    violations.extend(list_violations)
+    if fixed_tools is None or enabled_tools is None or claude_allow is None:
+        return violations
+
+    claude_tools = {
+        item.removeprefix(SERENA_TOOL_PREFIX)
+        for item in claude_allow
+        if item.startswith(SERENA_TOOL_PREFIX)
+    }
+    for path, text, key, actual in (
+        (codex_config_path, codex_text, "enabled_tools", enabled_tools),
+        (claude_settings_path, claude_text, "allow", claude_tools),
+    ):
+        if actual != fixed_tools:
+            difference = _tool_list_difference(fixed_tools, actual)
+            violations.append(
+                Violation(
+                    path,
+                    _find_assignment_line(text, key),
+                    f"Serena allowlist differs from `fixed_tools`: {difference}",
+                )
+            )
+    return violations
+
+
 def audit_skills(
     skills_root: Path = SKILLS_ROOT,
     makefile_path: Path = MAKEFILE_PATH,
@@ -285,6 +519,8 @@ def audit_skills(
 def main() -> int:
     try:
         violations = audit_skills()
+        violations.extend(audit_skill_indexes())
+        violations.extend(audit_mcp_allowlists())
     except (OSError, UnicodeError) as error:
         print(f"Skill validation could not run: {error}", file=sys.stderr)
         return 2

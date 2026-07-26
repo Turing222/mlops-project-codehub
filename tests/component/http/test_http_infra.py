@@ -1,3 +1,8 @@
+"""HTTP infrastructure component tests.
+
+职责：验证中间件/HTTP 基础设施装配；边界：dependency override 与 ASGITransport；副作用：无。
+"""
+
 from __future__ import annotations
 
 import pytest
@@ -30,7 +35,6 @@ async def client():
         yield ac
 
 
-@pytest.mark.asyncio
 async def test_tracing_and_app_error_share_same_request_id(client):
     response = await client.get("/app-error", headers={"X-Request-ID": "req-404"})
 
@@ -45,7 +49,6 @@ async def test_tracing_and_app_error_share_same_request_id(client):
     }
 
 
-@pytest.mark.asyncio
 async def test_tracing_and_global_exception_generate_traceable_500(client):
     response = await client.get("/boom")
 

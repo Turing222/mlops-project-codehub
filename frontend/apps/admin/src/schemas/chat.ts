@@ -22,6 +22,10 @@ export const chatMessageSchema = z.object({
     latency_ms: z.number().nullable().optional(),
     search_context: z.record(z.string(), z.unknown()).nullable().optional(),
     message_metadata: z.record(z.string(), z.unknown()).optional(),
+    generation_request_id: z.string().nullable().optional(),
+    attempt: z.number().int().positive().nullable().optional(),
+    retryable: z.boolean().nullable().optional(),
+    error_code: z.string().nullable().optional(),
     created_at: requiredString,
     updated_at: requiredString,
 });
@@ -124,6 +128,8 @@ export const chatStreamMetaEventSchema = z.object({
     session_id: requiredString,
     session_title: requiredString,
     message_id: z.string().optional(),
+    generation_request_id: z.string().optional(),
+    attempt: z.number().int().positive().optional(),
 });
 
 export const chatStreamChunkEventSchema = z.object({
@@ -134,10 +140,21 @@ export const chatStreamChunkEventSchema = z.object({
 export const chatStreamErrorEventSchema = z.object({
     type: z.literal('error'),
     message: z.string().optional(),
+    error_code: z.string().optional(),
+    retryable: z.boolean().optional(),
+    generation_request_id: z.string().optional(),
+    attempt: z.number().int().positive().optional(),
 });
 
 export const chatStreamStartedEventSchema = z.object({
     type: z.literal('started'),
+});
+
+export const chatStreamStepEventSchema = z.object({
+    type: z.literal('step'),
+    step: z.string(),
+    status: z.enum(['running', 'done', 'skipped']),
+    metrics: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])).optional(),
 });
 
 export const chatStreamEventSchema = z.discriminatedUnion('type', [
@@ -145,7 +162,27 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
     chatStreamMetaEventSchema,
     chatStreamChunkEventSchema,
     chatStreamErrorEventSchema,
+    chatStreamStepEventSchema,
 ]);
+
+export const generationRequestStatusSchema = z.object({
+    generation_request_id: requiredString,
+    client_request_id: requiredString,
+    session_id: requiredString,
+    assistant_message_id: z.string().nullable().optional(),
+    status: z.enum(['prepared', 'queued', 'running', 'succeeded', 'failed']),
+    attempt: z.number().int().positive(),
+    retryable: z.boolean(),
+    error_code: z.string().nullable().optional(),
+    error_message: z.string().nullable().optional(),
+    created_at: requiredString,
+    updated_at: requiredString,
+    finished_at: z.string().nullable().optional(),
+});
+
+export const retryGenerationRequestSchema = z.object({
+    expected_attempt: z.number().int().positive(),
+});
 
 export type ChatSession = z.infer<typeof chatSessionSchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
@@ -154,6 +191,9 @@ export type ChatQueryResponse = z.infer<typeof chatQueryResponseSchema>;
 export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionDetailResponse = z.infer<typeof sessionDetailResponseSchema>;
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+export type ChatStreamStepEvent = z.infer<typeof chatStreamStepEventSchema>;
+export type GenerationRequestStatus = z.infer<typeof generationRequestStatusSchema>;
+export type RetryGenerationRequest = z.infer<typeof retryGenerationRequestSchema>;
 export type ChatMessageMetrics = z.infer<typeof chatMessageMetricsSchema>;
 export type RagMetrics = z.infer<typeof ragMetricsSchema>;
 

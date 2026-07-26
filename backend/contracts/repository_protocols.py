@@ -12,14 +12,14 @@ import uuid
 from collections.abc import Collection, Sequence
 from typing import Any, Protocol
 
-from backend.models.enums import MessageStatus, WorkspaceRole
+from backend.models.enums import ChatGenerationStatus, MessageStatus, WorkspaceRole
 from backend.models.orm.access import UserWorkspaceRole, Workspace
-from backend.models.orm.chat import ChatMessage, ChatSession
+from backend.models.orm.chat import ChatGenerationRequest, ChatMessage, ChatSession
 from backend.models.orm.chunk import DocumentChunk
 from backend.models.orm.credits import CreditAccount, CreditTransaction, UsageRecord
 from backend.models.orm.knowledge import File, FileStatus, FileVisibility, KnowledgeBase
 from backend.models.orm.repo_analysis import RepoAnalysisResult, RepoAnalysisRun
-from backend.models.orm.task import TaskJob, TaskStatus
+from backend.models.orm.task import TaskJob, TaskOutbox, TaskOutboxStatus, TaskStatus
 from backend.models.orm.user import User
 from backend.models.schemas.audit_schema import AuditEventFilters
 from backend.models.schemas.chat.context_state import ContextState
@@ -105,6 +105,132 @@ class AuditRepositoryProtocol(Protocol):
 
 
 class ChatRepositoryProtocol(Protocol):
+    async def create_generation_request(
+        self,
+        *,
+        user_id: uuid.UUID,
+        client_request_id: str,
+        session_id: uuid.UUID,
+        workspace_id: uuid.UUID | None = None,
+        user_message_id: uuid.UUID | None = None,
+        assistant_message_id: uuid.UUID | None = None,
+        dispatch_context: dict[str, Any] | None = None,
+        recovery_due_at: datetime.datetime | None = None,
+        reserved_credits: int = 0,
+    ) -> ChatGenerationRequest: ...
+
+    async def get_generation_request_for_actor(
+        self, *, request_id: uuid.UUID, user_id: uuid.UUID
+    ) -> ChatGenerationRequest | None: ...
+
+    async def get_generation_request_by_client_request_id_for_actor(
+        self, *, user_id: uuid.UUID, client_request_id: str
+    ) -> ChatGenerationRequest | None: ...
+
+    async def get_generation_requests_for_session_for_actor(
+        self, *, session_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Sequence[ChatGenerationRequest]: ...
+
+    async def get_due_generation_requests(
+        self, *, due_at: datetime.datetime, limit: int = 100
+    ) -> Sequence[ChatGenerationRequest]: ...
+
+    async def get_oldest_due_generation_recovery_at(
+        self, *, due_at: datetime.datetime
+    ) -> datetime.datetime | None: ...
+
+    async def try_queue_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        user_id: uuid.UUID,
+        expected_attempt: int,
+        task_id: str,
+        lease_token: str,
+        queued_at: datetime.datetime,
+        recovery_due_at: datetime.datetime,
+    ) -> bool: ...
+
+    async def try_reserve_generation_request_redispatch(
+        self,
+        *,
+        request_id: uuid.UUID,
+        expected_attempt: int,
+        task_id: str,
+        lease_token: str,
+        expected_dispatch_attempts: int,
+        max_dispatch_attempts: int,
+        due_before: datetime.datetime,
+        next_recovery_due_at: datetime.datetime,
+    ) -> int | None: ...
+
+    async def try_fail_due_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        expected_status: ChatGenerationStatus,
+        expected_attempt: int,
+        expected_dispatch_attempts: int,
+        task_id: str | None,
+        lease_token: str | None,
+        due_before: datetime.datetime,
+        finished_at: datetime.datetime,
+        error_code: str,
+        error_message: str,
+    ) -> bool: ...
+
+    async def try_claim_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+        assistant_message_id: uuid.UUID,
+        expected_attempt: int,
+        task_id: str,
+        lease_token: str,
+        started_at: datetime.datetime,
+        lease_expires_at: datetime.datetime,
+    ) -> bool: ...
+
+    async def try_heartbeat_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        expected_attempt: int,
+        lease_token: str,
+        heartbeat_at: datetime.datetime,
+        lease_expires_at: datetime.datetime,
+    ) -> bool: ...
+
+    async def try_finalize_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        expected_attempt: int,
+        lease_token: str,
+        target_status: ChatGenerationStatus,
+        finished_at: datetime.datetime,
+        assistant_message_id: uuid.UUID | None = None,
+        retryable: bool = False,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> bool: ...
+
+    async def try_retry_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        user_id: uuid.UUID,
+        expected_attempt: int,
+        dispatch_context: dict[str, Any],
+        recovery_due_at: datetime.datetime,
+    ) -> int | None: ...
+
+    async def reset_assistant_message_for_retry(
+        self, *, message_id: uuid.UUID
+    ) -> bool: ...
+
     async def get_session(self, session_id: uuid.UUID) -> ChatSession | None: ...
 
     async def get_context_state(self, session_id: uuid.UUID) -> ContextState: ...
@@ -240,9 +366,9 @@ class KnowledgeRepositoryProtocol(Protocol):
         target_status: FileStatus,
     ) -> bool: ...
 
-    async def mark_stale_ingestion_files_failed(
-        self, *, older_than: datetime.datetime
-    ) -> int: ...
+    async def get_stale_uploaded_files_without_active_task(
+        self, *, older_than: datetime.datetime, limit: int
+    ) -> Sequence[File]: ...
 
     async def delete_chunks_for_file(self, file_id: uuid.UUID) -> None: ...
 
@@ -270,15 +396,11 @@ class TaskRepositoryProtocol(Protocol):
         payload: dict,
         status: TaskStatus = TaskStatus.PENDING,
         progress: int = 0,
+        user_id: uuid.UUID | None = None,
+        finished_at: datetime.datetime | None = None,
+        knowledge_file_id: uuid.UUID | None = None,
+        knowledge_base_id: uuid.UUID | None = None,
     ) -> TaskJob: ...
-
-    async def update_status(
-        self,
-        task_id: uuid.UUID,
-        status: TaskStatus,
-        progress: int | None = None,
-        error_log: str | None = None,
-    ) -> TaskJob | None: ...
 
     async def get_by_status(
         self, status: TaskStatus, skip: int = 0, limit: int = 100
@@ -300,9 +422,181 @@ class TaskRepositoryProtocol(Protocol):
         self, task_id: uuid.UUID, progress: int = 0
     ) -> TaskJob | None: ...
 
-    async def mark_stale_kb_ingestion_tasks_failed(
-        self, *, older_than: datetime.datetime, error_log: str
-    ) -> int: ...
+    async def try_claim_kb_ingestion_task(
+        self,
+        *,
+        task_id: uuid.UUID,
+        file_id: uuid.UUID,
+        claimed_at: datetime.datetime,
+        lease_expires_at: datetime.datetime,
+    ) -> int | None: ...
+
+    async def try_heartbeat_kb_ingestion_task(
+        self,
+        *,
+        task_id: uuid.UUID,
+        expected_attempt: int,
+        heartbeat_at: datetime.datetime,
+        lease_expires_at: datetime.datetime,
+    ) -> bool: ...
+
+    async def try_complete_kb_ingestion_task(
+        self,
+        *,
+        task_id: uuid.UUID,
+        expected_attempt: int,
+        finished_at: datetime.datetime,
+    ) -> bool: ...
+
+    async def try_reconcile_completed_kb_ingestion_task(
+        self,
+        *,
+        task_id: uuid.UUID,
+        expected_status: TaskStatus,
+        expected_attempt: int,
+        finished_at: datetime.datetime,
+    ) -> bool: ...
+
+    async def try_prepare_failed_kb_ingestion_replay(
+        self, *, task_id: uuid.UUID, expected_attempt: int
+    ) -> bool: ...
+
+    async def try_fail_kb_ingestion_task(
+        self,
+        *,
+        task_id: uuid.UUID,
+        expected_statuses: Collection[TaskStatus],
+        error_log: str,
+        finished_at: datetime.datetime,
+        expected_attempt: int | None = None,
+    ) -> bool: ...
+
+    async def try_reset_expired_kb_ingestion_task(
+        self,
+        *,
+        task_id: uuid.UUID,
+        expected_attempt: int,
+        lease_expired_before: datetime.datetime,
+        legacy_updated_before: datetime.datetime,
+        error_log: str,
+    ) -> bool: ...
+
+    async def try_fail_expired_kb_ingestion_task(
+        self,
+        *,
+        task_id: uuid.UUID,
+        expected_attempt: int,
+        lease_expired_before: datetime.datetime,
+        legacy_updated_before: datetime.datetime,
+        error_log: str,
+        finished_at: datetime.datetime,
+    ) -> bool: ...
+
+    async def get_stale_kb_ingestion_tasks(
+        self,
+        *,
+        due_at: datetime.datetime,
+        legacy_older_than: datetime.datetime,
+        limit: int,
+    ) -> Sequence[TaskJob]: ...
+
+    async def get_pending_kb_tasks_without_active_outbox(
+        self,
+        *,
+        older_than: datetime.datetime,
+        limit: int,
+    ) -> Sequence[TaskJob]: ...
+
+    async def get_oldest_actionable_kb_task_at(
+        self, *, due_at: datetime.datetime
+    ) -> datetime.datetime | None: ...
+
+
+class TaskOutboxRepositoryProtocol(Protocol):
+    async def get(self, outbox_id: uuid.UUID) -> TaskOutbox | None: ...
+
+    async def get_for_task_event(
+        self, *, task_id: uuid.UUID, event_type: str
+    ) -> TaskOutbox | None: ...
+
+    async def get_oldest_due_at(
+        self, *, due_at: datetime.datetime
+    ) -> datetime.datetime | None: ...
+
+    async def create(
+        self,
+        *,
+        task_id: uuid.UUID,
+        event_type: str,
+        payload: dict,
+        next_attempt_at: datetime.datetime,
+    ) -> TaskOutbox: ...
+
+    async def claim_due_batch(
+        self,
+        *,
+        due_at: datetime.datetime,
+        lease_owner: str,
+        lease_expires_at: datetime.datetime,
+        max_attempts: int,
+        limit: int,
+    ) -> Sequence[TaskOutbox]: ...
+
+    async def try_claim(
+        self,
+        *,
+        outbox_id: uuid.UUID,
+        due_at: datetime.datetime,
+        lease_owner: str,
+        lease_expires_at: datetime.datetime,
+        max_attempts: int,
+    ) -> TaskOutbox | None: ...
+
+    async def get_exhausted_due(
+        self,
+        *,
+        due_at: datetime.datetime,
+        max_attempts: int,
+        limit: int,
+    ) -> Sequence[TaskOutbox]: ...
+
+    async def try_mark_published(
+        self,
+        *,
+        outbox_id: uuid.UUID,
+        expected_attempt: int,
+        lease_owner: str,
+        published_at: datetime.datetime,
+    ) -> bool: ...
+
+    async def try_release_for_retry(
+        self,
+        *,
+        outbox_id: uuid.UUID,
+        expected_attempt: int,
+        lease_owner: str,
+        next_attempt_at: datetime.datetime,
+        last_error: str,
+    ) -> bool: ...
+
+    async def try_mark_dead(
+        self,
+        *,
+        outbox_id: uuid.UUID,
+        expected_attempt: int,
+        due_before: datetime.datetime,
+        last_error: str,
+    ) -> bool: ...
+
+    async def try_prepare_replay(
+        self,
+        *,
+        outbox_id: uuid.UUID,
+        expected_status: TaskOutboxStatus,
+        expected_attempt: int,
+        next_attempt_at: datetime.datetime,
+        reset_attempts: bool = False,
+    ) -> bool: ...
 
 
 class RepoAnalysisRepositoryProtocol(Protocol):

@@ -80,7 +80,6 @@ def test_get_login_data_returns_422_for_invalid_form() -> None:
     assert exc_info.value.details
 
 
-@pytest.mark.asyncio
 async def test_get_current_user_returns_loaded_user(
     monkeypatch: pytest.MonkeyPatch,
     auth_ctx: SimpleNamespace,
@@ -101,7 +100,6 @@ async def test_get_current_user_returns_loaded_user(
     assert auth_ctx.uow.exit_count == 1
 
 
-@pytest.mark.asyncio
 async def test_get_current_user_returns_403_for_invalid_token(
     monkeypatch: pytest.MonkeyPatch,
     auth_ctx: SimpleNamespace,
@@ -122,7 +120,6 @@ async def test_get_current_user_returns_403_for_invalid_token(
     assert exc_info.value.message == "Token 无效或已过期"
 
 
-@pytest.mark.asyncio
 async def test_get_current_user_returns_403_when_subject_missing(
     monkeypatch: pytest.MonkeyPatch,
     auth_ctx: SimpleNamespace,
@@ -140,7 +137,6 @@ async def test_get_current_user_returns_403_when_subject_missing(
     assert exc_info.value.message == "Token 缺少身份标识"
 
 
-@pytest.mark.asyncio
 async def test_get_current_user_returns_404_when_user_missing(
     monkeypatch: pytest.MonkeyPatch,
     auth_ctx: SimpleNamespace,

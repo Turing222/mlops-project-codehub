@@ -201,7 +201,7 @@ embeddings:
     openai_compatible:
       provider: openai-compatible
       model: text-embedding-3-small
-      dimensions: 1536
+      dimensions: 768
       api_key_envs:
         - RAG_EMBED_API_KEY
         - LLM_API_KEY

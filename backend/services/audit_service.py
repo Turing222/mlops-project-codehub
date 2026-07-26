@@ -46,6 +46,7 @@ class AuditAction(StrEnum):
     FILE_DELETE = "file.delete"
     CHAT_QUERY_SENT = "chat.query_sent"
     CHAT_QUERY_STREAM = "chat.query_stream"
+    CHAT_GENERATION_RETRY = "chat.generation_retry"
 
 
 @dataclass(slots=True)

@@ -10,9 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.core.exceptions import AppException
-from backend.models.orm.chat import MessageStatus
-
-pytestmark = pytest.mark.asyncio
+from backend.models.enums import ChatGenerationStatus, MessageStatus
+from backend.models.schemas.chat.payloads import GenerationAttemptPayload
 
 
 @pytest.fixture
@@ -55,6 +54,7 @@ async def test_persist_success_token_limit_exceeded_writes_failed(
     fake_persistence_uow, fake_persistence_redis
 ) -> None:
     from backend.application.chat.worker_persistence_handler import (
+        TerminalSettlementError,
         WorkerPersistenceHandler,
     )
 
@@ -63,15 +63,25 @@ async def test_persist_success_token_limit_exceeded_writes_failed(
     )
 
     assistant_message_id = uuid.uuid4()
+    generation_attempt = GenerationAttemptPayload(
+        request_id=uuid.uuid4(),
+        attempt=1,
+        task_id="billing-task",
+        lease_token="billing-lease",
+    )
+    fake_persistence_uow.chat_repo.try_finalize_generation_request.return_value = True
 
-    with patch(
-        "backend.application.chat.worker_persistence_handler.CreditService.spend_for_model_usage",
-        new_callable=AsyncMock,
-        side_effect=AppException(
-            message="Credits 余额不足",
-            code="INSUFFICIENT_CREDITS",
-            status_code=400,
+    with (
+        patch(
+            "backend.application.chat.worker_persistence_handler.CreditService.spend_for_model_usage",
+            new_callable=AsyncMock,
+            side_effect=AppException(
+                message="Credits 余额不足",
+                code="INSUFFICIENT_CREDITS",
+                status_code=400,
+            ),
         ),
+        pytest.raises(TerminalSettlementError) as exc_info,
     ):
         await handler.persist_success(
             assistant_message_id=assistant_message_id,
@@ -81,8 +91,10 @@ async def test_persist_success_token_limit_exceeded_writes_failed(
             tokens_output=50,
             search_context=None,
             start_time=0.0,
+            generation_attempt=generation_attempt,
         )
 
+    assert exc_info.value.error_code == "INSUFFICIENT_CREDITS"
     fake_persistence_uow.chat_repo.update_message_status.assert_awaited_once()
     call_kwargs = fake_persistence_uow.chat_repo.update_message_status.call_args.kwargs
     assert call_kwargs["status"] == MessageStatus.FAILED
@@ -91,6 +103,12 @@ async def test_persist_success_token_limit_exceeded_writes_failed(
         == "Credits 余额不足，本次生成未记录。已生成的内容不会被扣费，请签到后再试。"
     )
     assert call_kwargs["message_metadata"]["response_outcome"] == "failed"
+    finalize_kwargs = (
+        fake_persistence_uow.chat_repo.try_finalize_generation_request.await_args.kwargs
+    )
+    assert finalize_kwargs["target_status"] == ChatGenerationStatus.FAILED
+    assert finalize_kwargs["error_code"] == "INSUFFICIENT_CREDITS"
+    assert finalize_kwargs["retryable"] is True
 
 
 async def test_persist_success_assistant_message_id_none_skips(
@@ -176,7 +194,7 @@ async def test_persist_failure_redis_lock_cleanup_fails_still_writes_message(
     )
 
 
-async def test_persist_failure_update_throws_swallowed(
+async def test_persist_failure_update_error_propagates_for_recovery(
     fake_persistence_uow, fake_persistence_redis
 ) -> None:
     from backend.application.chat.worker_persistence_handler import (
@@ -191,10 +209,11 @@ async def test_persist_failure_update_throws_swallowed(
         uow=fake_persistence_uow, redis_client=fake_persistence_redis
     )
 
-    await handler.persist_failure(
-        assistant_message_id=uuid.uuid4(),
-        error_content="failed",
-        idempotency_lock_key=None,
-    )
+    with pytest.raises(RuntimeError, match="DB error"):
+        await handler.persist_failure(
+            assistant_message_id=uuid.uuid4(),
+            error_content="failed",
+            idempotency_lock_key=None,
+        )
 
     fake_persistence_uow.chat_repo.update_message_status.assert_awaited_once()

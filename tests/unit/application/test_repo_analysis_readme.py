@@ -1,10 +1,14 @@
-"""Repo analysis README-only workflow unit tests.
+"""Repo analysis README-only workflow and content-safe instrumentation unit tests.
 
 职责：验证 GitHub URL 解析、证据提取和 Markdown 渲染；边界：不访问真实 GitHub、不调用 LLM。
 """
 
-import pytest
+from types import SimpleNamespace
 
+import pytest
+from pydantic_ai.models.instrumented import InstrumentationSettings
+
+from backend.application.repo_analysis.analyzer import RepoCredibilityAnalyzer
 from backend.application.repo_analysis.evidence import RepoEvidenceExtractor
 from backend.application.repo_analysis.github import parse_github_repo_url
 from backend.application.repo_analysis.renderer import RepoReportRenderer
@@ -15,6 +19,34 @@ from backend.models.schemas.repo_analysis_schema import (
     CredibilityFinding,
     ReadmeCredibilityAssessment,
 )
+
+
+def test_repo_analyzer_disables_telemetry_content_capture(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAgent:
+        def __init__(self, model: object, **kwargs: object) -> None:
+            captured["model"] = model
+            captured.update(kwargs)
+
+    profile = SimpleNamespace(resolve_api_key=lambda: "test-key")
+    monkeypatch.setattr("pydantic_ai.Agent", FakeAgent)
+    monkeypatch.setattr(
+        "backend.application.repo_analysis.analyzer.get_llm_model_config",
+        lambda: SimpleNamespace(resolve_profile=lambda _provider: profile),
+    )
+    monkeypatch.setattr(
+        "backend.application.repo_analysis.analyzer.create_pydantic_ai_model",
+        lambda **_kwargs: "model",
+    )
+
+    agent = RepoCredibilityAnalyzer(provider="test")._ensure_agent()
+
+    assert isinstance(agent, FakeAgent)
+    instrumentation = captured["instrument"]
+    assert isinstance(instrumentation, InstrumentationSettings)
+    assert instrumentation.include_content is False
+    assert instrumentation.include_binary_content is False
 
 
 def test_parse_github_repo_url_accepts_standard_url() -> None:

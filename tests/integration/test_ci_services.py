@@ -22,7 +22,6 @@ def _is_ci() -> bool:
     return os.getenv("CI", "").strip().lower() == "true"
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_db
 async def test_ci_postgres_service_is_reachable() -> None:
     url = os.getenv("TEST_DATABASE_URL") or settings.database_url
@@ -49,7 +48,6 @@ async def test_ci_postgres_service_is_reachable() -> None:
         await engine.dispose()
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_redis
 async def test_ci_redis_service_is_reachable() -> None:
     url = settings.redis_url

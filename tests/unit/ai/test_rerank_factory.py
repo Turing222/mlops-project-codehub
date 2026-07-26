@@ -73,7 +73,7 @@ def _make_dashscope_rerank_profile() -> RerankProfile:
     )
 
 
-# ── Legacy path (no rerank profiles) ────────────────────────────
+# Legacy path (no rerank profiles)
 
 
 def test_create_returns_none_when_provider_is_none_and_settings_empty(
@@ -208,7 +208,7 @@ def test_create_constructs_dashscope_service_for_dashscope_provider(
     assert result.model_name == "qwen3-rerank"
 
 
-# ── Profile path ─────────────────────────────────────────────────
+# Profile path
 
 
 def test_create_from_profile_constructs_bifrost_service(
@@ -277,7 +277,7 @@ def test_create_from_profile_raises_for_unsupported_provider(
         RerankProviderFactory.create(profile=profile)
 
 
-# ── Rerank profiles path (via config) ────────────────────────────
+# Rerank profiles path (via config)
 
 
 def test_create_uses_rerank_profile_when_profiles_exist(

@@ -9,21 +9,33 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from backend.application.chat.session_orchestrator import (
     ChatIdempotencyState,
+    ChatPreparedRequest,
     ChatSessionOrchestrator,
 )
 from backend.core.exceptions import AppException
-from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.models.enums import (
+    ChatGenerationDispatchMode,
+    ChatGenerationStatus,
+    MessageStatus,
+)
+from backend.models.schemas.chat.commands import (
+    ChatQueryCommand,
+    RetryChatGenerationCommand,
+)
 from backend.models.schemas.chat.context_state import ContextState
+from backend.models.schemas.chat.payloads import (
+    GENERATION_REQUEST_CONTEXT_KEY,
+    GenerationDispatchContext,
+)
 from backend.services.feature_flag_service import (
     _AI_SYSTEM_FLAG_DEFAULTS,
     FeatureFlagService,
 )
 from backend.services.permission_service import PermissionService
-
-pytestmark = pytest.mark.asyncio
 
 
 def _make_mock_feature_flag_service(
@@ -84,6 +96,183 @@ def _build_orchestrator() -> tuple[ChatSessionOrchestrator, MagicMock]:
         feature_flag_service,
     )
     return orchestrator, uow
+
+
+async def test_queue_generation_request_commits_attempt_fence_before_dispatch() -> None:
+    orchestrator, uow = _build_orchestrator()
+    request_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    uow.chat_repo.try_queue_generation_request.return_value = True
+    prepared = ChatPreparedRequest(
+        session=MagicMock(),
+        generation_request=MagicMock(id=request_id, attempt=3),
+        assistant_message=MagicMock(),
+        generation_payload=MagicMock(),
+        lock_key="lock:test",
+        lock_token="processing:test",
+        trace_attrs={},
+    )
+
+    attempt = await orchestrator.queue_generation_request(
+        prepared=prepared,
+        user_id=user_id,
+        task_id="task-3",
+    )
+
+    assert attempt.request_id == request_id
+    assert attempt.attempt == 3
+    assert attempt.task_id == "task-3"
+    queue_kwargs = uow.chat_repo.try_queue_generation_request.await_args.kwargs
+    assert queue_kwargs["user_id"] == user_id
+    assert queue_kwargs["lease_token"] == attempt.lease_token
+    assert queue_kwargs["recovery_due_at"] > queue_kwargs["queued_at"]
+
+
+async def test_prepare_retry_request_rebuilds_context_and_advances_attempt() -> None:
+    orchestrator, uow = _build_orchestrator()
+    user_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    user_message_id = uuid.uuid4()
+    assistant_message_id = uuid.uuid4()
+    request_id = uuid.uuid4()
+    generation_request = MagicMock(
+        id=request_id,
+        user_id=user_id,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        assistant_message_id=assistant_message_id,
+        status=ChatGenerationStatus.FAILED,
+        attempt=1,
+        retryable=True,
+        reserved_credits=3,
+    )
+    user_message = MagicMock(
+        id=user_message_id,
+        role="user",
+        content="retry this",
+        message_metadata={
+            GENERATION_REQUEST_CONTEXT_KEY: {
+                "schema_version": 1,
+                "enable_external_context": True,
+                "context_mode": "web_only",
+                "billing_model_name": "model-a",
+                "extra_body": {"thinking": {"type": "enabled"}},
+            }
+        },
+    )
+    assistant_message = MagicMock(
+        id=assistant_message_id,
+        role="assistant",
+        status=MessageStatus.FAILED,
+    )
+    session = MagicMock(id=session_id, kb_id=None, title="Retry")
+    uow.chat_repo.get_generation_request_for_actor.return_value = generation_request
+    uow.chat_repo.get_message.side_effect = [user_message, assistant_message]
+    uow.chat_repo.get_session_messages.return_value = [
+        user_message,
+        assistant_message,
+    ]
+    uow.chat_repo.get_context_state.return_value = ContextState()
+    uow.chat_repo.try_retry_generation_request.return_value = 2
+    uow.chat_repo.reset_assistant_message_for_retry.return_value = True
+    uow.user_repo.get_with_lock.return_value = MagicMock(
+        used_tokens=0,
+        max_tokens=100_000,
+    )
+    orchestrator._session_manager.ensure_session = AsyncMock(return_value=session)
+
+    prepared = await orchestrator.prepare_retry_request(
+        command=RetryChatGenerationCommand(
+            user_id=user_id,
+            generation_request_id=request_id,
+            expected_attempt=1,
+        ),
+        trace_attrs={},
+    )
+
+    assert prepared.generation_request.attempt == 2
+    assert prepared.assistant_message is assistant_message
+    assert prepared.generation_payload.query_text == "retry this"
+    assert prepared.generation_payload.enable_external_context is True
+    assert prepared.generation_payload.context_mode == "web_only"
+    assert prepared.generation_payload.billing_model_name == "model-a"
+    assert prepared.generation_payload.conversation_history == [
+        {"role": "user", "content": "retry this"}
+    ]
+    uow.chat_repo.try_retry_generation_request.assert_awaited_once()
+    retry_context = GenerationDispatchContext.model_validate(
+        uow.chat_repo.try_retry_generation_request.await_args.kwargs["dispatch_context"]
+    )
+    assert retry_context.mode == ChatGenerationDispatchMode.STREAM
+    assert retry_context.generation_payload.query_text == "retry this"
+    uow.chat_repo.reset_assistant_message_for_retry.assert_awaited_once_with(
+        message_id=assistant_message_id
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "attempt", "expected_attempt", "retryable", "expected_code"),
+    [
+        (
+            ChatGenerationStatus.FAILED,
+            2,
+            1,
+            True,
+            "CHAT_RETRY_ATTEMPT_CONFLICT",
+        ),
+        (
+            ChatGenerationStatus.RUNNING,
+            2,
+            2,
+            False,
+            "CHAT_REQUEST_STILL_RUNNING",
+        ),
+        (
+            ChatGenerationStatus.SUCCEEDED,
+            2,
+            2,
+            False,
+            "CHAT_REQUEST_ALREADY_SUCCEEDED",
+        ),
+        (
+            ChatGenerationStatus.FAILED,
+            2,
+            2,
+            False,
+            "CHAT_REQUEST_NOT_RETRYABLE",
+        ),
+    ],
+)
+async def test_prepare_retry_request_rejects_invalid_state_with_stable_code(
+    status: ChatGenerationStatus,
+    attempt: int,
+    expected_attempt: int,
+    retryable: bool,
+    expected_code: str,
+) -> None:
+    orchestrator, uow = _build_orchestrator()
+    request_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    uow.chat_repo.get_generation_request_for_actor.return_value = MagicMock(
+        id=request_id,
+        status=status,
+        attempt=attempt,
+        retryable=retryable,
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await orchestrator.prepare_retry_request(
+            command=RetryChatGenerationCommand(
+                user_id=user_id,
+                generation_request_id=request_id,
+                expected_attempt=expected_attempt,
+            ),
+            trace_attrs={},
+        )
+
+    assert exc_info.value.code == expected_code
+    assert exc_info.value.status_code == 409
+    uow.chat_repo.try_retry_generation_request.assert_not_awaited()
 
 
 class TestKbIdMismatchRejection:
@@ -377,7 +566,88 @@ class TestKbIdMismatchRejection:
 
 
 class TestIdempotencyLockReleaseOnPrepareFailure:
-    """prepare_request() 因 AppException 失败时，幂等锁必须被释放。"""
+    """prepare_request() 失败时，幂等锁必须被释放。"""
+
+    async def test_integrity_error_releases_lock_and_returns_stable_conflict(
+        self,
+    ) -> None:
+        """A durable identity race must release Redis and hide SQL details."""
+        orchestrator, _ = _build_orchestrator()
+        idempotency = ChatIdempotencyState(
+            lock_key="idempotency:chat:user-1:request-1",
+            lock_token="processing:abc",
+            is_new=True,
+            value=None,
+        )
+        conflict = IntegrityError(
+            "INSERT INTO chat_messages (client_request_id) VALUES (:request_id)",
+            {"request_id": "request-1"},
+            RuntimeError("duplicate client_request_id"),
+        )
+
+        with (
+            patch.object(
+                orchestrator,
+                "_prepare_request_inner",
+                AsyncMock(side_effect=conflict),
+            ),
+            patch.object(
+                orchestrator,
+                "release_idempotency",
+                AsyncMock(),
+            ) as release_idempotency,
+            pytest.raises(AppException) as exc_info,
+        ):
+            await orchestrator.prepare_request(
+                command=ChatQueryCommand(
+                    user_id=uuid.uuid4(),
+                    query_text="retry",
+                    client_request_id="request-1",
+                ),
+                idempotency=idempotency,
+                trace_attrs={},
+                span_prefix="test",
+            )
+
+        assert exc_info.value.code == "CHAT_REQUEST_ALREADY_EXISTS"
+        release_idempotency.assert_awaited_once_with(idempotency)
+
+    async def test_unexpected_error_releases_lock_and_is_reraised(self) -> None:
+        """Unexpected prepare failures must not strand the Redis lock."""
+        orchestrator, _ = _build_orchestrator()
+        idempotency = ChatIdempotencyState(
+            lock_key="idempotency:chat:user-1:request-1",
+            lock_token="processing:abc",
+            is_new=True,
+            value=None,
+        )
+        failure = RuntimeError("database unavailable")
+
+        with (
+            patch.object(
+                orchestrator,
+                "_prepare_request_inner",
+                AsyncMock(side_effect=failure),
+            ),
+            patch.object(
+                orchestrator,
+                "release_idempotency",
+                AsyncMock(),
+            ) as release_idempotency,
+            pytest.raises(RuntimeError, match="database unavailable"),
+        ):
+            await orchestrator.prepare_request(
+                command=ChatQueryCommand(
+                    user_id=uuid.uuid4(),
+                    query_text="retry",
+                    client_request_id="request-1",
+                ),
+                idempotency=idempotency,
+                trace_attrs={},
+                span_prefix="test",
+            )
+
+        release_idempotency.assert_awaited_once_with(idempotency)
 
     async def test_kb_id_mismatch_releases_idempotency_lock(self) -> None:
         """KB_ID_MISMATCH 导致 prepare_request 失败 → release_idempotency 被调用。"""

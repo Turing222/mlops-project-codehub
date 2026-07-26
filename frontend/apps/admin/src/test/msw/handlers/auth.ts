@@ -5,6 +5,13 @@ import { buildAuthResponse } from '../factories';
 import { validationError } from '../utils';
 
 export const authHandlers = [
+    http.get(API_URLS.AUTH.CONFIG, () =>
+        HttpResponse.json({
+            'enable-public-registration': true,
+            'enable-closed-beta-login': false,
+            'enable-password-login': false,
+        }),
+    ),
     http.post(API_URLS.AUTH.LOGIN, async ({ request }) => {
         const body = await request.text();
         const params = new URLSearchParams(body);

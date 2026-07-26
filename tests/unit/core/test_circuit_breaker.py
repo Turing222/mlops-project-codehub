@@ -14,8 +14,6 @@ import pytest
 from backend.core.circuit_breaker import CircuitBreaker, CircuitState
 from backend.core.exceptions import AppException
 
-pytestmark = pytest.mark.asyncio
-
 
 def make_breaker(
     *,
@@ -43,7 +41,7 @@ async def assert_circuit_open(breaker: CircuitBreaker) -> None:
     assert exc_info.value.code == "CIRCUIT_BREAKER_OPEN"
 
 
-# --- CLOSED ----------------------------------------------------------------
+# CLOSED
 
 
 async def test_closed_breaker_allows_calls() -> None:
@@ -64,9 +62,7 @@ async def test_failures_below_threshold_stay_closed() -> None:
     await breaker.acquire()
 
 
-# --- CLOSED -> OPEN --------------------------------------------------------
-
-
+# CLOSED -> OPEN
 async def test_reaching_threshold_opens_circuit() -> None:
     breaker = make_breaker(failure_threshold=3, cooldown_seconds=60)
 
@@ -77,9 +73,7 @@ async def test_reaching_threshold_opens_circuit() -> None:
     await assert_circuit_open(breaker)
 
 
-# --- OPEN -> HALF_OPEN -----------------------------------------------------
-
-
+# OPEN -> HALF_OPEN
 async def test_cooldown_elapsed_transitions_to_half_open() -> None:
     breaker = make_breaker(failure_threshold=3, cooldown_seconds=0)
 
@@ -89,9 +83,7 @@ async def test_cooldown_elapsed_transitions_to_half_open() -> None:
     assert breaker._state == CircuitState.HALF_OPEN
 
 
-# --- HALF_OPEN -> CLOSED / OPEN --------------------------------------------
-
-
+# HALF_OPEN -> CLOSED / OPEN
 async def test_half_open_success_closes_circuit() -> None:
     breaker = make_breaker(failure_threshold=3, cooldown_seconds=0)
 
@@ -114,9 +106,7 @@ async def test_half_open_failure_reopens_circuit() -> None:
     assert breaker._state == CircuitState.OPEN
 
 
-# --- HALF_OPEN 探测限流（缺陷 1 的目标行为） ------------------------------
-
-
+# HALF_OPEN 探测限流（缺陷 1 的目标行为）
 async def test_half_open_limits_concurrent_probes() -> None:
     breaker = make_breaker(failure_threshold=3, cooldown_seconds=0)
 

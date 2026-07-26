@@ -42,9 +42,7 @@ def sample_history() -> list[dict[str, str]]:
     ]
 
 
-# ============================================================
 # Jinja2 模板渲染测试
-# ============================================================
 
 
 class TestTemplateRendering:
@@ -89,9 +87,7 @@ class TestTemplateRendering:
         assert "基于你的通用知识回答" not in result
 
 
-# ============================================================
 # 基础组装测试
-# ============================================================
 
 
 class TestBasicAssembly:
@@ -130,9 +126,7 @@ class TestBasicAssembly:
         assert result.messages[-1]["content"] == "新问题"
 
 
-# ============================================================
 # 分组逻辑测试
-# ============================================================
 
 
 class TestGroupIntoRounds:
@@ -167,9 +161,7 @@ class TestGroupIntoRounds:
         assert all(m["role"] != "system" for m in rounds[0])
 
 
-# ============================================================
 # Token 工具测试
-# ============================================================
 
 
 class TestTokenUtils:

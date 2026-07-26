@@ -6,12 +6,12 @@ from .access import (
     WorkspaceRole,
 )
 from .base import AuditMixin, Base, BaseIdModel
-from .chat import ChatMessage, ChatSession
+from .chat import ChatGenerationRequest, ChatMessage, ChatSession
 from .chunk import ChunkSourceType, DocumentChunk
 from .credits import CreditAccount, CreditTransaction, UsageRecord
 from .knowledge import File, FileStatus, FileVisibility, KnowledgeBase
 from .repo_analysis import RepoAnalysisResult, RepoAnalysisRun, RepoAnalysisStatus
-from .task import TaskJob
+from .task import TaskJob, TaskOutbox, TaskOutboxStatus
 from .user import User
 
 __all__ = [
@@ -20,6 +20,7 @@ __all__ = [
     "AuditOutcome",
     "Base",
     "BaseIdModel",
+    "ChatGenerationRequest",
     "ChatMessage",
     "ChatSession",
     "ChunkSourceType",
@@ -34,6 +35,8 @@ __all__ = [
     "RepoAnalysisRun",
     "RepoAnalysisStatus",
     "TaskJob",
+    "TaskOutbox",
+    "TaskOutboxStatus",
     "UsageRecord",
     "User",
     "UserWorkspaceRole",

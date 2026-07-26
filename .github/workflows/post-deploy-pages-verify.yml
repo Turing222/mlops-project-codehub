@@ -3,7 +3,7 @@ name: Post-Deploy Pages Verify
 # Cloudflare Pages 发布后自动校验 release 边界契约（CORS、CSP report-only header、
 # telemetry / CSP report origin 守卫）。把原先纯手动的 `make verify-pages` 自动化，
 # 关上 R3 缺口。脚本是 split-origin 感知的 bash+curl，无需 Node/Python。
-# 详见 docs/assessments/frontend-cicd-assessment-2026-06-14.md §8.3。
+# 详见 docs/assessments/2026-06-14-frontend-cicd.md §8.3。
 
 on:
   deployment_status:

@@ -28,5 +28,9 @@ After loading the relevant project reference, load exactly one task-mode skill u
 - `write` for new files or new capability surfaces.
 - `edit` for modifying existing files.
 - `add-tests` for test coverage (pytest / Vitest / Playwright).
+- `review` for code review of diffs, commits, or PRs.
+- `debug` for evidence-first troubleshooting of faults and incidents.
+
+Route fix / troubleshooting / review ambiguity per the Fix & Troubleshooting Routing section in [task-mode.md](references/task-mode.md).
 
 After `write` or `edit`, consider `add-tests` if behavior changed or coverage gaps exist.

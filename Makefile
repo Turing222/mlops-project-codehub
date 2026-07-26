@@ -50,16 +50,10 @@ DEPLOY_SECRET_DIR_EXPLICIT := $(call explicit_env_override,DEPLOY_SECRET_DIR)
 DEPLOY_SMOKE_PYTEST_TARGETS_EXPLICIT := $(call explicit_env_override,DEPLOY_SMOKE_PYTEST_TARGETS)
 LOCAL_PROD_DEPLOY_EXTRA_COMPOSE_FILES ?= deploy/docker-compose.local-postgres.yml deploy/docker-compose.local-s3.yml deploy/docker-compose.local-logging.yml
 LOCAL_PROD_DEPLOY_ENV := \
-	DEPLOY_ENV_FILE=deploy/.env.ec2.template \
-	DEPLOY_SECRET_DIR=secrets/local-prod DEPLOY_SECRET_DIR_EXPLICIT=1 \
+	DEPLOY_ENV_FILE=deploy/.env.local-prod.template \
 	DEPLOY_EXTRA_COMPOSE_FILES="$(LOCAL_PROD_DEPLOY_EXTRA_COMPOSE_FILES)" DEPLOY_EXTRA_COMPOSE_FILES_EXPLICIT=1 \
-	DEPLOY_ENABLE_FRONTEND_FALLBACK=true DEPLOY_ENABLE_FRONTEND_FALLBACK_EXPLICIT=1 \
-	DEPLOY_CHECK_FRONTEND_HEALTH=true DEPLOY_CHECK_FRONTEND_HEALTH_EXPLICIT=1 \
 	FRONTEND_PUBLIC_PORT=8080 \
-	DEPLOY_BASE_URL=http://localhost:8080 DEPLOY_BASE_URL_EXPLICIT=1 \
-	DEPLOY_FRONTEND_BASE_URL=http://localhost:8080 DEPLOY_FRONTEND_BASE_URL_EXPLICIT=1 \
-	DOCKER_IMAGE_NAME_WEB_EXPLICIT=1 DOCKER_IMAGE_NAME_AI_EXPLICIT=1 DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT=1 \
-	POSTGRES_SERVER=postgres POSTGRES_SSL_MODE=disable S3_BUCKET=dewflow-local-prod
+	DOCKER_IMAGE_NAME_WEB_EXPLICIT=1 DOCKER_IMAGE_NAME_AI_EXPLICIT=1 DOCKER_IMAGE_NAME_FRONTEND_EXPLICIT=1
 FRONTEND_DIR ?= frontend
 FRONTEND_APP ?= admin
 E2E_SMOKE_USER ?= seed_admin
@@ -104,14 +98,14 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-skill-check qa-standards-fast qa-claude-fast qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
+	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-skill-check qa-serena-smoke qa-docs qa-standards-fast qa-claude-fast qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	frontend-lint frontend-typecheck frontend-test frontend-test-coverage frontend-build frontend-bundle-check frontend-build-pages-check frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all release-check-clean image-build-release frontend-image-build-release image-build-all-release release-image-env release-tag \
 	docker-prune-stale-infra \
-		deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down deploy-cloudwatch-setup \
+		deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down deploy-cloudwatch-setup deploy-cloudwatch-verify-delivery deploy-bootstrap-prod \
 	deploy-local-prod-secrets-prepare deploy-local-prod-check deploy-local-prod-up deploy-local-prod-wait deploy-local-prod-verify deploy-local-prod-logs deploy-local-prod-down \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-up-debug env-smoke-wait env-smoke-down env-smoke-logs \
-	set-llm seed-dev \
+	set-llm seed-dev seed-prod-bootstrap \
 	pr-report ci-bootstrap-github-gate \
 	verify-smoke verify-pages \
 	security-scan-deps security-scan-images security-scan-fast security-scan-full \
@@ -147,6 +141,8 @@ help:
 		'  qa-agent-flow        Reserved entrypoint for agent/C2C flow tests' \
 		'  qa-checks            Run lint and typecheck via scripts' \
 		'  qa-skill-check       Validate local Codex skill contracts' \
+		'  qa-serena-smoke      Check Serena symbols for fixed Python/TypeScript files' \
+		'  qa-docs              Validate documentation naming, links, index, and layout' \
 		'  qa-standards-fast    Run fast standards checks for files or default project paths' \
 		'  qa-claude-fast       Alias for qa-standards-fast (kept for Claude hook wiring)' \
 		'  frontend-lint        Run frontend ESLint checks' \
@@ -177,6 +173,8 @@ help:
 			'  deploy-ec2-logs      Show recent EC2 deploy logs' \
 			'  deploy-ec2-down      Stop the EC2 deploy stack' \
 			'  deploy-cloudwatch-setup  Create/update CloudWatch log alarms and SNS topic' \
+			'  deploy-cloudwatch-verify-delivery  Emit and observe the controlled T1-Lite Alarm signal' \
+		'  deploy-bootstrap-prod  Orchestrate first prod bootstrap (ARGS=ec2-stack|github-gate|verify-pages)' \
 			'  deploy-local-prod-up Start local production-shape rehearsal stack with MinIO S3' \
 		'  deploy-local-prod-down Stop local production-shape rehearsal stack' \
 		'  env-smoke-prepare    Generate the smoke env file from template' \
@@ -186,6 +184,7 @@ help:
 		'  env-smoke-wait       Wait until the smoke environment is reachable' \
 		'  set-llm              Advanced: configure smoke LLM secrets/env' \
 		'  seed-dev             Seed fixed local data for admin/permission testing' \
+		'  seed-prod-bootstrap  Bootstrap one manual-test user for deployed environments' \
 		'  pr-report            Generate a local PR readiness Markdown report' \
 		'  ci-bootstrap-github-gate  Bootstrap GitHub secrets/vars and optional branch protection (needs gh)' \
 		'  verify-smoke         Run smoke HTTP checks against the running stack' \
@@ -282,7 +281,13 @@ qa-checks:
 qa-skill-check:
 	uv run python scripts/qa/check_skills.py
 
-qa-standards-fast: qa-skill-check
+qa-serena-smoke:
+	uv run python scripts/qa/check_serena_mcp.py
+
+qa-docs:
+	uv run python scripts/qa/check_docs.py
+
+qa-standards-fast: qa-skill-check qa-docs
 	uv run python scripts/qa/check_claude_fast.py $(if $(strip $(FILES)),$(FILES),$(QA_STANDARDS_FAST_TARGETS))
 
 qa-claude-fast: qa-standards-fast
@@ -392,6 +397,12 @@ deploy-ec2-down:
 deploy-cloudwatch-setup:
 	bash deploy/monitoring/cloudwatch-setup.sh
 
+deploy-cloudwatch-verify-delivery:
+	bash deploy/monitoring/cloudwatch-verify-delivery.sh
+
+deploy-bootstrap-prod:
+	bash scripts/deploy/bootstrap-prod.sh $(ARGS)
+
 deploy-local-prod-secrets-prepare:
 	$(LOCAL_PROD_DEPLOY_ENV) bash scripts/deploy/local-prod-secrets-prepare.sh
 
@@ -439,6 +450,9 @@ set-llm:
 
 seed-dev:
 	uv run python scripts/seed/dev_seed.py $(ARGS)
+
+seed-prod-bootstrap:
+	uv run python scripts/seed/prod_bootstrap_user.py $(ARGS)
 
 pr-report:
 	uv run python scripts/qa/pr_report.py $(ARGS)

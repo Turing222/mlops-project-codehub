@@ -327,7 +327,7 @@ compose_smoke() {
 }
 
 resolve_smoke_registry_services() {
-    local -a services=(postgres redis knowledge_storage_init)
+    local -a services=(postgres redis-cache redis-taskiq knowledge_storage_init)
     local smoke_env_path
     local llm_provider
     local storage_backend
@@ -668,7 +668,7 @@ compose_deploy() {
 }
 
 resolve_deploy_registry_services() {
-    local -a services=(redis api-nginx)
+    local -a services=(redis-cache redis-taskiq api-nginx)
     local extra_compose_file
     local base_name
     local provider_var

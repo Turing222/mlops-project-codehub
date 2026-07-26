@@ -15,7 +15,7 @@ import pytest
 from backend.services.vector_index_service import CHUNKING_VERSION, VectorIndexService
 from backend.utils.token_estimation import count_tokens
 
-pytestmark = pytest.mark.asyncio
+pytestmark = pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
 
 
 class _FakeUoW:
@@ -301,7 +301,6 @@ async def test_hybrid_search_returns_vector_hits_when_fulltext_empty() -> None:
     ]
 
 
-@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
 def test_fuse_hybrid_hits_only_vector_hits() -> None:
     chunk_a = SimpleNamespace(id=uuid.uuid4())
     chunk_b = SimpleNamespace(id=uuid.uuid4())
@@ -325,7 +324,6 @@ def test_fuse_hybrid_hits_only_vector_hits() -> None:
     assert result[0]["evidence_score"] == 0.9
 
 
-@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
 def test_fuse_hybrid_hits_uses_rrf_when_both_channels_have_hits() -> None:
     chunk_a = SimpleNamespace(id=uuid.uuid4())
     chunk_b = SimpleNamespace(id=uuid.uuid4())
@@ -351,7 +349,6 @@ def test_fuse_hybrid_hits_uses_rrf_when_both_channels_have_hits() -> None:
     ]
 
 
-@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
 def test_fuse_hybrid_hits_uses_rrf_when_both_channels_have_two_hits() -> None:
     chunk_a = SimpleNamespace(id=uuid.uuid4())
     chunk_b = SimpleNamespace(id=uuid.uuid4())
@@ -371,7 +368,6 @@ def test_fuse_hybrid_hits_uses_rrf_when_both_channels_have_two_hits() -> None:
     assert result[0]["evidence_score"] == 0.9
 
 
-@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
 def test_fuse_hybrid_hits_deduplicates_sparse_dual_channel_hit() -> None:
     chunk = SimpleNamespace(id=uuid.uuid4())
 
@@ -390,7 +386,6 @@ def test_fuse_hybrid_hits_deduplicates_sparse_dual_channel_hit() -> None:
     assert result[0]["evidence_score"] == 0.8
 
 
-@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
 def test_build_single_channel_hybrid_hits_deduplicates_defensively() -> None:
     chunk = SimpleNamespace(id=uuid.uuid4())
 
@@ -406,7 +401,6 @@ def test_build_single_channel_hybrid_hits_deduplicates_defensively() -> None:
     assert result[0]["evidence_score"] == 0.8
 
 
-@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
 def test_fuse_hybrid_hits_filters_low_original_scores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

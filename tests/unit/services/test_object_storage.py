@@ -20,8 +20,6 @@ from backend.services.object_storage import (
     UploadSizeLimitExceeded,
 )
 
-pytestmark = pytest.mark.asyncio
-
 
 def make_upload_file(filename: str, content: bytes) -> UploadFile:
     return UploadFile(file=BytesIO(content), filename=filename, size=len(content))

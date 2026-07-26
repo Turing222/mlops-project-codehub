@@ -26,7 +26,7 @@ spec:
       authenticationRef:
         name: dewflow-redis-auth
       metadata:
-        address: redis.dewflow.svc.cluster.local:6379
-        databaseIndex: "1"
+        address: redis-taskiq.dewflow.svc.cluster.local:6379
+        databaseIndex: "0"
         listName: taskiq
         listLength: "3"

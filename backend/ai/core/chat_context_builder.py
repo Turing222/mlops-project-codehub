@@ -414,7 +414,13 @@ class ChatContextBuilder:
                 )
                 return chunks
         except Exception as exc:
-            logger.warning("RAG 检索失败，降级为普通对话: %s", exc)
+            logger.warning(
+                "RAG retrieval failed; using ordinary chat context",
+                extra={
+                    "event": "rag_retrieval_degraded",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return []
 
     async def _retrieve_from_service(

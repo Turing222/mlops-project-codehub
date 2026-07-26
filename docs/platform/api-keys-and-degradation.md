@@ -15,7 +15,7 @@
 
 Secret/配置的解析优先级（高 → 低，见 [ai_settings.py:181-187](../../backend/config/ai_settings.py#L181-L187)）：
 
-```
+```text
 环境变量(env)  >  .env / dotenv  >  *_FILE secret 文件  >  YAML(configs/app/base.yaml + {APP_ENV}.yaml)
 ```
 
@@ -28,7 +28,7 @@ Secret 注入机制：`FOO_FILE` 指向的文件内容会在进程导入时被�
 如果你在旧模板或历史部署记录里看到 `RAG_PLANNER_ENABLED` / `RAG_RERANK_ENABLED`，它们 **不是真实配置字段**（`AISettings` 没有这两个字段，`extra="ignore"` 直接丢弃）。它们 **不控制任何行为**。真正的控制面是：
 
 | 功能 | 真正的开关 |
-|---|---|
+| --- | --- |
 | LLM | `LLM_PROVIDER` + 启动校验 [validate_llm_configs](../../backend/config/llm.py#L236-L264) |
 | RAG planner | GrowthBook flag `enable-rag-planner`（默认 False） |
 | RAG rerank（web 路径） | GrowthBook flag `enable-rag-rerank`（默认 False），见 [api/deps/ai.py:33-34](../../backend/api/deps/ai.py#L33-L34) |
@@ -38,7 +38,7 @@ Secret 注入机制：`FOO_FILE` 指向的文件内容会在进程导入时被�
 ### 1.3 EC2 默认态（模板 + APP_ENV=prod）的生效值
 
 | 配置 | 生效值 | 来源 |
-|---|---|---|
+| --- | --- | --- |
 | `LLM_PROVIDER` | `mock` | `.env.ec2` 覆盖 |
 | `RAG_EMBED_PROVIDER` | `mock` | `.env.ec2` + [base.yaml:29](../../configs/app/base.yaml#L29) |
 | `RAG_RERANK_PROVIDER` | `dashscope` | [base.yaml:31](../../configs/app/base.yaml#L31)（`.env.ec2` 未覆盖） |
@@ -63,7 +63,7 @@ Secret 文件位于 [secrets/ec2/](../../secrets/ec2)（EC2）或 [secrets/local
 ### Tier 0 — 服务间凭证（启动必需，已自动生成）
 
 | Key | 文件 | 用途 | 缺失后果 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `SECRET_KEY` | `secret_key.txt` | JWT/会话签名 | 启动校验失败 [web_settings.py:133-138](../../backend/config/web_settings.py#L133-L138) |
 | `POSTGRES_PASSWORD` | `postgres_password.txt` | DB 密码 | DB 连接/迁移失败 |
 | `REDIS_PASSWORD` | `redis_password.txt` | Redis 密码 | Redis 起不来 |
@@ -71,7 +71,7 @@ Secret 文件位于 [secrets/ec2/](../../secrets/ec2)（EC2）或 [secrets/local
 ### Tier 1 — 让产品"真正可用"的最小集
 
 | 能力 | 需要的 Key | 配置动作 |
-|---|---|---|
+| --- | --- | --- |
 | 真实对话（脱离 mock） | `DEEPSEEK_API_KEY`（直连）**或** `BIFROST_API_KEY` + `BIFROST_ENCRYPTION_KEY`（网关） | `LLM_PROVIDER=deepseek` / `resilient` / `bifrost_pro` |
 | 故障转移（可选但推荐） | 路由内 **每个** profile 的 key，如 `resilient` 需 `DEEPSEEK_API_KEY` + `GEMINI_API_KEY` | `LLM_PROVIDER=resilient`（启动校验要求全齐） |
 | 知识库 RAG 有意义的向量 | 切到真实 embedding：`DASHSCOPE_API_KEY`（qwen3）或 `GEMINI_API_KEY`/`GOOGLE_API_KEY`（google） | `RAG_EMBED_PROVIDER=dashscope`/`google`，**切换后需重建已入库向量** |
@@ -88,7 +88,7 @@ Secret 文件位于 [secrets/ec2/](../../secrets/ec2)（EC2）或 [secrets/local
 ## 3. Key → 功能 → 缺失行为
 
 | Key | 功能 | 缺失时行为 |
-|---|---|---|
+| --- | --- | --- |
 | `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `OPENAI_API_KEY` | LLM 直连 provider（Gemini/Google 同时用于 google embedding） | `LLM_PROVIDER` 指向它而 key 空 → **启动 ValueError**（[llm.py:236-264](../../backend/config/llm.py#L236-L264)）；非该 provider 则无需 |
 | `BIFROST_API_KEY` + `BIFROST_ENCRYPTION_KEY` | Bifrost 网关自身 | 用 `bifrost*` provider 且缺失 → 启动/网关失败 |
 | `DASHSCOPE_API_KEY` | qwen3 embedding / dashscope rerank / Bifrost 上游 | 见第 4 节（构造期 vs 运行期，行为不同） |
@@ -111,7 +111,7 @@ Secret 文件位于 [secrets/ec2/](../../secrets/ec2)（EC2）或 [secrets/local
 **关键区分 —— 构造期 vs 运行期**
 
 | 阶段 | 触发条件 | 是否降级 |
-|---|---|---|
+| --- | --- | --- |
 | **构造期**（建 client 对象） | 只检查 **key 是否为空字符串** | ❌ key 空 → `ValueError`，**不被捕获** → 任务/启动崩 |
 | **运行期**（真正调上游） | 服务挂 / 超时 / 429 / key 失效 | ✅ 一律捕获 + warning + 降级 |
 
@@ -120,7 +120,7 @@ Secret 文件位于 [secrets/ec2/](../../secrets/ec2)（EC2）或 [secrets/local
 ### 降级矩阵
 
 | 组件 | 失败场景 | 行为 | 证据 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | LLM（mock） | — | 返回固定假回复，无需 key | [mock_provider.py](../../backend/ai/providers/llm/mock_provider.py) |
 | **LLM（单 provider）** | 真实 provider 挂 | ❌ **无 fallback**：熔断器开 → 对话报错给用户 | [circuit_breaker.py](../../backend/core/circuit_breaker.py) |
 | LLM（`resilient` 路由） | 首选挂 | ✅ 故障转移到下一 profile（deepseek→gemini）；流式仅在首 chunk 前可切 | [routing_service.py:52-112](../../backend/ai/providers/llm/routing_service.py#L52-L112) |
@@ -145,7 +145,7 @@ Secret 文件位于 [secrets/ec2/](../../secrets/ec2)（EC2）或 [secrets/local
 第 4 节是"按失败场景看降级"，本节是"按调用点看它拥有哪些韧性手段"（读代码直得）：
 
 | 调用点 | 熔断 | 重试 | 超时 | 失败降级 |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **LLM** `PydanticAILLMService` | ✅ `CircuitBreaker`（进程内，5 次/30s） | ✅ OpenAI SDK `max_retries`（单 profile=默认 2；路由内=0） | ✅ chat 首包 30s / 续包 10s | ✅ 路由跨 profile fallback |
 | **LLM 路由** `LLMRoutingService` | 用各候选自己的 breaker | 候选间 fallback（非 retry） | — | ✅ 全挂 → `LLM_ROUTING_FAILED` |
 | **Bifrost 网关**（启用时） | ❌ app 侧无 | ✅ 网关 `max_retries:1`/provider | ✅ provider 级（deepseek 120s） | key 级负载 / 双 key |

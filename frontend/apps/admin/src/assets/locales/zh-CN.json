@@ -70,6 +70,8 @@
     "login": "登录",
     "register": "注册",
     "sign_in": "登录",
+    "staff_sign_in": "内部账号登录",
+    "staff_login_hint": "运维/测试账号请使用用户名密码登录",
     "username": "用户名",
     "email": "邮箱",
     "password": "密码",

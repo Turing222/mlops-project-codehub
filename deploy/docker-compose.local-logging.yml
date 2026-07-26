@@ -11,7 +11,10 @@ services:
   postgres:
     logging: *local-logging
 
-  redis:
+  redis-cache:
+    logging: *local-logging
+
+  redis-taskiq:
     logging: *local-logging
 
   api:

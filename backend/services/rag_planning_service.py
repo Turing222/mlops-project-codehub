@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 from backend.ai.providers.llm.pydantic_ai_models import create_pydantic_ai_model
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import LLMProfile, get_llm_model_config
+from backend.config.settings import settings
 from backend.models.schemas.chat.context_routing import (
     ContextMode,
     ContextSource,
@@ -281,7 +282,13 @@ class RAGPlanningService:
                 set_span_attributes(span, _trace_attrs(plan, used=True, fallback=False))
                 return plan
         except Exception as exc:
-            logger.warning("RAG planner 失败，降级为默认计划: %s", exc)
+            logger.warning(
+                "RAG planner failed; using default plan",
+                extra={
+                    "event": "rag_planner_degraded",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return RAGExecutionPlan.from_settings(
                 has_kb=kb_id is not None,
                 query_text=query_text,
@@ -295,6 +302,7 @@ class RAGPlanningService:
         if self._agent is None:
             try:
                 from pydantic_ai import Agent, PromptedOutput
+                from pydantic_ai.models.instrumented import InstrumentationSettings
             except ImportError as exc:
                 raise RuntimeError("pydantic-ai 未安装") from exc
 
@@ -302,7 +310,10 @@ class RAGPlanningService:
                 self._create_model(),
                 output_type=PromptedOutput(RAGExecutionPlan),
                 instructions=_PLANNER_INSTRUCTIONS,
-                instrument=True,
+                instrument=InstrumentationSettings(
+                    include_binary_content=False,
+                    include_content=settings.TELEMETRY_CAPTURE_CONTENT,
+                ),
                 name="rag_planner",
             )
         return self._agent

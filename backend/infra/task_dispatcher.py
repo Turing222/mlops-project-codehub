@@ -16,7 +16,13 @@ import redis.asyncio as redis
 
 from backend.config.ai_settings import ai_settings
 from backend.contracts.interfaces import AbstractTaskDispatcher
-from backend.models.schemas.chat.payloads import GenerationResult, LLMTaskPayload
+from backend.models.enums import ChatGenerationDispatchMode
+from backend.models.schemas.chat.payloads import (
+    GenerationAttemptPayload,
+    GenerationDispatchContext,
+    GenerationResult,
+    LLMTaskPayload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +41,13 @@ class TaskDispatcher(AbstractTaskDispatcher):
     def __init__(self, redis_client: redis.Redis) -> None:
         self._redis_client = redis_client
 
-    async def _send_task(self, task_name: str, *args: Any) -> str:
-        task_id = uuid4().hex
+    async def _send_task(
+        self,
+        task_name: str,
+        *args: Any,
+        task_id: str | None = None,
+    ) -> str:
+        task_id = task_id or uuid4().hex
         message = self._build_taskiq_message(
             task_id=task_id, task_name=task_name, args=args
         )
@@ -95,6 +106,7 @@ class TaskDispatcher(AbstractTaskDispatcher):
         assistant_message_id: str | None = None,
         user_id: str | None = None,
         idempotency_lock_key: str | None = None,
+        generation_attempt: GenerationAttemptPayload | None = None,
     ) -> None:
         payload = LLMTaskPayload(
             generation_payload=generation_payload,
@@ -103,8 +115,13 @@ class TaskDispatcher(AbstractTaskDispatcher):
             assistant_message_id=assistant_message_id,
             user_id=user_id,
             idempotency_lock_key=idempotency_lock_key,
+            generation_attempt=generation_attempt,
         )
-        await self._send_task(TASK_STREAM, payload.model_dump(mode="json"))
+        await self._send_task(
+            TASK_STREAM,
+            payload.model_dump(mode="json"),
+            task_id=generation_attempt.task_id if generation_attempt else None,
+        )
 
     async def enqueue_nonstream(
         self,
@@ -113,6 +130,7 @@ class TaskDispatcher(AbstractTaskDispatcher):
         assistant_message_id: str | None = None,
         user_id: str | None = None,
         idempotency_lock_key: str | None = None,
+        generation_attempt: GenerationAttemptPayload | None = None,
     ) -> GenerationResult:
         payload = LLMTaskPayload(
             generation_payload=generation_payload,
@@ -121,24 +139,62 @@ class TaskDispatcher(AbstractTaskDispatcher):
             assistant_message_id=assistant_message_id,
             user_id=user_id,
             idempotency_lock_key=idempotency_lock_key,
+            generation_attempt=generation_attempt,
         )
-        task_id = await self._send_task(TASK_NONSTREAM, payload.model_dump(mode="json"))
+        task_id = await self._send_task(
+            TASK_NONSTREAM,
+            payload.model_dump(mode="json"),
+            task_id=generation_attempt.task_id if generation_attempt else None,
+        )
         result = await self._wait_result(
             task_id, timeout=ai_settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS + 300
         )
         return GenerationResult.model_validate(result)
+
+    async def enqueue_generation_recovery(
+        self,
+        *,
+        dispatch_context: GenerationDispatchContext,
+        assistant_message_id: str,
+        user_id: str,
+        generation_attempt: GenerationAttemptPayload,
+        trace_context: dict[str, str] | None = None,
+    ) -> None:
+        """Redispatch without waiting for a result in the recovery worker."""
+        is_stream = dispatch_context.mode == ChatGenerationDispatchMode.STREAM
+        payload = LLMTaskPayload(
+            generation_payload=dispatch_context.generation_payload.model_dump(
+                mode="json"
+            ),
+            channel=f"stream:{generation_attempt.task_id}" if is_stream else None,
+            trace_context=trace_context,
+            assistant_message_id=assistant_message_id,
+            user_id=user_id,
+            idempotency_lock_key=dispatch_context.idempotency_lock_key,
+            generation_attempt=generation_attempt,
+        )
+        await self._send_task(
+            TASK_STREAM if is_stream else TASK_NONSTREAM,
+            payload.model_dump(mode="json"),
+            task_id=generation_attempt.task_id,
+        )
 
     async def enqueue_ingestion(
         self,
         file_id: str,
         task_id: str | None = None,
         trace_context: dict[str, str] | None = None,
+        *,
+        outbox_id: str | None = None,
+        message_id: str | None = None,
     ) -> None:
         await self._send_task(
             TASK_INGESTION,
             file_id,
             task_id,
             trace_context,
+            outbox_id,
+            task_id=message_id,
         )
 
     async def enqueue_repo_analysis(

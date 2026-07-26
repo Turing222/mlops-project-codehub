@@ -15,8 +15,6 @@ import pytest
 from backend.api.v1.endpoint import audit_api
 from backend.core.exceptions import AppException
 
-pytestmark = pytest.mark.asyncio
-
 
 class DummyUoW:
     def __init__(self) -> None:

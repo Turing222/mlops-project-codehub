@@ -1,6 +1,12 @@
+"""Chat API component tests.
+
+职责：验证 chat 路由的 ASGI 装配与请求/响应序列化；边界：用 dependency override 与 ASGITransport，不连真实下游；副作用：无。
+"""
+
 from __future__ import annotations
 
 import uuid
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -11,8 +17,10 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.api.v1.endpoint import chat_api
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
+from backend.application.chat.web_stream_workflow import ChatWorkflow
 from backend.config.settings import settings
-from backend.models.orm.chat import MessageStatus
+from backend.core.exception_handlers import setup_exception_handlers
+from backend.models.enums import ChatGenerationStatus, MessageStatus
 from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 from backend.models.schemas.chat.payloads import GenerationResult
@@ -35,6 +43,9 @@ def _make_mock_feature_flag_service(
     }
     svc = AsyncMock(spec=FeatureFlagService)
     svc.get_system_features = AsyncMock(return_value=flags)
+    svc.get_user_features = AsyncMock(
+        return_value={"chat-explicit-retry": flags.get("chat-explicit-retry", False)}
+    )
     return svc
 
 
@@ -62,6 +73,7 @@ def make_session(**overrides):
         "id": uuid.uuid4(),
         "title": "已有会话",
         "user_id": uuid.uuid4(),
+        "workspace_id": None,
         "kb_id": None,
         "llm_config": {},
         "total_tokens": 0,
@@ -129,6 +141,7 @@ class FakeChatRepo:
         self.sessions: dict[uuid.UUID, SimpleNamespace] = {}
         self.messages: dict[uuid.UUID, SimpleNamespace] = {}
         self.session_messages: dict[uuid.UUID, list[SimpleNamespace]] = {}
+        self.generation_requests: dict[uuid.UUID, SimpleNamespace] = {}
 
     def seed_session(self, session):
         self.sessions[session.id] = session
@@ -155,6 +168,113 @@ class FakeChatRepo:
     async def get_context_state(self, session_id: uuid.UUID) -> ContextState:
         return ContextState()
 
+    async def create_generation_request(
+        self,
+        *,
+        user_id: uuid.UUID,
+        client_request_id: str,
+        session_id: uuid.UUID,
+        workspace_id: uuid.UUID | None = None,
+        user_message_id: uuid.UUID | None = None,
+        assistant_message_id: uuid.UUID | None = None,
+        dispatch_context: dict[str, object] | None = None,
+        recovery_due_at=None,
+        reserved_credits: int = 0,
+    ) -> SimpleNamespace:
+        request = SimpleNamespace(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            client_request_id=client_request_id,
+            session_id=session_id,
+            workspace_id=workspace_id,
+            user_message_id=user_message_id,
+            assistant_message_id=assistant_message_id,
+            status=ChatGenerationStatus.PREPARED,
+            attempt=1,
+            dispatch_attempts=0,
+            dispatch_context=dispatch_context,
+            task_id=None,
+            lease_token=None,
+            retryable=False,
+            error_code=None,
+            error_message=None,
+            recovery_due_at=recovery_due_at,
+            reserved_credits=reserved_credits,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            finished_at=None,
+        )
+        self.generation_requests[request.id] = request
+        return request
+
+    async def get_generation_request_by_client_request_id_for_actor(
+        self,
+        *,
+        user_id: uuid.UUID,
+        client_request_id: str,
+    ) -> SimpleNamespace | None:
+        return next(
+            (
+                request
+                for request in self.generation_requests.values()
+                if request.user_id == user_id
+                and request.client_request_id == client_request_id
+            ),
+            None,
+        )
+
+    async def get_generation_request_for_actor(
+        self,
+        *,
+        request_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> SimpleNamespace | None:
+        request = self.generation_requests.get(request_id)
+        if request is None or request.user_id != user_id:
+            return None
+        session = self.sessions.get(request.session_id)
+        if session is None or getattr(session, "deleted_at", None) is not None:
+            return None
+        return request
+
+    async def get_generation_requests_for_session_for_actor(
+        self,
+        *,
+        session_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> list[SimpleNamespace]:
+        return [
+            request
+            for request in self.generation_requests.values()
+            if request.session_id == session_id and request.user_id == user_id
+        ]
+
+    async def try_queue_generation_request(
+        self,
+        *,
+        request_id: uuid.UUID,
+        user_id: uuid.UUID,
+        expected_attempt: int,
+        task_id: str,
+        lease_token: str,
+        queued_at,
+        recovery_due_at,
+    ) -> bool:
+        request = self.generation_requests.get(request_id)
+        if (
+            request is None
+            or request.user_id != user_id
+            or request.status != ChatGenerationStatus.PREPARED
+            or request.attempt != expected_attempt
+        ):
+            return False
+        request.status = ChatGenerationStatus.QUEUED
+        request.task_id = task_id
+        request.lease_token = lease_token
+        request.queued_at = queued_at
+        request.recovery_due_at = recovery_due_at
+        return True
+
     async def create_message(
         self,
         session_id: uuid.UUID,
@@ -173,6 +293,7 @@ class FakeChatRepo:
             status=status,
             client_request_id=client_request_id,
             search_context=search_context,
+            message_metadata=message_metadata or {},
         )
         return self.seed_message(message)
 
@@ -322,6 +443,10 @@ class FakeUnitOfWork:
     def savepoint(self):
         return self
 
+    @asynccontextmanager
+    async def read_context(self):
+        yield self
+
 
 class RecordingLLMService:
     def __init__(self):
@@ -353,6 +478,7 @@ def stable_test_environment():
 @pytest.fixture
 def api_context():
     app = FastAPI()
+    setup_exception_handlers(app)
     app.include_router(chat_api.router, prefix="/api/v1/chat")
 
     current_user = make_user()
@@ -371,20 +497,30 @@ def api_context():
             latency_ms=200,
         )
     )
+    feature_flag_service = _make_mock_feature_flag_service()
+    permission_service = SimpleNamespace(
+        has_permission_for_user_id=AsyncMock(return_value=True),
+    )
     workflow = ChatNonStreamWorkflow(
         uow=uow,
         dispatcher=mock_dispatcher,
         redis_client=AsyncMock(),
-        permission_service=SimpleNamespace(
-            has_permission_for_user_id=AsyncMock(return_value=True),
-        ),
-        feature_flag_service=_make_mock_feature_flag_service(),
+        permission_service=permission_service,
+        feature_flag_service=feature_flag_service,
+    )
+    stream_workflow = ChatWorkflow(
+        uow=uow,
+        dispatcher=mock_dispatcher,
+        redis_client=AsyncMock(),
+        permission_service=permission_service,
+        feature_flag_service=feature_flag_service,
     )
 
-    # --- 依赖覆盖 ---
+    # 依赖覆盖
     # 1. 核心业务依赖
     app.dependency_overrides[chat_api.get_current_active_user] = lambda: current_user
     app.dependency_overrides[chat_api.get_chat_nonstream_workflow] = lambda: workflow
+    app.dependency_overrides[chat_api.get_chat_workflow] = lambda: stream_workflow
     app.dependency_overrides[chat_api.chat_limiter] = lambda: None
 
     # 2. 修复存量 bug：测试用裸 FastAPI() 没走 lifespan，
@@ -414,6 +550,7 @@ def api_context():
         uow=uow,
         llm_service=llm_service,
         workflow=workflow,
+        stream_workflow=stream_workflow,
     )
     yield ctx
     app.dependency_overrides.clear()
@@ -426,7 +563,6 @@ async def client(api_context):
         yield ac
 
 
-@pytest.mark.asyncio
 async def test_query_sent_uses_memory_summary_and_updates_tokens(
     client,
     api_context,
@@ -493,7 +629,8 @@ async def test_query_sent_uses_memory_summary_and_updates_tokens(
     mock_dispatcher = api_context.workflow.dispatcher
     mock_dispatcher.enqueue_nonstream.assert_awaited_once()
     dispatch_args = mock_dispatcher.enqueue_nonstream.call_args
-    generation_payload = dispatch_args[0][0]
+    generation_payload = dispatch_args.kwargs["generation_payload"]
+    assert dispatch_args.kwargs["generation_attempt"].task_id
     assert generation_payload["query_text"] == "第三轮问题"
     assert generation_payload["session_id"] == str(session.id)
 
@@ -505,7 +642,6 @@ async def test_query_sent_uses_memory_summary_and_updates_tokens(
     assert {"role": "assistant", "content": "第二轮回答"} in history
 
 
-@pytest.mark.asyncio
 async def test_query_sent_rejects_blank_query(client):
     response = await client.post(
         "/api/v1/chat/query_sent",
@@ -513,3 +649,101 @@ async def test_query_sent_rejects_blank_query(client):
     )
 
     assert response.status_code == 422
+
+
+async def test_generation_request_status_and_resolution_are_actor_scoped(
+    client,
+    api_context,
+):
+    session = api_context.chat_repo.seed_session(
+        make_session(user_id=api_context.current_user.id)
+    )
+    user_message = api_context.chat_repo.seed_message(
+        make_message(
+            session_id=session.id,
+            role="user",
+            content="question",
+            status=MessageStatus.SUCCESS,
+        )
+    )
+    assistant_message = api_context.chat_repo.seed_message(
+        make_message(
+            session_id=session.id,
+            role="assistant",
+            content="failed",
+            status=MessageStatus.FAILED,
+        )
+    )
+    generation_request = await api_context.chat_repo.create_generation_request(
+        user_id=api_context.current_user.id,
+        client_request_id="client-status-1",
+        session_id=session.id,
+        user_message_id=user_message.id,
+        assistant_message_id=assistant_message.id,
+    )
+    generation_request.status = ChatGenerationStatus.FAILED
+    generation_request.retryable = True
+    generation_request.error_code = "CHAT_GENERATION_FAILED"
+    generation_request.error_message = "failed"
+    generation_request.finished_at = datetime.now(UTC)
+
+    by_id = await client.get(f"/api/v1/chat/requests/{generation_request.id}")
+    by_client_id = await client.get(
+        "/api/v1/chat/requests/resolve",
+        params={"client_request_id": "client-status-1"},
+    )
+
+    assert by_id.status_code == 200
+    assert by_client_id.status_code == 200
+    assert by_id.json() == by_client_id.json()
+    assert by_id.json()["generation_request_id"] == str(generation_request.id)
+    assert by_id.json()["retryable"] is True
+    assert by_id.json()["error_code"] == "CHAT_GENERATION_FAILED"
+
+
+async def test_generation_request_status_hides_another_actor(
+    client,
+    api_context,
+):
+    other_user_id = uuid.uuid4()
+    session = api_context.chat_repo.seed_session(make_session(user_id=other_user_id))
+    generation_request = await api_context.chat_repo.create_generation_request(
+        user_id=other_user_id,
+        client_request_id="other-client",
+        session_id=session.id,
+    )
+
+    response = await client.get(f"/api/v1/chat/requests/{generation_request.id}")
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "CHAT_GENERATION_REQUEST_NOT_FOUND"
+
+
+async def test_generation_retry_flag_off_fails_closed_without_state_change(
+    client,
+    api_context,
+):
+    session = api_context.chat_repo.seed_session(
+        make_session(user_id=api_context.current_user.id)
+    )
+    generation_request = await api_context.chat_repo.create_generation_request(
+        user_id=api_context.current_user.id,
+        client_request_id="client-retry-disabled",
+        session_id=session.id,
+    )
+    generation_request.status = ChatGenerationStatus.FAILED
+    generation_request.retryable = True
+    generation_request.error_code = "LLM_TIMEOUT"
+
+    response = await client.post(
+        f"/api/v1/chat/requests/{generation_request.id}/retry",
+        json={"expected_attempt": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "CHAT_EXPLICIT_RETRY_DISABLED" in response.text
+    assert "data: [DONE]" in response.text
+    assert generation_request.status == ChatGenerationStatus.FAILED
+    assert generation_request.attempt == 1
+    assert generation_request.retryable is True

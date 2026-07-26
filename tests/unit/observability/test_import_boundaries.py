@@ -1,4 +1,7 @@
-"""Boundary tests: web-facing layer must not directly import the langfuse SDK."""
+"""Import boundaries unit tests.
+
+职责：验证 web 层不直接 import langfuse SDK；边界：静态扫描源码树；副作用：无。
+"""
 
 import re
 from pathlib import Path

@@ -38,7 +38,6 @@ def make_service_with_role(role: WorkspaceRole | None) -> PermissionService:
     )
 
 
-@pytest.mark.asyncio
 async def test_superuser_has_permission_without_role_lookup_returns_true() -> None:
     service = make_service_with_role(None)
     user = make_user(is_superuser=True)
@@ -53,7 +52,6 @@ async def test_superuser_has_permission_without_role_lookup_returns_true() -> No
     service.uow.access_repo.get_workspace_role.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_member_role_allows_file_write_but_denies_role_manage() -> None:
     service = make_service_with_role(WorkspaceRole.MEMBER)
     user = make_user()
@@ -77,7 +75,6 @@ async def test_member_role_allows_file_write_but_denies_role_manage() -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_require_permission_raises_permission_denied_on_missing_role() -> None:
     service = make_service_with_role(WorkspaceRole.VIEWER)
 
@@ -91,7 +88,6 @@ async def test_require_permission_raises_permission_denied_on_missing_role() -> 
     assert exc_info.value.status_code == 403
 
 
-@pytest.mark.asyncio
 async def test_ensure_audit_access_allows_superuser_without_role_lookup() -> None:
     service = make_service_with_role(None)
 
@@ -103,7 +99,6 @@ async def test_ensure_audit_access_allows_superuser_without_role_lookup() -> Non
     service.uow.access_repo.get_workspace_role.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_ensure_audit_access_denies_global_scope_for_non_superuser() -> None:
     service = make_service_with_role(WorkspaceRole.OWNER)
 
@@ -117,7 +112,6 @@ async def test_ensure_audit_access_denies_global_scope_for_non_superuser() -> No
     service.uow.access_repo.get_workspace_role.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_ensure_audit_access_requires_workspace_audit_read_permission() -> None:
     service = make_service_with_role(WorkspaceRole.ADMIN)
     service.require_permission = AsyncMock()
@@ -136,7 +130,6 @@ async def test_ensure_audit_access_requires_workspace_audit_read_permission() ->
     )
 
 
-@pytest.mark.asyncio
 async def test_has_permission_for_user_id_loads_user_and_role_returns_result() -> None:
     service = make_service_with_role(WorkspaceRole.VIEWER)
 

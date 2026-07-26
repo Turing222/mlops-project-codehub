@@ -13,8 +13,6 @@ from backend.core.exceptions import AppException
 from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
 from backend.services.chat_service import ChatMessageUpdater, SessionManager
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture
 def mock_uow() -> AsyncMock:
@@ -158,7 +156,7 @@ class TestSessionManagerEnsureSession:
         assert exc_info.value.code == "KNOWLEDGE_BASE_NOT_FOUND"
         assert str(kb_id) in exc_info.value.message
 
-    # --- KB access re-validation for existing sessions ---
+    # KB access re-validation for existing sessions
 
     async def test_ensure_session_existing_no_kb_id_allowed(
         self, session_manager: SessionManager, mock_uow: AsyncMock

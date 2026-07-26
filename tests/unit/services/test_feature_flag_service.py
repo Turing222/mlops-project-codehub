@@ -1,3 +1,8 @@
+"""Feature flag service unit tests.
+
+职责：验证标志解析与默认值；边界：mock GrowthBook/httpx；副作用：无。
+"""
+
 import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -20,7 +25,6 @@ def feature_flag_service() -> FeatureFlagService:
     )
 
 
-@pytest.mark.asyncio
 async def test_get_system_features_default(
     feature_flag_service: FeatureFlagService,
 ) -> None:
@@ -28,9 +32,9 @@ async def test_get_system_features_default(
     features = await feature_flag_service.get_system_features()
     assert features["enable-public-registration"] is True
     assert features["enable-closed-beta-login"] is False
+    assert features["enable-password-login"] is False
 
 
-@pytest.mark.asyncio
 async def test_get_user_features_regular_user(
     feature_flag_service: FeatureFlagService,
 ) -> None:
@@ -46,9 +50,9 @@ async def test_get_user_features_regular_user(
     assert flags["enable-pixel-avatar"] is True
     assert flags["enable-credits"] is False
     assert flags["enable-agent-trace"] is False
+    assert flags["chat-explicit-retry"] is False
 
 
-@pytest.mark.asyncio
 async def test_get_user_features_superuser(
     feature_flag_service: FeatureFlagService,
 ) -> None:
@@ -64,6 +68,7 @@ async def test_get_user_features_superuser(
     assert flags["enable-pixel-avatar"] is True
     assert flags["enable-credits"] is True
     assert flags["enable-agent-trace"] is True
+    assert flags["chat-explicit-retry"] is False
 
 
 def test_is_beta_user_superuser(feature_flag_service: FeatureFlagService) -> None:
@@ -147,7 +152,7 @@ def test_eval_flag_existing_key_uses_growthbook_sdk() -> None:
     assert FeatureFlagService._eval_flag(gb, "enable-credits", features, False) is True
 
 
-# ── 断路器（CDN 持续故障时熔断，跳过拉取沿用本地缓存） ────────────────
+# 断路器（CDN 持续故障时熔断，跳过拉取沿用本地缓存）
 
 
 class _FakeFailingGrowthBookClient:
@@ -177,7 +182,6 @@ def _live_service() -> FeatureFlagService:
     )
 
 
-@pytest.mark.asyncio
 async def test_growthbook_circuit_breaker_opens_after_failures() -> None:
     service = _live_service()
     fake = _FakeFailingGrowthBookClient()
@@ -193,7 +197,6 @@ async def test_growthbook_circuit_breaker_opens_after_failures() -> None:
     assert fake.calls == 2
 
 
-@pytest.mark.asyncio
 async def test_growthbook_circuit_breaker_recovers_after_cooldown() -> None:
     service = FeatureFlagService(
         growthbook_api_host="https://cdn.growthbook.io",

@@ -10,6 +10,7 @@ import {
   Loader2,
   Copy,
 } from 'lucide-react';
+import { upsertRecentRepoRun } from '../../features/repo-check/recent-runs';
 import { useRepoAnalysisRunQuery } from '../../query/hooks/repo-analysis';
 import type { EvidenceItem, RepoAnalysisStatus } from '../../schemas/repo-analysis';
 import styles from './RepoCheckPage.module.css';
@@ -17,18 +18,6 @@ import styles from './RepoCheckPage.module.css';
 interface RepoAnalysisCardProps {
   runId: string;
 }
-
-type RecentRepoRun = {
-  runId: string;
-  owner: string;
-  repo: string;
-  repoUrl: string;
-  projectName: string;
-  likelyProjectType: string;
-  hypeRisk: string;
-  stars: number;
-  timestamp: number;
-};
 
 // Reusable Markdown Renderer Component
 const MarkdownRenderer: React.FC<{ text: string; renderBadge: (ref: string) => React.ReactNode }> = ({ text, renderBadge }) => {
@@ -271,37 +260,22 @@ const RepoAnalysisCard: React.FC<RepoAnalysisCardProps> = ({ runId }) => {
     return () => clearInterval(timer);
   }, [currentStatus]);
 
-  // Save successful run to history list in localStorage
+  // Persist successful run into the shared recent-runs adapter.
   useEffect(() => {
     if (runData && runData.run.status === 'succeeded') {
       const structuredReport = runData.report?.structured;
       if (structuredReport) {
-        try {
-          const key = 'DEWFLOW_RECENT_REPO_RUNS';
-          const existingStr = localStorage.getItem(key);
-          let list = existingStr ? (JSON.parse(existingStr) as RecentRepoRun[]) : [];
-          
-          // Remove duplicates
-          list = list.filter((item) => item.runId !== runData.run.id && item.repoUrl !== runData.run.repo_url);
-          
-          const newRecord = {
-            runId: runData.run.id,
-            owner: runData.run.owner,
-            repo: runData.run.repo,
-            repoUrl: runData.run.repo_url,
-            projectName: structuredReport.project_name || runData.run.repo,
-            likelyProjectType: structuredReport.likely_project_type || 'unclear',
-            hypeRisk: structuredReport.hype_risk || 'unknown',
-            stars: runData.snapshot?.stars || 0,
-            timestamp: Date.now(),
-          };
-          
-          list.unshift(newRecord);
-          list = list.slice(0, 10); // cap at 10 items
-          localStorage.setItem(key, JSON.stringify(list));
-        } catch {
-          return;
-        }
+        upsertRecentRepoRun({
+          runId: runData.run.id,
+          owner: runData.run.owner,
+          repo: runData.run.repo,
+          repoUrl: runData.run.repo_url,
+          projectName: structuredReport.project_name || runData.run.repo,
+          likelyProjectType: structuredReport.likely_project_type || 'unclear',
+          hypeRisk: structuredReport.hype_risk || 'unknown',
+          stars: runData.snapshot?.stars || 0,
+          timestamp: Date.now(),
+        });
       }
     }
   }, [runData]);

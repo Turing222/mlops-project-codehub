@@ -34,7 +34,7 @@
 - 说明执行顺序、通过标准和失败处理
 - 解释目录职责和命名约定
 
-子目录按文档性质分类：`standards/`、`workflows/`、`platform/`、`reference/`、`assessments/`、`legacy/`、`todos/`。索引见 [docs/README.md](../../README.md)。
+子目录按文档性质分类：`standards/`、`workflows/`、`platform/`、`reference/`、`assessments/`、`legacy/`、`todos/`。索引见 [docs/README.md](../README.md)。
 
 回答的问题：
 

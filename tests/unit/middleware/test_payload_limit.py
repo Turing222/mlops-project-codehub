@@ -13,8 +13,6 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.middleware.payload_limit import PayloadLimitMiddleware
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture
 async def payload_client() -> AsyncIterator[AsyncClient]:

@@ -1,6 +1,6 @@
 """Redis client singleton.
 
-职责：为应用代码提供按需初始化的 Redis 连接（主库 + TaskIQ 库）。
+职责：为应用代码提供按需初始化的缓存 Redis 与 TaskIQ Redis 连接。
 边界：所有 Redis 连接由本模块统一创建和管理；外部模块不自行创建 redis.Redis。
 副作用：连接会在首次 init 时建立，应用关闭时应调用 close。
 """

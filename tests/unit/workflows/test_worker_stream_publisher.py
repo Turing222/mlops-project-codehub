@@ -4,17 +4,14 @@
 边界：使用 FakeRedis，不连接真实 Redis；副作用：无。
 """
 
-import pytest
-
 from backend.application.chat.stream_events import (
     encode_chunk_event,
     encode_done_event,
     encode_error_event,
     encode_started_event,
+    encode_step_event,
 )
 from backend.application.chat.worker_stream_publisher import WorkerStreamPublisher
-
-pytestmark = pytest.mark.asyncio
 
 
 class FakeRedis:
@@ -51,6 +48,29 @@ async def test_publish_error_encodes_and_sends() -> None:
     assert redis.published == [("stream:err", encode_error_event("something failed"))]
 
 
+async def test_publish_error_includes_retry_contract() -> None:
+    redis = FakeRedis()
+    publisher = WorkerStreamPublisher(redis_client=FakeRedisClient(redis))
+
+    await publisher.publish_error(
+        "stream:err",
+        "something failed",
+        error_code="CHAT_GENERATION_FAILED",
+        retryable=True,
+    )
+
+    assert redis.published == [
+        (
+            "stream:err",
+            encode_error_event(
+                "something failed",
+                error_code="CHAT_GENERATION_FAILED",
+                retryable=True,
+            ),
+        )
+    ]
+
+
 async def test_publish_done_encodes_and_sends() -> None:
     redis = FakeRedis()
     publisher = WorkerStreamPublisher(redis_client=FakeRedisClient(redis))
@@ -67,6 +87,29 @@ async def test_publish_started_encodes_and_sends() -> None:
     await publisher.publish_started("stream:started")
 
     assert redis.published == [("stream:started", encode_started_event())]
+
+
+async def test_publish_step_encodes_and_sends() -> None:
+    redis = FakeRedis()
+    publisher = WorkerStreamPublisher(redis_client=FakeRedisClient(redis))
+
+    await publisher.publish_step(
+        "stream:step",
+        "kb-search",
+        "done",
+        {"hit_count": 2},
+    )
+
+    assert redis.published == [
+        (
+            "stream:step",
+            encode_step_event(
+                step="kb-search",
+                status="done",
+                metrics={"hit_count": 2},
+            ),
+        )
+    ]
 
 
 async def test_multiple_publishes_on_same_channel() -> None:

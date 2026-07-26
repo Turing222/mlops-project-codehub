@@ -1,3 +1,8 @@
+"""TaskIQ broker integration tests.
+
+职责：验证真实 TaskIQ broker 收发；边界：需 requires_taskiq；副作用：连真实 broker。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -34,6 +39,9 @@ _WORKER_INHERIT_ENV_KEYS = [
     "REDIS_PASSWORD",
     "REDIS_URL",
     "TASKIQ_REDIS_URL",
+    "TASKIQ_REDIS_HOST",
+    "TASKIQ_REDIS_PORT",
+    "TASKIQ_RESULT_TTL_SECONDS",
     "DATABASE_URL",
     "POSTGRES_USER",
     "POSTGRES_SERVER",
@@ -118,15 +126,16 @@ def taskiq_worker():
                 proc.wait(timeout=5)
 
 
-@pytest.mark.asyncio
 async def test_taskiq_worker_consumes_task_from_redis(taskiq_worker, taskiq_redis):
     result_key = f"itest:taskiq:{uuid.uuid4().hex}"
     expected_value = "hello-taskiq"
+    task_id: str | None = None
 
     await taskiq_redis.delete(result_key)
 
     try:
-        await integration_echo_task.kiq(result_key, expected_value)
+        task = await integration_echo_task.kiq(result_key, expected_value)
+        task_id = task.task_id
 
         actual_value = None
         for _ in range(50):
@@ -136,5 +145,9 @@ async def test_taskiq_worker_consumes_task_from_redis(taskiq_worker, taskiq_redi
             await asyncio.sleep(0.2)
 
         assert actual_value == expected_value
+        result_ttl = await taskiq_redis.ttl(task_id)
+        assert 0 < result_ttl <= settings.TASKIQ_RESULT_TTL_SECONDS
     finally:
         await taskiq_redis.delete(result_key)
+        if task_id is not None:
+            await taskiq_redis.delete(task_id)

@@ -11,6 +11,7 @@ This file is the lightweight routing index for Codex. Dewflow is a monorepo: Fas
 - Backend: preserve the 3-tier call chain (endpoint -> service -> repository -> ORM); use `uv run` for Python commands.
 - Frontend: validate through `make frontend-*` targets; manage packages with pnpm only.
 - Cap noisy output with `| head -200`. Do not browse localhost; use `curl` for local health checks.
+- Before suggesting deletion of configs, databases, backups, logs, chat/session history, credentials, or app state directories, warn about data loss and recommend a backup or non-destructive check first.
 - If files were modified, append the Change Summary block defined in `.codex/skills/project/references/handoff.md`.
 
 ## Local Skills
@@ -28,6 +29,7 @@ This file is the lightweight routing index for Codex. Dewflow is a monorepo: Fas
 
 - For broad implementation work, prefer Claude Code built-in `/plan`; use `task-plan` when you need to create/update `work-items/` artifacts or sync approved planning conclusions.
 - For review or debug requests, load the named skill and any project reference it asks for.
+- Route fix / troubleshooting / review ambiguity per the Fix & Troubleshooting Routing rules in `.codex/skills/project/references/task-mode.md`.
 - After `write` or `edit`, consider `add-tests` if behavior changed or coverage gaps exist.
 - Simple tasks may skip `task-plan` and proceed directly to the smallest execution skill.
 - Keep `AGENTS.md` short; move durable details into skill references instead of expanding this file.

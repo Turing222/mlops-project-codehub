@@ -24,6 +24,7 @@ from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chunking_service import ChunkingService, ChunkPayload
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.safety_scanner import SafetyScanner
+from backend.services.task_service import TaskService
 from backend.services.vector_index_service import VectorIndexService
 
 logger = logging.getLogger(__name__)
@@ -37,18 +38,26 @@ class KnowledgeRAGWorkflow:
         knowledge_service: KnowledgeService,
         chunking_service: ChunkingService,
         vector_index_service: VectorIndexService,
+        task_service: TaskService | None = None,
     ) -> None:
         self.knowledge_service = knowledge_service
         self.chunking_service = chunking_service
         self.vector_index_service = vector_index_service
+        self.task_service = task_service
 
     async def ingest_file(
         self,
         *,
         file_id: uuid.UUID,
+        task_id: uuid.UUID | None = None,
+        expected_attempt: int | None = None,
     ) -> None:
         with trace_span("knowledge.ingest.load_file", {"rag.file_id": file_id}) as span:
             async with self.knowledge_service.uow:
+                await self._ensure_active_attempt(
+                    task_id=task_id,
+                    expected_attempt=expected_attempt,
+                )
                 success = await self.knowledge_service.try_transition_file_status(
                     file_id=file_id,
                     expected_previous_statuses=[FileStatus.UPLOADED],
@@ -116,6 +125,10 @@ class KnowledgeRAGWorkflow:
                 },
             ):
                 async with self.knowledge_service.uow:
+                    await self._ensure_active_attempt(
+                        task_id=task_id,
+                        expected_attempt=expected_attempt,
+                    )
                     success = await self.knowledge_service.try_transition_file_status(
                         file_id=file_id,
                         expected_previous_statuses=[FileStatus.PARSING],
@@ -143,22 +156,40 @@ class KnowledgeRAGWorkflow:
                             code="KNOWLEDGE_FILE_NOT_CHUNKING",
                         )
         except FileNotFoundError as exc:
-            await self._cleanup_failed_ingestion(file_id=file_id)
+            await self._cleanup_failed_ingestion(
+                file_id=file_id,
+                task_id=task_id,
+                expected_attempt=expected_attempt,
+            )
             raise app_not_found(
                 "上传文件在存储路径中不存在",
                 code="KNOWLEDGE_FILE_OBJECT_NOT_FOUND",
             ) from exc
         except AppException:
-            await self._cleanup_failed_ingestion(file_id=file_id)
+            await self._cleanup_failed_ingestion(
+                file_id=file_id,
+                task_id=task_id,
+                expected_attempt=expected_attempt,
+            )
             raise
         except Exception as exc:
-            await self._cleanup_failed_ingestion(file_id=file_id)
+            await self._cleanup_failed_ingestion(
+                file_id=file_id,
+                task_id=task_id,
+                expected_attempt=expected_attempt,
+            )
             raise app_service_error(
                 "知识文件处理失败，请稍后重试",
                 code="KNOWLEDGE_FILE_INGEST_FAILED",
             ) from exc
 
-    async def _cleanup_failed_ingestion(self, *, file_id: uuid.UUID) -> None:
+    async def _cleanup_failed_ingestion(
+        self,
+        *,
+        file_id: uuid.UUID,
+        task_id: uuid.UUID | None = None,
+        expected_attempt: int | None = None,
+    ) -> None:
         expected_statuses: Collection[FileStatus] = (
             FileStatus.UPLOADED,
             FileStatus.PARSING,
@@ -166,6 +197,20 @@ class KnowledgeRAGWorkflow:
             FileStatus.READY,
         )
         async with self.knowledge_service.uow:
+            if not await self._attempt_is_active(
+                task_id=task_id,
+                expected_attempt=expected_attempt,
+            ):
+                logger.warning(
+                    "Skipped stale Knowledge worker cleanup",
+                    extra={
+                        "event": "knowledge_ingestion_stale_cleanup_rejected",
+                        "file_id": str(file_id),
+                        "task_id": str(task_id) if task_id else None,
+                        "attempt": expected_attempt,
+                    },
+                )
+                return
             await self.knowledge_service.delete_chunks_for_file(file_id=file_id)
             success = await self.knowledge_service.try_transition_file_status(
                 file_id=file_id,
@@ -177,6 +222,36 @@ class KnowledgeRAGWorkflow:
                 "Failed to mark knowledge file ingestion as failed: file_id=%s",
                 file_id,
             )
+
+    async def _ensure_active_attempt(
+        self,
+        *,
+        task_id: uuid.UUID | None,
+        expected_attempt: int | None,
+    ) -> None:
+        if not await self._attempt_is_active(
+            task_id=task_id,
+            expected_attempt=expected_attempt,
+        ):
+            raise app_validation_error(
+                "知识入库任务租约已失效",
+                code="KNOWLEDGE_TASK_LEASE_LOST",
+            )
+
+    async def _attempt_is_active(
+        self,
+        *,
+        task_id: uuid.UUID | None,
+        expected_attempt: int | None,
+    ) -> bool:
+        if task_id is None and expected_attempt is None:
+            return True
+        if task_id is None or expected_attempt is None or self.task_service is None:
+            return False
+        return await self.task_service.heartbeat_kb_ingestion(
+            task_id=task_id,
+            expected_attempt=expected_attempt,
+        )
 
     def _extract_chunks(self, file_path: Path) -> list[ChunkPayload]:
         suffix = file_path.suffix.lower()

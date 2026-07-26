@@ -2,6 +2,8 @@
 
 本文档定义 Dewflow 在 **单台 EC2** 上的手动部署入口，目标是先把人工部署流程标准化，后续再让 GitHub Actions / SSM 复用同一套命令实现自动 CD。
 
+**首次部署**：按可打勾清单执行 [deploy/CHECKLIST.md](../../deploy/CHECKLIST.md)。Tunnel 模板见 [deploy/cloudflare/README.md](../../deploy/cloudflare/README.md)；域名三根线见 [deploy/domains.env.example](../../deploy/domains.env.example)。EC2 栈可用 `make deploy-bootstrap-prod ARGS=ec2-stack` 编排。
+
 ## 适用范围
 
 本流程面向：
@@ -16,7 +18,8 @@
 
 EC2 默认部署栈包含：
 
-- `redis`
+- `redis-cache`
+- `redis-taskiq`（`noeviction` + AOF + 持久卷）
 - `db_migrator`
 - `api`
 - `api-nginx`
@@ -25,6 +28,7 @@ EC2 默认部署栈包含：
 其中：
 
 - `api` / `db_migrator` / `task_worker` 共享同一套后端运行时配置。
+- cache 与 TaskIQ broker/result 使用不同 Redis 容器；前者允许 `allkeys-lru`，后者通过 `TASKIQ_RESULT_TTL_SECONDS` 有界保留结果。
 - `POSTGRES_SERVER` 指向 RDS / 外部 PostgreSQL；默认 compose 不再启动自管 Postgres。
 - `STORAGE_BACKEND=s3` 时，优先让 boto3 走 **EC2 instance profile / 默认 credential chain**，不要在部署文件中长期写死 AWS AK/SK。
 - `deploy/docker-compose.yml` 不支持 `STORAGE_BACKEND=local`；local storage 只用于 `docker-compose.db.yml` 的本地 / CI smoke 场景。
@@ -74,7 +78,8 @@ Root directory: frontend
 Build command: pnpm install --frozen-lockfile && pnpm --filter admin build
 Build output: apps/admin/dist
 Environment (Production): VITE_API_BASE_URL=https://api.<domain>
-Environment (Preview): VITE_API_BASE_URL=<可用的 API origin；缺失时 CF_PAGES=1 构建会直接失败>
+Environment (Preview): VITE_API_BASE_URL=<生产 API 或独立 staging API；缺失时 CF_PAGES=1 构建会直接失败>
+Preview 若指向生产 API，须把 Preview origin 一并写入 BACKEND_CORS_ORIGINS（见 deploy/CHECKLIST.md Phase 4）。
 ```
 
 版本钉住不依赖 Dashboard 配置：Node 版本由 `frontend/.nvmrc` 决定（当前 22），pnpm 版本由 `frontend/package.json` 的 `packageManager` 字段决定（corepack）。CI 与 Pages 构建读取同一来源，避免环境漂移。唯一例外是 fallback 镜像：`frontend/apps/admin/Dockerfile` 通过 `corepack prepare` 单独钉住相同的 pnpm 版本，升级 `packageManager` 时必须同步修改该行。
@@ -180,7 +185,7 @@ RATE_LIMIT_TRUSTED_PROXY_CIDRS=172.30.0.11/32
 
 - `DEPLOY_BASE_URL=https://api.<domain>`
 - `DEPLOY_FRONTEND_BASE_URL=https://app.<domain>`
-- `BACKEND_CORS_ORIGINS=https://app.<domain>`（如果有 `pages.dev` 预发域名，可在上线窗口临时一并加入）
+- `BACKEND_CORS_ORIGINS=https://app.<domain>`（Preview 也打生产 API 时，必须把实际 `pages.dev` 等 Preview origin 一并加入；仅 Production 联调则只保留生产前端域名，详见 [deploy/CHECKLIST.md](../../deploy/CHECKLIST.md) Phase 4）
 - `GOOGLE_ALLOWED_REDIRECT_URIS=https://app.<domain>/auth/google/callback`（仅在启用 Google OAuth 时）
 
 如果需要临时启用前端容器 fallback：
@@ -308,7 +313,7 @@ docker push <registry>/dewflow-frontend:${IMAGE_TAG}
    make deploy-ec2-verify
    ```
 
-如果本次发布包含数据库 migration，先确认 migration 是否向后兼容。不可逆或破坏性 schema 变更不能只靠镜像回退修复；需要按“生产数据库备份与恢复”小节使用 snapshot / PITR 恢复或执行明确的反向迁移。
+如果本次发布包含数据库 migration，先确认 migration 是否向后兼容。不可逆或破坏性 schema 变更不能只靠镜像回退修复；需要按 [RDS 备份与恢复](rds-backup-and-restore.md) 中的流程使用 snapshot / PITR，或执行明确的反向迁移。
 
 ### 数据库配置
 
@@ -452,7 +457,7 @@ make deploy-ec2-verify
 
 默认不把 knowledge smoke 作为第一轮 EC2 部署验证必跑项，因为它通常对 DB / storage 假设更深，适合后续逐步放开。
 
-### 6. 查看日志
+### 7. 查看日志
 
 ```bash
 make deploy-ec2-logs
@@ -466,7 +471,7 @@ make deploy-ec2-logs ARGS="api"
 
 > 如果需要进一步增强，也可以后续把日志 target 改成更显式的服务参数形式。
 
-### 7. 停止部署栈
+### 8. 停止部署栈
 
 ```bash
 make deploy-ec2-down
@@ -474,102 +479,9 @@ make deploy-ec2-down
 
 如果要连 volume 一起删除，必须显式设置 `DEPLOY_CONFIRM_VOLUME_WIPE=yes`；无确认时默认保留命名卷。
 
-## 生产数据库备份与恢复（RDS）
+## RDS 备份与恢复
 
-如果生产数据库使用 **Amazon RDS for PostgreSQL**，备份责任在 RDS 控制面，而不在本仓库的 Compose `postgres` 容器脚本中。也就是说：
-
-- 本地 / smoke / 演练环境仍可使用 Compose `postgres`。
-- 生产库备份不依赖容器内 `pg_dump` 定时脚本，也不依赖 EBS volume snapshot。
-- 生产侧应使用 RDS 自带的 automated backups、DB snapshots 和 restore 流程。
-
-### 当前状态
-
-- 当前仓库中的 `postgres` 服务只属于 [deploy/docker-compose.local-postgres.yml](../../deploy/docker-compose.local-postgres.yml) 的本地 / 自管 fallback 形态，不应被当成 RDS 生产备份策略的一部分。
-- 如果生产库已经迁到 RDS，那么之前删除的容器内数据库备份脚本不需要恢复到当前生产入口。
-
-### 条件成立时可用
-
-当生产数据库是 RDS 时，建议至少启用以下能力：
-
-1. **Automated Backups**：开启自动备份，并设置合适的 retention period。
-2. **Point-in-Time Recovery (PITR)**：确保可以恢复到误操作前的时间点。
-3. **Manual DB Snapshot**：在高风险操作前手动打快照，例如：
-   - 大版本升级
-   - schema migration
-   - 大批量数据修复
-   - 不可逆发布
-4. **Restore drill**：定期验证能否从 automated backup / snapshot 恢复出可用实例。
-
-### 推荐做法
-
-- 日常依赖 **RDS automated backups + PITR** 作为主备份方案。
-- 在高风险变更前创建 **manual DB snapshot** 作为静态锚点。
-- 如果有跨 Region / 合规保留要求，再评估 **AWS Backup** 或跨 Region backup 策略。
-- 在部署或发布 runbook 中明确：哪些变更必须先打 snapshot，再执行迁移或发布。
-
-### 不建议的做法
-
-- 不要把 Compose `postgres` 的备份方式直接等同于生产 RDS 的备份方式。
-- 不要仅依赖“有自动备份”这一个事实，而不做恢复演练；没有 restore drill，备份策略就不算闭环。
-- 不要在生产路径里恢复旧的容器内数据库备份脚本，除非未来重新回到 self-managed PostgreSQL on EC2。
-
-### 发布前 checklist（RDS）
-
-在以下操作前，默认执行一次 **manual DB snapshot**：
-
-- schema migration
-- 大版本升级
-- 批量数据修复 / backfill
-- 任何不可逆发布
-
-推荐检查顺序：
-
-1. 确认目标是**生产 RDS 实例**，记录 `DB instance identifier`、Region 和变更单号。
-2. 确认 **automated backups 已开启**，且 retention period 不是 0。
-3. 确认最近一次自动备份状态正常，没有实例正在进行其他高风险维护操作。
-4. 创建 **manual DB snapshot**，命名里带上环境、日期和变更标识，例如 `prod-2026-06-07-before-migration-<ticket>`。
-5. 等待 snapshot 进入 `available` 状态，再执行 migration / 发布。
-6. 在发布记录中写明：
-   - 使用的 snapshot 名称
-   - 开始变更时间
-   - 执行人
-7. 发布完成后，确认应用 smoke、核心查询和连接池状态正常。
-
-### 故障时怎么选恢复方式
-
-- **误删 / 数据写坏，但希望回到某个时间点** → 优先用 **PITR**。
-- **高风险变更刚完成，想回到变更前固定状态** → 优先用 **manual snapshot restore**。
-- **只想恢复单个库 / 单张表 / 少量数据** → 不要先整库覆盖；先从 snapshot 或 PITR **恢复到一台新实例**，再导出需要的数据回灌。
-
-默认原则：**先恢复到新实例验证，再决定是否切换生产流量**，不要直接对生产实例做覆盖式操作。
-
-### Restore drill checklist
-
-建议至少按固定节奏（例如每月或每个大版本前）做一次恢复演练。
-
-推荐检查顺序：
-
-1. 选择一个最近的 automated backup 或 manual snapshot。
-2. 将其**恢复到新的临时 RDS 实例**，不要直接覆盖生产实例。
-3. 为临时实例配置最小必要的网络访问（Security Group / 子网 / 跳板访问路径），避免直接暴露公网。
-4. 验证以下项目：
-   - 能正常连接数据库
-   - 关键 schema / extension / role 存在
-   - 应用最小 smoke query 可执行
-   - 关键业务表有合理数据量
-5. 记录本次演练的：
-   - 恢复耗时（RTO）
-   - 可接受的数据回退窗口（RPO）
-   - 是否需要额外的参数组、白名单或应用切换步骤
-6. 演练完成后，删除临时实例，避免持续计费。
-
-### 建议额外沉淀到运行手册里的信息
-
-- 生产 RDS 实例名 / ARN 对照表
-- snapshot 命名约定
-- 谁能创建 snapshot、谁能执行 restore
-- 发布前“是否需要 snapshot”的判定规则
-- 恢复后的应用切换步骤（连接串、只读验证、回切条件）
+生产数据库的 snapshot、PITR、发布前检查和恢复演练统一见 [rds-backup-and-restore.md](rds-backup-and-restore.md)。高风险 migration 或不可逆发布必须先完成对应 checklist。
 
 ## Bifrost Gateway
 
@@ -607,6 +519,10 @@ DEPLOY_AWS_REGION=us-east-1
 DEPLOY_CW_LOG_STREAM_PREFIX=dewflow
 DEPLOY_CW_METRIC_NAMESPACE=Dewflow/Logs
 DEPLOY_ALERTS_SNS_TOPIC_NAME=dewflow-prod-alerts
+# DEPLOY_ALERTS_SNS_EMAIL=alerts@example.com
+DEPLOY_CW_API_LATENCY_THRESHOLD_MS=2000
+DEPLOY_CW_QUEUE_DEPTH_THRESHOLD=100
+DEPLOY_CW_OLDEST_PENDING_THRESHOLD_SECONDS=300
 ```
 
 首次部署前创建或更新 CloudWatch log group、SNS topic、metric filters 和 alarms：
@@ -621,20 +537,22 @@ EC2 instance role 至少需要对该 log group 具备：
 - `logs:DescribeLogStreams`
 - `logs:PutLogEvents`
 
-运行 `make deploy-cloudwatch-setup` 的人或 CI role 还需要 `logs:CreateLogGroup`、`logs:DescribeLogGroups`、`logs:PutMetricFilter`、`cloudwatch:PutMetricAlarm`、`sns:CreateTopic`。
+运行 `make deploy-cloudwatch-setup` 的人或 CI role 还需要
+`logs:CreateLogGroup`、`logs:DescribeLogGroups`、`logs:PutMetricFilter`、
+`cloudwatch:PutMetricAlarm`、`sns:CreateTopic`、`sns:ListSubscriptionsByTopic`；
+配置 email 时还需要 `sns:Subscribe`。受控送达验证另需
+`logs:DescribeLogStreams`、`logs:CreateLogStream`、`logs:PutLogEvents` 与
+`cloudwatch:DescribeAlarms`。
 
 最少告警验证步骤：
 
 1. 运行 `make deploy-cloudwatch-setup`。
 2. 确认 `api`、`task_worker` 和 `credit_scheduler` 日志进入同一个 CloudWatch Logs log group。
 3. 在 SNS topic 上添加 email / ChatOps subscription；收件人必须完成确认。
-4. 确认第一批生产信号的 metric filters 已创建：
-   - `level=CRITICAL`
-   - `event=circuit_breaker_opened`
-   - `event=worker_rerank_init_degraded`
-   - `error_code=LLM_ROUTING_FAILED`
-   - `error_code=KNOWLEDGE_FILE_INGEST_FAILED`
-5. 触发一次 test alarm，确认通知渠道能收到 `ALARM` 和恢复通知。
+4. 确认 API 5xx / latency、queue depth / oldest pending、E2E heartbeat、
+   terminal failure、Redis risk、probe failure 与 synthetic delivery filters 已创建。
+5. 运行 `make deploy-cloudwatch-verify-delivery`，等待 synthetic Alarm 进入
+   `ALARM`，再由 confirmed receiver 明确确认实际收到通知。
 
 查看生产日志：
 
@@ -646,7 +564,11 @@ aws logs tail "$DEPLOY_CW_LOG_GROUP" \
 
 CSP report-only 第一阶段只用于日志观察：`POST /api/v1/csp/reports` 会写 `event=csp_violation`，但不落库、不触发应用告警，也暂不建 CloudWatch alarm。等 report-only 噪声稳定并确认 allowlist 后，再决定是否为 CSP 加 metric filter。
 
-API P99、5xx 错误率、Redis 内存、Postgres 连接数这类指标告警不通过普通 log metric filter 伪装完成。它们需要 EMF、ADOT/CloudWatch exporter、AMP，或后续托管 RDS / ElastiCache 指标。迁移清单见 [deploy/monitoring/alarms-cloudwatch.md](../../deploy/monitoring/alarms-cloudwatch.md)。
+T1-Lite 只从显式 structured event 得到 API `duration_ms` Maximum、5xx count、
+queue / oldest age 与 Redis restart / eviction delta；它们不能表述为 P99、错误率、
+Redis memory capacity 或完整 SLO。后续分布指标、托管 RDS / ElastiCache 指标仍需
+EMF、ADOT / CloudWatch exporter、AMP 或 AWS managed metrics。迁移清单见
+[deploy/monitoring/alarms-cloudwatch.md](../../deploy/monitoring/alarms-cloudwatch.md)。
 
 ## 与本地 smoke 的边界
 
@@ -660,79 +582,13 @@ API P99、5xx 错误率、Redis 内存、Postgres 连接数这类指标告警不
 
 不要把两者重新揉成一套，否则会让部署面和测试面相互污染。
 
-## 钉版基础设施镜像核查
+## 基础设施镜像维护
 
-### 当前 nginx 钉版
-
-仓库内 nginx 仅用于反向代理（`proxy_pass` / 静态 SPA fallback），不使用 `rewrite`、njs 或 HTTP/3 模块。`api-nginx` 与 frontend fallback runtime **共用同一 tag**，升级时需同步修改以下位置：
-
-| 用途 | 镜像 tag | 定义位置 |
-| --- | --- | --- |
-| EC2 API edge (`api-nginx`) | `nginx:1.30.1-alpine` | `deploy/docker-compose.yml` |
-| frontend fallback runtime | `nginx:1.30.1-alpine` | `frontend/apps/admin/Dockerfile` |
-| CI `nginx -t` 校验 | `nginx:1.30.1-alpine` | `.github/workflows/deploy-validate-ci.yml` |
-
-收到 nginx OSS / F5 安全公告时：先对照 advisory 检查上述配置是否触发 exploit 条件，再将 tag 升到修复版，跑 `nginx -t`、frontend 镜像 build 和 `make deploy-ec2-check`，最后在 EC2 上 `docker compose pull api-nginx && docker compose up -d api-nginx`；只有启用 `frontend-fallback` profile 时才需要 rebuild 并更新 `DOCKER_IMAGE_NAME_FRONTEND`。
-
-### 当前 Redis / PostgreSQL / MinIO 钉版
-
-| 组件 | 镜像 tag | 定义位置 |
-| --- | --- | --- |
-| Redis（生产 / 本地 / CI） | `redis:7.4.9-alpine` | `deploy/docker-compose.yml`, `docker-compose.db.yml`, `deploy/k8s/local-scaling/redis.yaml`, CI workflows |
-| pgvector + PostgreSQL 17（本地 / CI） | `pgvector/pgvector:0.8.2-pg17-bookworm` | `docker-compose.db.yml`, `deploy/docker-compose.local-postgres.yml`, CI workflows |
-| MinIO（本地 smoke / 演练） | `quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z` | `docker-compose.db.yml`, `deploy/docker-compose.local-s3.yml` |
-| MinIO client | `quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z` | `docker-compose.db.yml`, `deploy/docker-compose.local-s3.yml` |
-
-生产数据库默认走 RDS；pgvector 镜像只用于本地 fallback 与 CI。升级 Redis / pgvector / MinIO 时，保持 compose、CI service 与上表同步，再跑 `make deploy-ec2-check` 或对应 CI workflow。
-
-Dependabot 的 `docker` ecosystem 主要覆盖 Dockerfile,不会完整跟踪 compose 中的钉版基础设施镜像。当前先采用季度人工核查,后续如果人工流程开始漏检,再接入 Renovate 的 docker-compose manager。
-
-每季度至少检查一次以下范围：
-
-- `deploy/docker-compose.yml`
-- `deploy/docker-compose.local-postgres.yml`
-- `deploy/docker-compose.local-s3.yml`
-- `deploy/docker-compose.local-logging.yml`
-- `docker-compose.db.yml`
-- `.github/workflows/*.yml` 中的 service image
-
-核查步骤：
-
-```bash
-rg -n "image:" deploy docker-compose*.yml .github/workflows | sort
-```
-
-对每个钉版镜像记录当前 tag、最新兼容 tag、相关 CVE / release note、是否需要 PR。重点关注 `pgvector/pgvector`、`redis`、`nginx`、`maximhq/bifrost`、`quay.io/minio/minio` 和 `quay.io/minio/mc`。发现安全修复或兼容 patch 时,按普通 deploy 变更走 `make deploy-ec2-check` 和本地生产形态演练。
+当前钉版、同步修改位置和季度核查步骤见 [infrastructure-image-maintenance.md](infrastructure-image-maintenance.md)。镜像升级仍按普通 deploy 变更运行 `make deploy-ec2-check`。
 
 ## 本地生产形态演练
 
-如果 smoke 已经通过，想在上 EC2 前确认生产 compose、secret 注入、前端反代、worker、migration 和 S3 形态，可以运行本地演练栈：
-
-```bash
-make deploy-local-prod-secrets-prepare
-make deploy-local-prod-check
-make deploy-local-prod-up
-make deploy-local-prod-wait
-make deploy-local-prod-verify
-```
-
-这套命令会：
-
-- 使用 `deploy/docker-compose.yml` 作为主体。
-- 叠加 `deploy/docker-compose.local-postgres.yml`，在本机提供 PostgreSQL fallback。
-- 叠加 `deploy/docker-compose.local-s3.yml`，额外加入 MinIO 模拟 S3。
-- 叠加 `deploy/docker-compose.local-logging.yml`，把 CloudWatch Logs 降级为本机 `json-file`。
-- 使用 `secrets/local-prod`，不复用 `secrets/ec2` 的真实部署 secret。
-- 显式启用 `frontend-fallback` profile，并把 frontend 暴露到 `http://localhost:8080`，避免占用本机 80 端口。
-- 不拉入 `docker-compose.db.yml` 中的 Tempo / smoke-only 组件。
-
-查看日志和停止：
-
-```bash
-make deploy-local-prod-logs
-make deploy-local-prod-logs ARGS="api"
-make deploy-local-prod-down
-```
+生产 compose、secret 注入、frontend fallback、worker、migration 和 S3 的本地验证步骤见 [local-production-rehearsal.md](local-production-rehearsal.md)。
 
 ## 后续自动 CD 的接入方式
 

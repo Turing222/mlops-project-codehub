@@ -12,6 +12,7 @@ replaced with an ML-based classifier before production deployment.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from enum import StrEnum
@@ -22,7 +23,7 @@ from backend.services.safety_scanner import (
     SafetyScanResult,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SAFETY_REFUSAL_MESSAGE = "抱歉，这个请求涉及安全或权限风险，暂时无法回答。"
 INJECTION_REFUSAL_MESSAGE = (
     "抱歉，我无法处理包含指令覆盖或角色切换内容的请求。请用正常方式提问。"
@@ -83,6 +84,22 @@ def build_safety_metadata(
     input_triggered = bool(input_decision and input_decision.triggered)
     output_triggered = bool(output_decision and output_decision.triggered)
     is_badcase = badcase_severity is not None and badcase_reason is not None
+    unsafe_summary = None
+    if output_triggered and original_unsafe_output is not None:
+        scan_result = SafetyScanner.scan(original_unsafe_output)
+        matched_rules = set(scan_result.detected_patterns)
+        if output_decision and output_decision.reason:
+            matched_rules.add(output_decision.reason)
+        unsafe_summary = {
+            "sha256": hashlib.sha256(
+                original_unsafe_output.encode("utf-8")
+            ).hexdigest(),
+            "category": output_decision.reason if output_decision else None,
+            "matched_rules": sorted(matched_rules),
+            "redacted_summary": (
+                f"[REDACTED_UNSAFE_OUTPUT length={len(original_unsafe_output)}]"
+            ),
+        }
     return {
         "schema_version": SCHEMA_VERSION,
         "response_outcome": response_outcome.value,
@@ -104,7 +121,7 @@ def build_safety_metadata(
                     else GuardrailAction.ALLOW.value
                 ),
                 "reason": output_decision.reason if output_decision else None,
-                "original_unsafe_output": original_unsafe_output,
+                "unsafe_summary": unsafe_summary,
             },
         },
         "badcase": {

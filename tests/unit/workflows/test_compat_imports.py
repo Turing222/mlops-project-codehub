@@ -41,6 +41,7 @@ def test_worker_tasks_package_does_not_eager_import_task_modules() -> None:
         "backend.worker.tasks.credit_tasks",
         "backend.worker.tasks.knowledge_tasks",
         "backend.worker.tasks.llm_tasks",
+        "backend.worker.tasks.chat_recovery_tasks",
     ]
     for module_name in ["backend.worker.tasks", *task_modules]:
         sys.modules.pop(module_name, None)
@@ -51,6 +52,7 @@ def test_worker_tasks_package_does_not_eager_import_task_modules() -> None:
         "expire_credits_task",
         "generate_llm_stream_task",
         "ingest_knowledge_file_task",
+        "reconcile_chat_generations_task",
     ]
     for module_name in task_modules:
         assert module_name not in sys.modules

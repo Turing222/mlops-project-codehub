@@ -16,8 +16,6 @@ import pytest
 from backend.api.v1.endpoint import credit_api
 from backend.core.exceptions import AppException
 
-pytestmark = pytest.mark.asyncio
-
 
 class DummyReadContext:
     async def __aenter__(self) -> DummyReadContext:

@@ -30,6 +30,7 @@ from backend.services.feature_flag_service import (  # noqa: E402
 _SYSTEM_FLAGS: dict[str, bool] = {
     "enable-public-registration": True,
     "enable-closed-beta-login": False,
+    "enable-password-login": False,
 }
 
 _USER_FLAGS: dict[str, bool] = {
@@ -51,6 +52,7 @@ FLAG_DESCRIPTIONS: dict[str, str] = {
     # system
     "enable-public-registration": "Allow anyone to register a new account.",
     "enable-closed-beta-login": "Restrict login to beta whitelist users.",
+    "enable-password-login": "Show username/password login on the auth modal.",
     # AI
     "enable-external-context": "Enable external context retrieval (Tavily) during RAG.",
     "enable-rag-rerank": "Enable reranking step in RAG pipeline.",
@@ -67,6 +69,7 @@ FLAG_DESCRIPTIONS: dict[str, str] = {
 FLAG_TAGS: dict[str, list[str]] = {
     "enable-public-registration": ["auth"],
     "enable-closed-beta-login": ["auth"],
+    "enable-password-login": ["auth"],
     "enable-external-context": ["ai", "rag"],
     "enable-rag-rerank": ["ai", "rag"],
     "enable-rag-planner": ["ai", "rag"],

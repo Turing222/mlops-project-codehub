@@ -14,6 +14,23 @@ class MessageStatus(StrEnum):
     FAILED = "failed"
 
 
+class ChatGenerationStatus(StrEnum):
+    """Durable lifecycle states for one logical Chat generation request."""
+
+    PREPARED = "prepared"
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class ChatGenerationDispatchMode(StrEnum):
+    """Worker delivery mode persisted for durable redispatch."""
+
+    STREAM = "stream"
+    NONSTREAM = "nonstream"
+
+
 class WorkspaceRole(StrEnum):
     OWNER = "owner"
     ADMIN = "admin"

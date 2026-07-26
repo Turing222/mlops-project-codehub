@@ -7,15 +7,14 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.models.orm.chat import MessageStatus
+from backend.models.enums import ChatGenerationStatus, MessageStatus
 from backend.models.schemas.chat.context_state import ContextState
 from backend.repositories.chat_repo import ChatRepository
-
-pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
@@ -58,6 +57,50 @@ async def test_create_session_maps_input_to_llm_config_returns_created(
     assert kwargs["kb_id"] == kb_id
     assert kwargs["workspace_id"] == workspace_id
     assert kwargs["llm_config"] == {"temperature": 0.7}
+
+
+async def test_create_generation_request_maps_frozen_identity_fields(
+    repo: ChatRepository,
+) -> None:
+    user_id = uuid.uuid4()
+    workspace_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    user_message_id = uuid.uuid4()
+    assistant_message_id = uuid.uuid4()
+    recovery_due_at = datetime.now(UTC)
+    dispatch_context = {"schema_version": 1, "mode": "stream"}
+    expected = MagicMock()
+    repo.generation_request_crud.create.return_value = expected
+
+    result = await repo.create_generation_request(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        assistant_message_id=assistant_message_id,
+        client_request_id="request-1",
+        dispatch_context=dispatch_context,
+        recovery_due_at=recovery_due_at,
+        reserved_credits=25,
+    )
+
+    assert result is expected
+    kwargs = repo.generation_request_crud.create.call_args.kwargs["obj_in"]
+    assert kwargs == {
+        "user_id": user_id,
+        "workspace_id": workspace_id,
+        "session_id": session_id,
+        "user_message_id": user_message_id,
+        "assistant_message_id": assistant_message_id,
+        "client_request_id": "request-1",
+        "dispatch_context": dispatch_context,
+        "status": ChatGenerationStatus.PREPARED,
+        "attempt": 1,
+        "dispatch_attempts": 0,
+        "retryable": False,
+        "recovery_due_at": recovery_due_at,
+        "reserved_credits": 25,
+    }
 
 
 async def test_get_context_state_returns_default_when_session_missing(
@@ -158,6 +201,32 @@ async def test_create_message_passes_extended_fields_returns_created(
     assert kwargs["message_metadata"] == {"source": "test"}
 
 
+async def test_get_message_by_client_request_id_scopes_query_to_user(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    expected = MagicMock()
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = expected
+    mock_async_session.execute.return_value = result_proxy
+    user_id = uuid.uuid4()
+
+    result = await repo.get_message_by_client_request_id(
+        client_request_id="shared-request-id",
+        user_id=user_id,
+    )
+
+    assert result is expected
+    statement = mock_async_session.execute.await_args.args[0]
+    compiled = statement.compile()
+    sql = str(compiled)
+    assert "JOIN chat_sessions" in sql
+    assert "chat_messages.client_request_id" in sql
+    assert "chat_sessions.user_id" in sql
+    assert "shared-request-id" in compiled.params.values()
+    assert user_id in compiled.params.values()
+
+
 async def test_get_user_sessions_builds_ordered_paginated_query(
     mock_async_session: AsyncMock,
 ) -> None:
@@ -218,3 +287,313 @@ async def test_update_message_status_returns_none_when_message_missing(
 
     assert result is None
     repo.message_crud.update.assert_not_called()
+
+
+async def test_get_generation_request_for_actor_scopes_session_and_workspace(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    expected = MagicMock()
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = expected
+    mock_async_session.execute.return_value = result_proxy
+
+    result = await repo.get_generation_request_for_actor(
+        request_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+    )
+
+    assert result is expected
+    statement = mock_async_session.execute.await_args.args[0]
+    sql = str(statement.compile())
+    assert "chat_generation_requests.user_id" in sql
+    assert "EXISTS (SELECT 1" in sql
+    assert "chat_sessions.deleted_at IS NULL" in sql
+    assert "user_workspace_roles" in sql
+    assert "workspaces.deleted_at IS NULL" in sql
+
+
+async def test_get_generation_requests_for_session_scopes_current_actor(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    expected = [MagicMock()]
+    result_proxy = MagicMock()
+    result_proxy.scalars.return_value.all.return_value = expected
+    mock_async_session.execute.return_value = result_proxy
+    session_id = uuid.uuid4()
+
+    result = await repo.get_generation_requests_for_session_for_actor(
+        session_id=session_id,
+        user_id=uuid.uuid4(),
+    )
+
+    assert result == expected
+    sql = str(mock_async_session.execute.await_args.args[0].compile())
+    assert "chat_generation_requests.session_id" in sql
+    assert "chat_generation_requests.user_id" in sql
+    assert "chat_sessions.deleted_at IS NULL" in sql
+
+
+async def test_get_due_generation_requests_is_bounded_and_deterministic(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    expected = [MagicMock(), MagicMock()]
+    result_proxy = MagicMock()
+    result_proxy.scalars.return_value.all.return_value = expected
+    mock_async_session.execute.return_value = result_proxy
+    due_at = datetime.now(UTC)
+
+    result = await repo.get_due_generation_requests(due_at=due_at, limit=25)
+
+    assert result == expected
+    compiled = mock_async_session.execute.await_args.args[0].compile()
+    sql = str(compiled)
+    assert "chat_generation_requests.status IN" in sql
+    assert "chat_generation_requests.recovery_due_at IS NOT NULL" in sql
+    assert "chat_generation_requests.recovery_due_at <=" in sql
+    assert "ORDER BY chat_generation_requests.recovery_due_at ASC" in sql
+    assert "chat_generation_requests.id ASC" in sql
+    assert "LIMIT" in sql
+    assert due_at in compiled.params.values()
+    assert 25 in compiled.params.values()
+
+
+async def test_get_due_generation_requests_rejects_unbounded_limit(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+
+    with pytest.raises(ValueError, match="between 1 and 500"):
+        await repo.get_due_generation_requests(
+            due_at=datetime.now(UTC),
+            limit=501,
+        )
+    mock_async_session.execute.assert_not_awaited()
+
+
+async def test_get_oldest_due_generation_uses_recovery_fact(
+    repo: ChatRepository,
+) -> None:
+    due_at = datetime(2026, 7, 17, tzinfo=UTC)
+    expected = due_at - timedelta(minutes=3)
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = expected
+    repo.session.execute.return_value = result_proxy
+
+    observed = await repo.get_oldest_due_generation_recovery_at(due_at=due_at)
+
+    assert observed == expected
+    stmt = repo.session.execute.await_args.args[0]
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "min(chat_generation_requests.recovery_due_at)" in sql
+    assert "status IN ('prepared', 'queued', 'running')" in sql
+
+
+async def test_queue_generation_request_uses_actor_attempt_cas(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    request_id = uuid.uuid4()
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = request_id
+    mock_async_session.execute.return_value = result_proxy
+    queued_at = datetime.now(UTC)
+
+    updated = await repo.try_queue_generation_request(
+        request_id=request_id,
+        user_id=uuid.uuid4(),
+        expected_attempt=3,
+        task_id="task-3",
+        lease_token="lease-3",
+        queued_at=queued_at,
+        recovery_due_at=queued_at + timedelta(minutes=1),
+    )
+
+    assert updated is True
+    statement = mock_async_session.execute.await_args.args[0]
+    compiled = statement.compile()
+    sql = str(compiled)
+    assert "chat_generation_requests.status" in sql
+    assert "chat_generation_requests.attempt" in sql
+    assert "chat_generation_requests.user_id" in sql
+    assert "chat_generation_requests.dispatch_attempts +" in sql
+    assert "RETURNING chat_generation_requests.id" in sql
+    assert ChatGenerationStatus.PREPARED in compiled.params.values()
+    assert 3 in compiled.params.values()
+
+
+async def test_reserve_redispatch_fences_due_and_dispatch_count(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = 2
+    mock_async_session.execute.return_value = result_proxy
+    due_before = datetime.now(UTC)
+
+    dispatch_attempts = await repo.try_reserve_generation_request_redispatch(
+        request_id=uuid.uuid4(),
+        expected_attempt=1,
+        task_id="task-1",
+        lease_token="lease-1",
+        expected_dispatch_attempts=1,
+        max_dispatch_attempts=3,
+        due_before=due_before,
+        next_recovery_due_at=due_before + timedelta(minutes=5),
+    )
+
+    assert dispatch_attempts == 2
+    compiled = mock_async_session.execute.await_args.args[0].compile()
+    sql = str(compiled)
+    assert "chat_generation_requests.status" in sql
+    assert "chat_generation_requests.task_id" in sql
+    assert "chat_generation_requests.lease_token" in sql
+    assert "chat_generation_requests.dispatch_attempts =" in sql
+    assert "chat_generation_requests.dispatch_attempts <" in sql
+    assert "chat_generation_requests.recovery_due_at <=" in sql
+    assert "RETURNING chat_generation_requests.dispatch_attempts" in sql
+    assert ChatGenerationStatus.QUEUED in compiled.params.values()
+    assert due_before in compiled.params.values()
+
+
+async def test_fail_due_generation_request_fences_active_identity(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    request_id = uuid.uuid4()
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = request_id
+    mock_async_session.execute.return_value = result_proxy
+    now = datetime.now(UTC)
+
+    failed = await repo.try_fail_due_generation_request(
+        request_id=request_id,
+        expected_status=ChatGenerationStatus.RUNNING,
+        expected_attempt=2,
+        expected_dispatch_attempts=3,
+        task_id="task-2",
+        lease_token="lease-2",
+        due_before=now,
+        finished_at=now,
+        error_code="CHAT_GENERATION_LEASE_EXPIRED",
+        error_message="生成任务执行超时，请重试",
+    )
+
+    assert failed is True
+    compiled = mock_async_session.execute.await_args.args[0].compile()
+    sql = str(compiled)
+    assert "chat_generation_requests.task_id" in sql
+    assert "chat_generation_requests.lease_token" in sql
+    assert "chat_generation_requests.dispatch_attempts" in sql
+    assert "chat_generation_requests.recovery_due_at <=" in sql
+    assert "RETURNING chat_generation_requests.id" in sql
+    assert ChatGenerationStatus.RUNNING in compiled.params.values()
+    assert ChatGenerationStatus.FAILED in compiled.params.values()
+
+
+async def test_claim_generation_request_fences_task_attempt_and_lease(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    request_id = uuid.uuid4()
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = request_id
+    mock_async_session.execute.return_value = result_proxy
+    started_at = datetime.now(UTC)
+
+    claimed = await repo.try_claim_generation_request(
+        request_id=request_id,
+        user_id=uuid.uuid4(),
+        session_id=uuid.uuid4(),
+        assistant_message_id=uuid.uuid4(),
+        expected_attempt=2,
+        task_id="task-2",
+        lease_token="lease-2",
+        started_at=started_at,
+        lease_expires_at=started_at + timedelta(minutes=5),
+    )
+
+    assert claimed is True
+    compiled = mock_async_session.execute.await_args.args[0].compile()
+    sql = str(compiled)
+    assert "chat_generation_requests.task_id" in sql
+    assert "chat_generation_requests.attempt" in sql
+    assert "chat_generation_requests.lease_token" in sql
+    assert "task-2" in compiled.params.values()
+    assert "lease-2" in compiled.params.values()
+
+
+async def test_finalize_generation_request_rejects_invalid_terminal_contract(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    now = datetime.now(UTC)
+
+    with pytest.raises(ValueError, match="succeeded or failed"):
+        await repo.try_finalize_generation_request(
+            request_id=uuid.uuid4(),
+            expected_attempt=1,
+            lease_token="lease",
+            target_status=ChatGenerationStatus.RUNNING,
+            finished_at=now,
+        )
+
+    with pytest.raises(ValueError, match="stable error_code"):
+        await repo.try_finalize_generation_request(
+            request_id=uuid.uuid4(),
+            expected_attempt=1,
+            lease_token="lease",
+            target_status=ChatGenerationStatus.FAILED,
+            finished_at=now,
+            retryable=True,
+        )
+
+    mock_async_session.execute.assert_not_awaited()
+
+
+async def test_retry_generation_request_returns_incremented_attempt(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = 4
+    mock_async_session.execute.return_value = result_proxy
+
+    next_attempt = await repo.try_retry_generation_request(
+        request_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        expected_attempt=3,
+        dispatch_context={"schema_version": 1, "mode": "stream"},
+        recovery_due_at=datetime.now(UTC) + timedelta(minutes=1),
+    )
+
+    assert next_attempt == 4
+    statement = mock_async_session.execute.await_args.args[0]
+    sql = str(statement.compile())
+    assert "chat_generation_requests.retryable IS true" in sql
+    assert "chat_generation_requests.attempt +" in sql
+    assert "RETURNING chat_generation_requests.attempt" in sql
+
+
+async def test_reset_assistant_message_for_retry_clears_terminal_fields(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    message_id = uuid.uuid4()
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = message_id
+    mock_async_session.execute.return_value = result_proxy
+
+    reset = await repo.reset_assistant_message_for_retry(message_id=message_id)
+
+    assert reset is True
+    statement = mock_async_session.execute.await_args.args[0]
+    compiled = statement.compile()
+    sql = str(compiled)
+    assert "chat_messages.role" in sql
+    assert "chat_messages.status" in sql
+    assert "RETURNING chat_messages.id" in sql
+    assert MessageStatus.FAILED in compiled.params.values()
+    assert MessageStatus.THINKING in compiled.params.values()

@@ -138,7 +138,6 @@ def _build_file_obj() -> SimpleNamespace:
     )
 
 
-@pytest.mark.asyncio
 async def test_ingest_file_downloads_from_storage_before_extracting(tmp_path) -> None:
     file_path = tmp_path / "downloaded.md"
     file_path.write_text("# Remote\n\nremote content", encoding="utf-8")
@@ -199,7 +198,6 @@ async def test_ingest_file_downloads_from_storage_before_extracting(tmp_path) ->
     assert statuses == [FileStatus.PARSING, FileStatus.CHUNKING, FileStatus.READY]
 
 
-@pytest.mark.asyncio
 async def test_ingest_file_reports_not_found_when_initial_transition_misses() -> None:
     async def try_transition_file_status(
         *, file_id, expected_previous_statuses, target_status
@@ -228,7 +226,6 @@ async def test_ingest_file_reports_not_found_when_initial_transition_misses() ->
     vector_index_service.replace_file_chunks.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_ingest_file_reports_already_ingesting_when_initial_state_conflicts() -> (
     None
 ):
@@ -259,7 +256,6 @@ async def test_ingest_file_reports_already_ingesting_when_initial_state_conflict
     vector_index_service.replace_file_chunks.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_ingest_file_reports_state_conflict_before_chunking(tmp_path) -> None:
     file_path = tmp_path / "downloaded.md"
     file_path.write_text("# Remote\n\nremote content", encoding="utf-8")
@@ -300,7 +296,6 @@ async def test_ingest_file_reports_state_conflict_before_chunking(tmp_path) -> N
     vector_index_service.replace_file_chunks.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_cleanup_failed_ingestion_warns_when_failed_transition_misses(
     caplog,
 ) -> None:
@@ -326,6 +321,30 @@ async def test_cleanup_failed_ingestion_warns_when_failed_transition_misses(
     await workflow._cleanup_failed_ingestion(file_id="file-id")
 
     assert "Failed to mark knowledge file ingestion as failed" in caplog.text
+
+
+async def test_stale_worker_cannot_delete_chunks_during_failure_cleanup() -> None:
+    task_service = SimpleNamespace(heartbeat_kb_ingestion=AsyncMock(return_value=False))
+    knowledge_service = SimpleNamespace(
+        uow=FakeAsyncUow(),
+        delete_chunks_for_file=AsyncMock(),
+        try_transition_file_status=AsyncMock(),
+    )
+    workflow = KnowledgeRAGWorkflow(
+        knowledge_service=knowledge_service,
+        chunking_service=FakeChunkingService(),
+        vector_index_service=SimpleNamespace(),
+        task_service=task_service,
+    )
+
+    await workflow._cleanup_failed_ingestion(
+        file_id="file-id",
+        task_id="task-id",
+        expected_attempt=1,
+    )
+
+    knowledge_service.delete_chunks_for_file.assert_not_awaited()
+    knowledge_service.try_transition_file_status.assert_not_awaited()
 
 
 def test_prepare_chunks_for_index_tags_injection_risk() -> None:

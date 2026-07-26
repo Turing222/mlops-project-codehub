@@ -10,13 +10,13 @@ import ssl
 from functools import lru_cache
 from pathlib import Path
 from typing import Self
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import quote
 
 from pydantic import Field, field_validator, model_validator
 from sqlalchemy.engine import URL, make_url
 
 from backend.config.ai_settings import BASE_DIR, AISettings, _config_dir
-from backend.config.web_settings import WebSettings
+from backend.config.web_settings import WebSettings, is_production_app_env
 from backend.config.worker_settings import WorkerSettings
 
 _logger = logging.getLogger(__name__)
@@ -61,6 +61,9 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: str | None = None
+    TASKIQ_REDIS_HOST: str = "localhost"
+    TASKIQ_REDIS_PORT: int = Field(default=6380, ge=1, le=65535)
+    TASKIQ_RESULT_TTL_SECONDS: int = Field(default=3600, ge=60, le=604800)
 
     # ── Storage ───────────────────────────────────────────────────
     STORAGE_BACKEND: str = "local"
@@ -77,6 +80,7 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     ENABLE_OTEL_TRACES: bool = False
     OTEL_METRICS_ENDPOINT: str = "http://prometheus:9090/api/v1/otlp/v1/metrics"
     OTEL_TRACES_ENDPOINT: str = "http://jaeger:4318/v1/traces"
+    TELEMETRY_CAPTURE_CONTENT: bool = False
 
     # ── GrowthBook ──────────────────────────────────────────────────
     GROWTHBOOK_API_HOST: str = "https://cdn.growthbook.io"
@@ -159,13 +163,11 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     def taskiq_redis_url(self) -> str:
         if self.TASKIQ_REDIS_URL:
             return self.TASKIQ_REDIS_URL
-        if self.REDIS_URL:
-            return self._replace_redis_db(self.REDIS_URL, db=1)
         return self._build_redis_url(
-            host=self.REDIS_HOST,
-            port=self.REDIS_PORT,
+            host=self.TASKIQ_REDIS_HOST,
+            port=self.TASKIQ_REDIS_PORT,
             password=self.REDIS_PASSWORD,
-            db=1,
+            db=0,
         )
 
     @staticmethod
@@ -178,13 +180,6 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     ) -> str:
         auth = f":{quote(password, safe='')}@" if password else ""
         return f"redis://{auth}{host}:{port}/{db}"
-
-    @staticmethod
-    def _replace_redis_db(url: str, db: int) -> str:
-        parsed = urlsplit(url)
-        return urlunsplit(
-            (parsed.scheme, parsed.netloc, f"/{db}", parsed.query, parsed.fragment)
-        )
 
     # ── Validators ────────────────────────────────────────────────
 
@@ -227,6 +222,12 @@ class Settings(WebSettings, AISettings, WorkerSettings):
             raise ValueError(
                 f"POSTGRES_SSL_ROOT_CERT_FILE 不存在或不是文件: {cert_path}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_telemetry_content_capture(self) -> Self:
+        if is_production_app_env(self.APP_ENV) and self.TELEMETRY_CAPTURE_CONTENT:
+            raise ValueError("TELEMETRY_CAPTURE_CONTENT must be False in production")
         return self
 
 

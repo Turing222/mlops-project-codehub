@@ -10,12 +10,17 @@ from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
 from backend.config.settings import settings
 
-# TaskIQ 使用独立 Redis DB，避免业务缓存和队列 key 混在一起。
+# TaskIQ 使用独立 Redis 实例，避免缓存淘汰或重启影响 broker/result keys。
 REDIS_URL = settings.taskiq_redis_url
 
 broker = ListQueueBroker(
     url=REDIS_URL,
-).with_result_backend(RedisAsyncResultBackend(redis_url=REDIS_URL))
+).with_result_backend(
+    RedisAsyncResultBackend(
+        redis_url=REDIS_URL,
+        result_ex_time=settings.TASKIQ_RESULT_TTL_SECONDS,
+    )
+)
 
 
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)

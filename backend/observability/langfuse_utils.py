@@ -13,6 +13,8 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
+from backend.config.settings import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,10 +52,11 @@ class _LangfuseGenerationRecorder:
     上下文退出时 Langfuse SDK 自动调用 generation.end()。
     """
 
-    __slots__ = ("_generation",)
+    __slots__ = ("_capture_content", "_generation")
 
-    def __init__(self, generation: Any) -> None:
+    def __init__(self, generation: Any, *, capture_content: bool) -> None:
         self._generation = generation
+        self._capture_content = capture_content
 
     def record(
         self,
@@ -65,7 +68,7 @@ class _LangfuseGenerationRecorder:
         error: str | None = None,
     ) -> None:
         update_kwargs: dict[str, Any] = {}
-        if output is not None:
+        if output is not None and self._capture_content:
             update_kwargs["output"] = output
         if usage is not None:
             update_kwargs["usage_details"] = usage
@@ -74,7 +77,7 @@ class _LangfuseGenerationRecorder:
         if model is not None:
             update_kwargs["model"] = model
         if error is not None:
-            update_kwargs["status_message"] = error
+            update_kwargs["status_message"] = "generation_failed"
             update_kwargs["level"] = "ERROR"
         if update_kwargs:
             self._generation.update(**update_kwargs)
@@ -96,7 +99,8 @@ def langfuse_generation(
     from langfuse import get_client
 
     create_kwargs: dict[str, Any] = {"name": name}
-    if input_payload is not None:
+    capture_content = settings.TELEMETRY_CAPTURE_CONTENT
+    if input_payload is not None and capture_content:
         create_kwargs["input"] = input_payload
     if model is not None:
         create_kwargs["model"] = model
@@ -104,7 +108,10 @@ def langfuse_generation(
         create_kwargs["metadata"] = metadata
 
     with get_client().start_as_current_generation(**create_kwargs) as generation:
-        recorder = _LangfuseGenerationRecorder(generation)
+        recorder = _LangfuseGenerationRecorder(
+            generation,
+            capture_content=capture_content,
+        )
         try:
             yield recorder
         except Exception as exc:

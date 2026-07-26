@@ -15,8 +15,6 @@ from httpx import ASGITransport, AsyncClient
 from backend.core.exception_handlers import setup_exception_handlers
 from backend.middleware.rate_limit import RateLimiter
 
-pytestmark = pytest.mark.asyncio
-
 
 class FakeRedis:
     def __init__(self, result: list[int]) -> None:

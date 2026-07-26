@@ -1,8 +1,10 @@
 import {
   buildMockAuthResponse,
+  buildMockChatMessage,
   buildMockChunkEvent,
   buildMockMetaEvent,
   buildMockSession,
+  buildMockSessionDetail,
   buildMockSessionList,
   buildMockSuperuser,
   buildMockUser,
@@ -22,6 +24,17 @@ export function mockAuthResponse(overrides: Record<string, unknown> = {}) {
 
 export function mockSession(overrides: Record<string, unknown> = {}) {
   return buildMockSession(overrides);
+}
+
+export function mockChatMessage(overrides: Record<string, unknown> = {}) {
+  return buildMockChatMessage(overrides);
+}
+
+export function mockSessionDetail(options: {
+  session?: Record<string, unknown>;
+  messages?: Record<string, unknown>[];
+} = {}) {
+  return buildMockSessionDetail(options);
 }
 
 export function mockSessionList(sessions: Record<string, unknown>[] = [mockSession()]) {

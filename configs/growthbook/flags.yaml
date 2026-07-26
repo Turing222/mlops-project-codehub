@@ -9,6 +9,7 @@ environments:
   local:
     # Local dev — enable AI features for testing.
     enable-closed-beta-login: true
+    enable-password-login: true
     enable-external-context: true
     enable-rag-rerank: true
     enable-rag-planner: true
@@ -21,6 +22,7 @@ environments:
     # Keep AI feature flags on conservative defaults so HTTP smoke validates
     # core runtime wiring instead of optional model-routing/RAG experiments.
     enable-closed-beta-login: false
+    enable-password-login: true
     enable-external-context: false
     enable-rag-rerank: false
     enable-rag-planner: false
@@ -30,6 +32,7 @@ environments:
   prod:
     # Production — start conservative, enable via GrowthBook panel as needed.
     enable-closed-beta-login: true
+    enable-password-login: false
     enable-external-context: true
     enable-rag-rerank: true
     enable-rag-planner: true

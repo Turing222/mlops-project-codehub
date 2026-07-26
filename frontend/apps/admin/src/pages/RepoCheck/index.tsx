@@ -11,21 +11,14 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../context/useAuth';
+import {
+  clearRecentRepoRuns,
+  listRecentRepoRuns,
+  type RecentRepoRun,
+} from '../../features/repo-check/recent-runs';
 import { useSubmitRepoReadmeCheckMutation } from '../../query/hooks/repo-analysis';
 import RepoAnalysisCard from './RepoAnalysisCard';
 import styles from './RepoCheckPage.module.css';
-
-type RecentRepoRun = {
-  runId: string;
-  owner: string;
-  repo: string;
-  repoUrl: string;
-  projectName: string;
-  likelyProjectType: string;
-  hypeRisk: string;
-  stars: number;
-  timestamp: number;
-};
 
 const RepoCheckPage: React.FC = () => {
   const navigate = useNavigate();
@@ -65,17 +58,9 @@ const RepoCheckPage: React.FC = () => {
     }
   }, [queryRunId]);
 
-  // Load history list from localStorage on mount and when runId changes
+  // Reload history when leaving a run detail view or on mount.
   React.useEffect(() => {
-    const key = 'DEWFLOW_RECENT_REPO_RUNS';
-    try {
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        setRecentRuns(JSON.parse(stored) as RecentRepoRun[]);
-      }
-    } catch {
-      setRecentRuns([]);
-    }
+    setRecentRuns(listRecentRepoRuns());
   }, [runId]);
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -98,8 +83,7 @@ const RepoCheckPage: React.FC = () => {
   };
 
   const handleClearHistory = () => {
-    const key = 'DEWFLOW_RECENT_REPO_RUNS';
-    localStorage.removeItem(key);
+    clearRecentRepoRuns();
     setRecentRuns([]);
     antdMessage.success(t('repo_check.history_cleared', '最近分析记录已清空'));
   };

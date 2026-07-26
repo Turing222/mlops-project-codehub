@@ -8,7 +8,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import jwt
-import pytest
 
 from backend.config.settings import settings
 from backend.core.security import (
@@ -18,7 +17,6 @@ from backend.core.security import (
 )
 
 
-@pytest.mark.asyncio
 async def test_get_password_hash_and_verify_password_round_trip() -> None:
     hashed = await get_password_hash("Password123")
 
@@ -26,14 +24,12 @@ async def test_get_password_hash_and_verify_password_round_trip() -> None:
     assert await verify_password("Password123", hashed) is True
 
 
-@pytest.mark.asyncio
 async def test_verify_password_returns_false_for_wrong_password() -> None:
     hashed = await get_password_hash("Password123")
 
     assert await verify_password("WrongPassword123", hashed) is False
 
 
-@pytest.mark.asyncio
 async def test_verify_password_returns_false_for_invalid_hash() -> None:
     assert await verify_password("Password123", "not-a-valid-hash") is False
 

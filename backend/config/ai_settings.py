@@ -109,6 +109,11 @@ class AISettings(BaseSettings):
     # ── Chat Stream Timeouts ──────────────────────────────────────
     CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS: int = 30
     CHAT_STREAM_MESSAGE_TIMEOUT_SECONDS: int = 10
+    CHAT_GENERATION_QUEUE_RECOVERY_SECONDS: int = Field(default=300, ge=30)
+    CHAT_GENERATION_LEASE_SECONDS: int = Field(default=1800, ge=60)
+    CHAT_GENERATION_HEARTBEAT_SECONDS: int = Field(default=60, ge=10, le=600)
+    CHAT_GENERATION_MAX_DISPATCH_ATTEMPTS: int = Field(default=3, ge=1, le=10)
+    CHAT_GENERATION_RECOVERY_BATCH_SIZE: int = Field(default=100, ge=1, le=500)
 
     # ── Chat Memory ───────────────────────────────────────────────
     CHAT_MEMORY_RECENT_ROUNDS: int = 6
@@ -160,6 +165,13 @@ class AISettings(BaseSettings):
     KNOWLEDGE_CHUNK_OVERLAP: int = 120
     KNOWLEDGE_MAX_UPLOAD_SIZE_MB: int = 20
     KNOWLEDGE_INGEST_STALE_TIMEOUT_SECONDS: int = Field(default=1800, ge=60)
+    KNOWLEDGE_INGEST_HEARTBEAT_SECONDS: int = Field(default=60, ge=10, le=300)
+    KNOWLEDGE_INGEST_LEASE_SECONDS: int = Field(default=300, ge=60, le=3600)
+    KNOWLEDGE_INGEST_MAX_ATTEMPTS: int = Field(default=3, ge=1, le=10)
+    KNOWLEDGE_OUTBOX_RETRY_SECONDS: int = Field(default=60, ge=5, le=3600)
+    KNOWLEDGE_OUTBOX_LEASE_SECONDS: int = Field(default=60, ge=10, le=600)
+    KNOWLEDGE_OUTBOX_MAX_ATTEMPTS: int = Field(default=3, ge=1, le=20)
+    KNOWLEDGE_RECOVERY_BATCH_SIZE: int = Field(default=100, ge=1, le=500)
 
     # ── Search Text ───────────────────────────────────────────────
     SEARCH_TEXT_DEFAULT_TOKEN_LIMIT: int = 60

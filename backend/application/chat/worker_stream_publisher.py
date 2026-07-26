@@ -7,10 +7,12 @@
 import logging
 
 from backend.application.chat.stream_events import (
+    StepStatus,
     encode_chunk_event,
     encode_done_event,
     encode_error_event,
     encode_started_event,
+    encode_step_event,
 )
 from backend.infra.redis import RedisClient
 
@@ -34,10 +36,37 @@ class WorkerStreamPublisher:
         redis_connection = await self._redis()
         await redis_connection.publish(channel, encode_started_event())
 
-    async def publish_error(self, channel: str, message: str) -> None:
+    async def publish_error(
+        self,
+        channel: str,
+        message: str,
+        *,
+        error_code: str | None = None,
+        retryable: bool | None = None,
+    ) -> None:
         redis_connection = await self._redis()
-        await redis_connection.publish(channel, encode_error_event(message))
+        await redis_connection.publish(
+            channel,
+            encode_error_event(
+                message,
+                error_code=error_code,
+                retryable=retryable,
+            ),
+        )
 
     async def publish_done(self, channel: str) -> None:
         redis_connection = await self._redis()
         await redis_connection.publish(channel, encode_done_event())
+
+    async def publish_step(
+        self,
+        channel: str,
+        step: str,
+        status: StepStatus,
+        metrics: dict[str, object] | None = None,
+    ) -> None:
+        redis_connection = await self._redis()
+        await redis_connection.publish(
+            channel,
+            encode_step_event(step=step, status=status, metrics=metrics),
+        )

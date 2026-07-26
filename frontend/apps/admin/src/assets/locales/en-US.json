@@ -70,6 +70,8 @@
     "login": "Log In",
     "register": "Register",
     "sign_in": "Sign In",
+    "staff_sign_in": "Staff Sign In",
+    "staff_login_hint": "Use username and password for ops/test accounts",
     "username": "Username",
     "email": "Email",
     "password": "Password",

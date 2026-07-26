@@ -13,11 +13,16 @@ from backend.contracts.repository_protocols import (
     CreditRepositoryProtocol,
     KnowledgeRepositoryProtocol,
     RepoAnalysisRepositoryProtocol,
+    TaskOutboxRepositoryProtocol,
     TaskRepositoryProtocol,
     UserRepositoryProtocol,
 )
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
-from backend.models.schemas.chat.payloads import GenerationResult
+from backend.models.schemas.chat.payloads import (
+    GenerationAttemptPayload,
+    GenerationDispatchContext,
+    GenerationResult,
+)
 
 
 class AbstractUnitOfWork(ABC):
@@ -27,6 +32,7 @@ class AbstractUnitOfWork(ABC):
     chat_repo: ChatRepositoryProtocol
     knowledge_repo: KnowledgeRepositoryProtocol
     task_repo: TaskRepositoryProtocol
+    task_outbox_repo: TaskOutboxRepositoryProtocol
     repo_analysis_repo: RepoAnalysisRepositoryProtocol
     credit_repo: CreditRepositoryProtocol
 
@@ -234,6 +240,7 @@ class AbstractTaskDispatcher(ABC):
         assistant_message_id: str | None = None,
         user_id: str | None = None,
         idempotency_lock_key: str | None = None,
+        generation_attempt: GenerationAttemptPayload | None = None,
     ) -> None:
         """投递流式 LLM 生成任务到 TaskIQ worker。"""
         ...
@@ -246,8 +253,22 @@ class AbstractTaskDispatcher(ABC):
         assistant_message_id: str | None = None,
         user_id: str | None = None,
         idempotency_lock_key: str | None = None,
+        generation_attempt: GenerationAttemptPayload | None = None,
     ) -> GenerationResult:
         """投递非流式 LLM 生成任务并等待结果返回。"""
+        ...
+
+    @abstractmethod
+    async def enqueue_generation_recovery(
+        self,
+        *,
+        dispatch_context: GenerationDispatchContext,
+        assistant_message_id: str,
+        user_id: str,
+        generation_attempt: GenerationAttemptPayload,
+        trace_context: dict[str, str] | None = None,
+    ) -> None:
+        """Fire-and-forget one persisted Chat attempt from a recovery worker."""
         ...
 
     @abstractmethod
@@ -256,6 +277,9 @@ class AbstractTaskDispatcher(ABC):
         file_id: str,
         task_id: str | None = None,
         trace_context: dict[str, str] | None = None,
+        *,
+        outbox_id: str | None = None,
+        message_id: str | None = None,
     ) -> None:
         """投递知识库文件入库任务到 TaskIQ worker。"""
         ...

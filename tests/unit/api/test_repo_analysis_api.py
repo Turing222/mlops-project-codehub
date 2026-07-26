@@ -10,8 +10,6 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from backend.api.v1.endpoint import repo_analysis_api
 from backend.models.schemas.repo_analysis_schema import (
     RepoAnalysisRunPayload,
@@ -19,8 +17,6 @@ from backend.models.schemas.repo_analysis_schema import (
     RepoAnalysisSubmitRequest,
     RepoAnalysisSubmitResponse,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 class AsyncContextManagerMock:

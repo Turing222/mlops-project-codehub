@@ -1,4 +1,7 @@
-"""DashScope rerank provider unit tests."""
+"""DashScope rerank provider unit tests.
+
+职责：验证 DashScope rerank provider 的请求与错误处理；边界：mock HTTP/urllib；副作用：无。
+"""
 
 from __future__ import annotations
 
@@ -150,7 +153,7 @@ def test_post_rerank_raises_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert exc_info.value.code == "DASHSCOPE_RERANK_HTTP_ERROR"
     assert exc_info.value.details["status_code"] == 400
-    assert exc_info.value.details["body"] == "dashscope error"
+    assert "body" not in exc_info.value.details
 
 
 def test_post_rerank_raises_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -195,7 +198,7 @@ def test_parse_rankings_raises_empty_results() -> None:
     assert exc_info.value.code == "DASHSCOPE_RERANK_EMPTY_RESULTS"
 
 
-# ── 断路器（确认 rerank 熔断模板在第二个 provider 同样生效） ──────────
+# 断路器（确认 rerank 熔断模板在第二个 provider 同样生效）
 
 
 class FailingDashScopeRerankService(DashScopeRerankService):

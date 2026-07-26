@@ -18,7 +18,9 @@ from taskiq.scheduler.scheduler import TaskiqScheduler
 from backend.infra.task_broker import broker
 
 DEFAULT_SCHEDULER_MODULES = (
-    "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks"
+    "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks "
+    "backend.worker.tasks.chat_recovery_tasks "
+    "backend.worker.tasks.operability_tasks"
 )
 REQUIRED_SCHEDULE_KEYS = frozenset(
     {
@@ -26,6 +28,18 @@ REQUIRED_SCHEDULE_KEYS = frozenset(
         (
             "recover_stale_knowledge_ingestions",
             "recover_stale_knowledge_ingestions_every_15m",
+        ),
+        (
+            "relay_knowledge_ingestion_outbox",
+            "relay_knowledge_ingestion_outbox_every_minute",
+        ),
+        (
+            "reconcile_chat_generations",
+            "reconcile_chat_generations_every_minute",
+        ),
+        (
+            "emit_t1_lite_operability_heartbeat",
+            "t1_lite_operability_heartbeat_every_minute",
         ),
     }
 )

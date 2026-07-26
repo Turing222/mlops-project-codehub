@@ -9,13 +9,10 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from fastapi import UploadFile
 
 from backend.api.v1.endpoint import knowledge_api
 from backend.models.schemas.knowledge_schema import KnowledgeUploadResponse
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_upload_file_delegates_to_submit_workflow() -> None:

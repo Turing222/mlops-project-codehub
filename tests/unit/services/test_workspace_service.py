@@ -135,7 +135,6 @@ def test_workspace_create_normalizes_slug_returns_created() -> None:
     assert workspace_in.slug == "alice-team"
 
 
-@pytest.mark.asyncio
 async def test_create_workspace_assigns_current_user_as_owner() -> None:
     service, access_repo, workspace, _, _ = make_service()
     user = make_user()
@@ -159,7 +158,6 @@ async def test_create_workspace_assigns_current_user_as_owner() -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_create_workspace_rejects_duplicate_slug() -> None:
     existing = make_workspace(slug="taken")
     service, access_repo, _, _, _ = make_service()
@@ -174,7 +172,6 @@ async def test_create_workspace_rejects_duplicate_slug() -> None:
     access_repo.create_workspace.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_update_workspace_raises_on_missing_manage_permission() -> None:
     service, access_repo, workspace, _, _ = make_service(role=WorkspaceRole.MEMBER)
 
@@ -188,7 +185,6 @@ async def test_update_workspace_raises_on_missing_manage_permission() -> None:
     access_repo.update_workspace.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_delete_workspace_raises_on_non_owner_role() -> None:
     service, access_repo, workspace, _, _ = make_service(role=WorkspaceRole.ADMIN)
 
@@ -201,7 +197,6 @@ async def test_delete_workspace_raises_on_non_owner_role() -> None:
     access_repo.delete_workspace.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_superuser_can_delete_workspace_without_owner_role_succeeds() -> None:
     service, access_repo, workspace, _, _ = make_service(role=None)
 
@@ -219,7 +214,6 @@ def test_workspace_member_create_defaults_to_member_role_returns_member() -> Non
     assert member_in.role == WorkspaceRole.MEMBER
 
 
-@pytest.mark.asyncio
 async def test_add_workspace_member_uses_default_member_role_returns_member() -> None:
     service, access_repo, workspace, member_user, _ = make_service(
         role=WorkspaceRole.ADMIN
@@ -241,7 +235,6 @@ async def test_add_workspace_member_uses_default_member_role_returns_member() ->
     )
 
 
-@pytest.mark.asyncio
 async def test_admin_appoint_owner_raises_permission_denied() -> None:
     service, access_repo, workspace, member_user, _ = make_service(
         role=WorkspaceRole.ADMIN
@@ -261,7 +254,6 @@ async def test_admin_appoint_owner_raises_permission_denied() -> None:
     access_repo.add_workspace_role.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_downgrade_last_owner_raises_permission_denied() -> None:
     service, access_repo, workspace, member_user, member_role = make_service(
         role=WorkspaceRole.OWNER,
@@ -280,7 +272,6 @@ async def test_downgrade_last_owner_raises_permission_denied() -> None:
     access_repo.update_workspace_role.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_remove_last_owner_raises_permission_denied() -> None:
     service, access_repo, workspace, member_user, member_role = make_service(
         role=WorkspaceRole.OWNER,

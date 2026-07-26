@@ -62,7 +62,6 @@ class DummyContainer:
         return self.object_storage
 
 
-@pytest.mark.asyncio
 async def test_worker_container_close_disposes_engine_and_clears_refs() -> None:
     from backend.worker.dependencies import WorkerContainer
 
@@ -124,7 +123,6 @@ def test_wrapper_functions_delegate_to_container_return_services() -> None:
     assert dependencies.get_worker_object_storage() is container.object_storage
 
 
-@pytest.mark.asyncio
 async def test_get_external_context_provider_lazy_init(monkeypatch) -> None:
     from backend.worker.dependencies import WorkerContainer
 
@@ -145,7 +143,6 @@ async def test_get_external_context_provider_lazy_init(monkeypatch) -> None:
     assert result2 is fake_provider
 
 
-@pytest.mark.asyncio
 async def test_get_rerank_service_lazy_init(monkeypatch) -> None:
     from backend.worker.dependencies import WorkerContainer
 
@@ -285,7 +282,6 @@ def test_get_rerank_service_returns_none_when_provider_is_mock(monkeypatch) -> N
     assert container._rerank_init_failed is False
 
 
-@pytest.mark.asyncio
 async def test_get_rag_service_succeeds_when_rerank_provider_is_mock(
     monkeypatch,
 ) -> None:
@@ -320,7 +316,6 @@ async def test_get_rag_service_succeeds_when_rerank_provider_is_mock(
     assert rag_service.reranker is None
 
 
-@pytest.mark.asyncio
 async def test_get_rag_service_uses_native_reranker_without_initializing_llm(
     monkeypatch,
 ) -> None:

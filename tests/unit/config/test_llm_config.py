@@ -63,6 +63,7 @@ def test_load_llm_model_config_resolves_aliases() -> None:
         "https://dashscope.aliyuncs.com/compatible-mode/v1"
     )
     assert qwen3_embedding.dimensions == 768
+    assert config.resolve_embedding_profile("openai-compatible").dimensions == 768
 
     assert config.resolve_rerank_profile("dashscope").provider == "dashscope"
     assert config.resolve_rerank_profile("dashscope").model == "qwen3-rerank"

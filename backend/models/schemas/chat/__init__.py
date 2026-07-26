@@ -23,7 +23,10 @@ from backend.models.schemas.chat.dto import (
 )
 from backend.models.schemas.chat.params import LLMExtraBody, LLMThinkingConfig
 from backend.models.schemas.chat.payloads import (
+    GenerationAttemptPayload,
+    GenerationDispatchContext,
     GenerationPayload,
+    GenerationRequestContext,
     GenerationResult,
     LLMTaskPayload,
 )
@@ -38,7 +41,10 @@ __all__ = [
     "ChatQueryResponse",
     "ContextState",
     "ConversationMessage",
+    "GenerationAttemptPayload",
+    "GenerationDispatchContext",
     "GenerationPayload",
+    "GenerationRequestContext",
     "GenerationResult",
     "LLMExtraBody",
     "LLMQueryDTO",

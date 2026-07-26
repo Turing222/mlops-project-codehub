@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from backend.models.orm.knowledge import KnowledgeBase
 from tests.smoke import _http_smoke_helpers as smoke_helpers
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
+pytestmark = pytest.mark.smoke
 create_auth_headers = smoke_helpers.create_auth_headers
 smoke_client = smoke_helpers.smoke_client
 
@@ -257,7 +257,6 @@ async def test_host_s3_endpoint_url_maps_minio_to_host_port(
     assert _host_s3_endpoint_url() == "http://localhost:19000/minio-path"
 
 
-@pytest.mark.asyncio
 async def test_knowledge_upload_over_http_reaches_ready_state(
     smoke_client: httpx.AsyncClient,
 ):
@@ -353,7 +352,6 @@ async def test_knowledge_upload_over_http_reaches_ready_state(
     smoke_helpers.assert_error_response(task_denied_response, 404, "TASK_NOT_FOUND")
 
 
-@pytest.mark.asyncio
 async def test_knowledge_upload_rejects_invalid_requests_over_http(
     smoke_client: httpx.AsyncClient,
 ):

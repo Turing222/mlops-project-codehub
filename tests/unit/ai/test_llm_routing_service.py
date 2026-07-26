@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -15,10 +16,10 @@ from backend.ai.providers.llm.routing_service import (
     LLMRoutingService,
 )
 from backend.contracts.interfaces import AbstractLLMService
-from backend.core.exceptions import app_service_error
+from backend.core.exceptions import AppException, app_service_error
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 
-pytestmark = pytest.mark.asyncio
+FAILURE_MARKER = "provider-echo-AKIA1111111111111111-pii-13812345678"
 
 
 def make_query() -> LLMQueryDTO:
@@ -42,11 +43,11 @@ class FailingLLMService(AbstractLLMService):
         self,
         query: LLMQueryDTO,
     ) -> AsyncGenerator[str, None]:
-        raise app_service_error("rate limited", details={"status_code": 429})
+        raise app_service_error(FAILURE_MARKER, details={"status_code": 429})
         yield ""
 
     async def generate_response(self, query: LLMQueryDTO) -> LLMResultDTO:
-        raise app_service_error("rate limited", details={"status_code": 429})
+        raise app_service_error(FAILURE_MARKER, details={"status_code": 429})
 
 
 class SuccessfulLLMService(AbstractLLMService):
@@ -69,7 +70,9 @@ class SuccessfulLLMService(AbstractLLMService):
         return LLMResultDTO(content="fallback answer", latency_ms=12)
 
 
-async def test_generate_response_falls_back_to_next_candidate() -> None:
+async def test_generate_response_falls_back_without_logging_provider_content(
+    caplog,
+) -> None:
     service = LLMRoutingService(
         [
             LLMRouteCandidate("primary", FailingLLMService()),
@@ -77,10 +80,13 @@ async def test_generate_response_falls_back_to_next_candidate() -> None:
         ]
     )
 
+    caplog.set_level(logging.WARNING)
     result = await service.generate_response(make_query())
 
     assert result.content == "fallback answer"
     assert result.success is True
+    assert FAILURE_MARKER not in caplog.text
+    assert FAILURE_MARKER not in repr([record.__dict__ for record in caplog.records])
 
 
 async def test_stream_response_falls_back_before_first_chunk() -> None:
@@ -94,3 +100,21 @@ async def test_stream_response_falls_back_before_first_chunk() -> None:
     chunks = [chunk async for chunk in service.stream_response(make_query())]
 
     assert chunks == ["fallback ", "answer"]
+
+
+async def test_all_candidate_failure_summary_omits_provider_content() -> None:
+    service = LLMRoutingService(
+        [
+            LLMRouteCandidate("primary", FailingLLMService()),
+            LLMRouteCandidate("fallback", FailingLLMService()),
+        ]
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await service.generate_response(make_query())
+
+    assert FAILURE_MARKER not in repr(exc_info.value.details)
+    assert exc_info.value.details["attempts"] == [
+        {"candidate": "primary", "type": "AppException", "status_code": "500"},
+        {"candidate": "fallback", "type": "AppException", "status_code": "500"},
+    ]

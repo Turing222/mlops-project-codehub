@@ -1,4 +1,7 @@
-"""Tests for FilteringSpanProcessor and should_export_to_langfuse."""
+"""Filtering span processor unit tests.
+
+职责：验证 FilteringSpanProcessor 与 should_export_to_langfuse 过滤逻辑；边界：mock ReadableSpan，不连 Langfuse；副作用：无。
+"""
 
 from __future__ import annotations
 
@@ -13,9 +16,7 @@ from backend.observability.filtering_span_processor import (
     should_export_to_langfuse,
 )
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_span(
@@ -30,9 +31,7 @@ def _make_span(
     return span
 
 
-# ---------------------------------------------------------------------------
 # should_export_to_langfuse
-# ---------------------------------------------------------------------------
 
 
 class TestShouldExportToLangfuse:
@@ -141,9 +140,7 @@ class TestShouldExportToLangfuse:
         assert should_export_to_langfuse(span) is False
 
 
-# ---------------------------------------------------------------------------
 # FilteringSpanProcessor
-# ---------------------------------------------------------------------------
 
 
 class TestFilteringSpanProcessor:

@@ -9,7 +9,7 @@
 Dewflow 的扩容对象分成两类：
 
 | 对象 | 压力来源 | 当前指标 | 扩容组件 | 策略 |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | API | 在线 HTTP 请求 | CPU / Memory | HPA | 1-5 副本 |
 | Worker | 后台任务积压 | Redis list length | KEDA | 1-8 副本 |
 
@@ -33,7 +33,7 @@ Worker 负责 LLM 非流式生成、知识库解析、chunking、embedding 和�
 
 当前使用 KEDA Redis scaler：
 
-- Redis db=1 是 TaskIQ 队列库。
+- 独立 `redis-taskiq` 实例的 db=0 是 TaskIQ 队列库；可淘汰 cache Redis 不承载队列。
 - TaskIQ list 名称为 `taskiq`。
 - 队列长度达到 10 左右时触发扩容。
 - 每 15 秒检查一次队列长度。

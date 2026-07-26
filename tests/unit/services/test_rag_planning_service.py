@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
+from pydantic_ai.models.instrumented import InstrumentationSettings
 
 from backend.models.schemas.chat.payloads import FeatureFlags
 from backend.services.rag_planning_service import (
@@ -405,9 +406,11 @@ def test_rag_planning_service_uses_prompted_output(
     assert captured["model"] == "model"
     assert type(captured["output_type"]).__name__ == "PromptedOutput"
     assert captured["output_type"].outputs is RAGExecutionPlan
+    assert isinstance(captured["instrument"], InstrumentationSettings)
+    assert captured["instrument"].include_content is False
+    assert captured["instrument"].include_binary_content is False
 
 
-@pytest.mark.asyncio
 async def test_rag_planning_service_returns_fallback_on_invalid_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -443,7 +446,6 @@ def test_planner_instructions_include_level2_route_contract() -> None:
     assert "普通闲聊" in _PLANNER_INSTRUCTIONS
 
 
-@pytest.mark.asyncio
 async def test_rag_planning_service_runs_without_kb_when_external_allowed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -473,7 +475,6 @@ async def test_rag_planning_service_runs_without_kb_when_external_allowed(
     assert planner.calls[0]["context_mode"] == "auto"
 
 
-@pytest.mark.asyncio
 async def test_rag_planning_service_prefers_web_for_realtime_query() -> None:
     planner = RecordingPlanner(
         RAGExecutionPlan(
@@ -507,7 +508,6 @@ async def test_rag_planning_service_prefers_web_for_realtime_query() -> None:
     assert plan.use_rerank is False
 
 
-@pytest.mark.asyncio
 async def test_rag_planning_service_keeps_kb_when_query_mentions_documents() -> None:
     planner = RecordingPlanner(
         RAGExecutionPlan(
@@ -535,7 +535,6 @@ async def test_rag_planning_service_keeps_kb_when_query_mentions_documents() -> 
     assert plan.should_use_external_context is False
 
 
-@pytest.mark.asyncio
 async def test_rag_planning_service_web_only_runs_without_legacy_external_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -565,7 +564,6 @@ async def test_rag_planning_service_web_only_runs_without_legacy_external_flag(
     assert planner.calls[0]["context_mode"] == "web_only"
 
 
-@pytest.mark.asyncio
 async def test_rag_planning_service_thinking_enabled_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -630,7 +628,6 @@ async def test_rag_planning_service_thinking_enabled_flag(
     }
 
 
-@pytest.mark.asyncio
 async def test_rag_planning_service_does_not_inject_thinking_for_plain_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

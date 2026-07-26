@@ -1,4 +1,7 @@
-"""Telemetry setup unit tests."""
+"""Telemetry setup unit tests.
+
+职责：验证 setup_telemetry 配置与 probe URL 排除；边界：monkeypatch FastAPI instrumentation；副作用：无。
+"""
 
 from __future__ import annotations
 

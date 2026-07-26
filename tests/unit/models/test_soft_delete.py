@@ -9,14 +9,10 @@ from __future__ import annotations
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from backend.models.orm.base import SoftDeleteMixin, _apply_soft_delete_filter
 from backend.repositories.base import CRUDBase
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_execute_state(*, is_select: bool = True, include_deleted: bool = False):
@@ -33,12 +29,9 @@ def _make_execute_state(*, is_select: bool = True, include_deleted: bool = False
     return state
 
 
-# ---------------------------------------------------------------------------
 # Tests: do_orm_execute event hook
-# ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_soft_delete_filter_applies_to_select_statements() -> None:
     state = _make_execute_state(is_select=True, include_deleted=False)
 
@@ -49,7 +42,6 @@ async def test_soft_delete_filter_applies_to_select_statements() -> None:
     assert call_args is not None
 
 
-@pytest.mark.asyncio
 async def test_soft_delete_filter_skips_non_select_statements() -> None:
     state = _make_execute_state(is_select=False, include_deleted=False)
 
@@ -58,7 +50,6 @@ async def test_soft_delete_filter_skips_non_select_statements() -> None:
     state.statement.options.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_soft_delete_filter_skips_when_include_deleted_is_true() -> None:
     state = _make_execute_state(is_select=True, include_deleted=True)
 
@@ -67,12 +58,9 @@ async def test_soft_delete_filter_skips_when_include_deleted_is_true() -> None:
     state.statement.options.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
 # Tests: CRUDBase.get() uses select (not session.get)
-# ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_crud_base_get_uses_select_not_session_get() -> None:
     from backend.models.orm.chat import ChatSession
 
@@ -88,9 +76,7 @@ async def test_crud_base_get_uses_select_not_session_get() -> None:
     session.get.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
 # Tests: is_deleted property
-# ---------------------------------------------------------------------------
 
 
 def test_is_deleted_returns_true_when_deleted_at_is_set() -> None:
@@ -100,8 +86,8 @@ def test_is_deleted_returns_true_when_deleted_at_is_set() -> None:
         def __init__(self, deleted_at):
             self.deleted_at = deleted_at
 
-    obj = _Obj(deleted_at=datetime.now(UTC))
-    assert obj.is_deleted is True
+    record = _Obj(deleted_at=datetime.now(UTC))
+    assert record.is_deleted is True
 
 
 def test_is_deleted_returns_false_when_deleted_at_is_none() -> None:
@@ -109,5 +95,5 @@ def test_is_deleted_returns_false_when_deleted_at_is_none() -> None:
         def __init__(self):
             self.deleted_at = None
 
-    obj = _Obj()
-    assert obj.is_deleted is False
+    record = _Obj()
+    assert record.is_deleted is False

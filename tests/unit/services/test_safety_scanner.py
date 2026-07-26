@@ -11,7 +11,7 @@ from backend.services.safety_scanner import (
     SafetyScanner,
 )
 
-# ── scan: normal text ────────────────────────────────────────────────
+# scan: normal text
 
 
 class TestScanNormal:
@@ -30,7 +30,7 @@ class TestScanNormal:
         assert result.category == SafetyCategory.OK
 
 
-# ── scan: injection detection ────────────────────────────────────────
+# scan: injection detection
 
 
 class TestScanInjection:
@@ -69,7 +69,7 @@ class TestScanInjection:
         assert result.injection_risk is True
 
 
-# ── scan: sensitive data detection ───────────────────────────────────
+# scan: sensitive data detection
 
 
 class TestScanSensitiveData:
@@ -105,7 +105,7 @@ class TestScanSensitiveData:
         assert "email" in result.detected_patterns
 
 
-# ── scan: priority ───────────────────────────────────────────────────
+# Priority rules
 
 
 class TestScanPriority:
@@ -124,7 +124,7 @@ class TestScanPriority:
         assert len(result.detected_patterns) >= 2
 
 
-# ── redact ───────────────────────────────────────────────────────────
+# redact
 
 
 class TestRedact:
@@ -168,7 +168,7 @@ class TestRedact:
         assert "sk-abc123def456ghi789jkl" not in redacted
 
 
-# ── has_secret_patterns ──────────────────────────────────────────────
+# has_secret_patterns
 
 
 class TestHasSecretPatterns:

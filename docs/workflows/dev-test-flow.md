@@ -133,7 +133,7 @@ make image-build
 
 当前 Smoke 环境使用：
 
-- [docker-compose.db.yml](../docker-compose.db.yml)
+- [docker-compose.db.yml](../../docker-compose.db.yml)
 
 当前编排包含的核心服务：
 

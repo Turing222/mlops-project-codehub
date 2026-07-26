@@ -87,6 +87,11 @@ x-backend-aws-env: &backend-aws-env
   S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
   POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-verify-full}
   POSTGRES_SSL_ROOT_CERT_FILE: ${POSTGRES_SSL_ROOT_CERT_FILE:-}
+  REDIS_HOST: ${REDIS_HOST:-redis-cache}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  TASKIQ_REDIS_HOST: ${TASKIQ_REDIS_HOST:-redis-taskiq}
+  TASKIQ_REDIS_PORT: ${TASKIQ_REDIS_PORT:-6379}
+  TASKIQ_RESULT_TTL_SECONDS: ${TASKIQ_RESULT_TTL_SECONDS:-3600}
   ENABLE_OTEL_METRICS: ${ENABLE_OTEL_METRICS:-false}
   ENABLE_OTEL_TRACES: ${ENABLE_OTEL_TRACES:-false}
   OTEL_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-}
@@ -95,10 +100,10 @@ x-backend-aws-env: &backend-aws-env
 
 services:
 
-  redis:
+  redis-cache:
     <<: *default-security
     image: redis:7.4.9-alpine
-    container_name: redis
+    container_name: redis-cache
     restart: unless-stopped
     env_file: *deploy-env-file
     secrets:
@@ -110,6 +115,33 @@ services:
     logging: *default-logging
     command: >
       sh -c 'umask 077 && printf "maxmemory 384mb\nmaxmemory-policy allkeys-lru\nrequirepass %s\n" "$$(cat /run/secrets/REDIS_PASSWORD)" > /tmp/redis.conf && exec redis-server /tmp/redis.conf'
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/REDIS_PASSWORD)\" ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      app_net:
+        aliases:
+          - redis
+
+  redis-taskiq:
+    <<: *default-security
+    image: redis:7.4.9-alpine
+    container_name: redis-taskiq
+    restart: unless-stopped
+    env_file: *deploy-env-file
+    secrets:
+      - REDIS_PASSWORD
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging: *default-logging
+    command: >
+      sh -c 'umask 077 && printf "appendonly yes\nappendfsync everysec\nmaxmemory 384mb\nmaxmemory-policy noeviction\nrequirepass %s\n" "$$(cat /run/secrets/REDIS_PASSWORD)" > /tmp/redis.conf && exec redis-server /tmp/redis.conf'
+    volumes:
+      - taskiq_redis_data:/data
     healthcheck:
       test: [ "CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/REDIS_PASSWORD)\" ping" ]
       interval: 10s
@@ -140,7 +172,9 @@ services:
         reservations:
           memory: 256M
     depends_on:
-      redis:
+      redis-cache:
+        condition: service_healthy
+      redis-taskiq:
         condition: service_healthy
       db_migrator:
         condition: service_completed_successfully
@@ -170,7 +204,7 @@ services:
     volumes:
       - ./nginx/api.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
-      test: [ "CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null || exit 1" ]
+      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1" ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -238,7 +272,7 @@ services:
     ports:
       - "${BIFROST_BIND:-127.0.0.1}:${BIFROST_PORT:-18080}:8080"
     healthcheck:
-      test: [ "CMD-SHELL", "wget -qO- --header=\"x-bf-vk: $$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" http://localhost:8080/v1/models >/dev/null || exit 1" ]
+      test: [ "CMD-SHELL", "wget -qO- --header=\"x-bf-vk: $$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" http://127.0.0.1:8080/v1/models >/dev/null || exit 1" ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -280,7 +314,7 @@ services:
       <<: [ *backend-aws-env, *secret-file-env ]
       TASKIQ_HEALTH_MIN_PROCESSES: "2"
       # Single source of truth for prod task modules; the image CMD consumes it.
-      TASKIQ_MODULES: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks"
+      TASKIQ_MODULES: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks backend.worker.tasks.chat_recovery_tasks backend.worker.tasks.operability_tasks"
       TASKIQ_WORKERS: "2"
       TASKIQ_WAIT_TASKS_TIMEOUT: "105"
       TASKIQ_SHUTDOWN_TIMEOUT: "10"
@@ -293,7 +327,9 @@ services:
     restart: unless-stopped
     logging: *default-logging
     depends_on:
-      redis:
+      redis-cache:
+        condition: service_healthy
+      redis-taskiq:
         condition: service_healthy
       db_migrator:
         condition: service_completed_successfully
@@ -312,13 +348,15 @@ services:
     <<: *default-security
     image: ${DOCKER_IMAGE_NAME_AI:?missing DOCKER_IMAGE_NAME_AI (set in deploy/.env.ec2 via make release-image-env)}
     container_name: credit_scheduler
+    # SIGINT: taskiq scheduler ignores SIGTERM; asyncio.run only cancels the main task on SIGINT, triggering graceful shutdown.
+    stop_signal: SIGINT
     stop_grace_period: 30s
-    command: sh -c 'exec taskiq scheduler backend.worker.scheduler_entrypoint:build_scheduler $${TASKIQ_SCHEDULER_MODULES:-backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks}'
+    command: sh -c 'exec taskiq scheduler backend.worker.scheduler_entrypoint:build_scheduler $${TASKIQ_SCHEDULER_MODULES:-backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.chat_recovery_tasks backend.worker.tasks.operability_tasks}'
     env_file: *deploy-env-file
     secrets: *app-secrets
     environment:
       <<: [ *backend-aws-env, *secret-file-env ]
-      TASKIQ_SCHEDULER_MODULES: "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks"
+      TASKIQ_SCHEDULER_MODULES: "backend.worker.tasks.credit_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.chat_recovery_tasks backend.worker.tasks.operability_tasks"
     healthcheck:
       test: [ "CMD-SHELL", "python -c 'from backend.worker.scheduler_entrypoint import validate_scheduler_schedules; validate_scheduler_schedules()' || exit 1" ]
       interval: 60s
@@ -328,7 +366,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     depends_on:
-      redis:
+      redis-taskiq:
         condition: service_healthy
       db_migrator:
         condition: service_completed_successfully
@@ -353,6 +391,8 @@ networks:
 volumes:
   bifrost_data:
     name: bifrost_data_volume
+  taskiq_redis_data:
+    name: taskiq_redis_data_volume
 
 secrets:
   SECRET_KEY:

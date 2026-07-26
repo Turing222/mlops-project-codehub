@@ -20,6 +20,7 @@ export const resolveApiUrl = (path: string): string => {
 
 export const API_URLS = {
     AUTH: {
+        CONFIG: `${API_PREFIX}/auth/config`,
         LOGIN: `${API_PREFIX}/auth/login`,
         REGISTER: `${API_PREFIX}/auth/register`,
         REFRESH_TOKEN: `${API_PREFIX}/auth/refresh`,
@@ -41,6 +42,9 @@ export const API_URLS = {
         QUERY_STREAM: `${API_PREFIX}/chat/query_stream`,
         SESSIONS: `${API_PREFIX}/chat/sessions`,
         SESSION_DETAIL: (id: string) => `${API_PREFIX}/chat/sessions/${id}`,
+        REQUEST_RESOLVE: `${API_PREFIX}/chat/requests/resolve`,
+        REQUEST_STATUS: (id: string) => `${API_PREFIX}/chat/requests/${id}`,
+        REQUEST_RETRY: (id: string) => `${API_PREFIX}/chat/requests/${id}/retry`,
     },
     TELEMETRY: {
         ERRORS: `${API_PREFIX}/telemetry/errors`,

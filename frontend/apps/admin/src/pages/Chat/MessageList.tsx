@@ -237,7 +237,11 @@ const MessageList: React.FC<MessageListProps> = ({
                                 <AlertCircle size={14} />
                                 <span>{msg.content || t('chat.request_failed')}</span>
                             </div>
-                            {!isUser && onRetryFailedMessage && (
+                            {!isUser &&
+                              msg.retryable === true &&
+                              msg.generation_request_id &&
+                              msg.attempt != null &&
+                              onRetryFailedMessage && (
                                 <div className={styles['error-actions']}>
                                     <Button
                                         type="link"

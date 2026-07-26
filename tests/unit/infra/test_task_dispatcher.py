@@ -30,9 +30,9 @@ def _decode_lpush_message(redis_client: FakeRedis) -> dict[str, object]:
     return json.loads(message.decode())
 
 
-@pytest.mark.asyncio
 async def test_enqueue_stream_passes_params_through() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
+    from backend.models.schemas.chat.payloads import GenerationAttemptPayload
 
     redis_client = FakeRedis()
     dispatcher = TaskDispatcher(redis_client)
@@ -42,6 +42,12 @@ async def test_enqueue_stream_passes_params_through() -> None:
     msg_id = str(uuid.uuid4())
     user_id = str(uuid.uuid4())
     lock_key = "lock:test"
+    generation_attempt = GenerationAttemptPayload(
+        request_id=uuid.uuid4(),
+        attempt=2,
+        task_id="durable-stream-task",
+        lease_token="stream-lease",
+    )
 
     await dispatcher.enqueue_stream(
         generation_payload=payload,
@@ -50,10 +56,12 @@ async def test_enqueue_stream_passes_params_through() -> None:
         assistant_message_id=msg_id,
         user_id=user_id,
         idempotency_lock_key=lock_key,
+        generation_attempt=generation_attempt,
     )
 
     message = _decode_lpush_message(redis_client)
     assert message["task_name"] == TASK_STREAM
+    assert message["task_id"] == generation_attempt.task_id
     args = message["args"]
     assert len(args) == 1
     assert args[0]["generation_payload"] == payload
@@ -62,12 +70,15 @@ async def test_enqueue_stream_passes_params_through() -> None:
     assert args[0]["assistant_message_id"] == msg_id
     assert args[0]["user_id"] == user_id
     assert args[0]["idempotency_lock_key"] == lock_key
+    assert args[0]["generation_attempt"] == generation_attempt.model_dump(mode="json")
 
 
-@pytest.mark.asyncio
 async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
-    from backend.models.schemas.chat.payloads import GenerationResult
+    from backend.models.schemas.chat.payloads import (
+        GenerationAttemptPayload,
+        GenerationResult,
+    )
 
     expected_result = {"success": True, "content": "answer"}
 
@@ -88,6 +99,12 @@ async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
     msg_id = str(uuid.uuid4())
     user_id = str(uuid.uuid4())
     lock_key = "lock:test"
+    generation_attempt = GenerationAttemptPayload(
+        request_id=uuid.uuid4(),
+        attempt=1,
+        task_id="durable-nonstream-task",
+        lease_token="nonstream-lease",
+    )
 
     result = await dispatcher.enqueue_nonstream(
         generation_payload=payload,
@@ -95,10 +112,12 @@ async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
         assistant_message_id=msg_id,
         user_id=user_id,
         idempotency_lock_key=lock_key,
+        generation_attempt=generation_attempt,
     )
 
     message = _decode_lpush_message(redis_client)
     assert message["task_name"] == TASK_NONSTREAM
+    assert message["task_id"] == generation_attempt.task_id
     args = message["args"]
     assert len(args) == 1
     assert args[0]["generation_payload"] == payload
@@ -107,13 +126,70 @@ async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
     assert args[0]["assistant_message_id"] == msg_id
     assert args[0]["user_id"] == user_id
     assert args[0]["idempotency_lock_key"] == lock_key
+    assert args[0]["generation_attempt"] == generation_attempt.model_dump(mode="json")
     redis_client.get.assert_awaited_once_with(message["task_id"])
     assert isinstance(result, GenerationResult)
     assert result.success is True
     assert result.content == "answer"
 
 
-@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "expected_task_name", "expected_channel"),
+    [
+        ("stream", TASK_STREAM, "stream:recovery-task"),
+        ("nonstream", TASK_NONSTREAM, None),
+    ],
+)
+async def test_enqueue_generation_recovery_is_fire_and_forget(
+    mode: str,
+    expected_task_name: str,
+    expected_channel: str | None,
+) -> None:
+    from backend.infra.task_dispatcher import TaskDispatcher
+    from backend.models.schemas.chat.payloads import (
+        GenerationAttemptPayload,
+        GenerationDispatchContext,
+        GenerationPayload,
+    )
+
+    redis_client = FakeRedis()
+    dispatcher = TaskDispatcher(redis_client)
+    request_id = uuid.uuid4()
+    attempt = GenerationAttemptPayload(
+        request_id=request_id,
+        attempt=2,
+        task_id="recovery-task",
+        lease_token="recovery-lease",
+    )
+    context = GenerationDispatchContext.model_validate(
+        {
+            "mode": mode,
+            "generation_payload": GenerationPayload(
+                session_id=uuid.uuid4(),
+                query_text="recover me",
+            ),
+            "idempotency_lock_key": "idempotency:recovery",
+        }
+    )
+
+    await dispatcher.enqueue_generation_recovery(
+        dispatch_context=context,
+        assistant_message_id=str(uuid.uuid4()),
+        user_id=str(uuid.uuid4()),
+        generation_attempt=attempt,
+        trace_context={"traceparent": "00-recovery"},
+    )
+
+    message = _decode_lpush_message(redis_client)
+    assert message["task_name"] == expected_task_name
+    assert message["task_id"] == attempt.task_id
+    task_payload = message["args"][0]
+    assert task_payload["channel"] == expected_channel
+    assert task_payload["generation_attempt"] == attempt.model_dump(mode="json")
+    assert task_payload["idempotency_lock_key"] == "idempotency:recovery"
+    redis_client.get.assert_not_awaited()
+
+
 async def test_enqueue_ingestion_passes_params_through() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
@@ -121,20 +197,23 @@ async def test_enqueue_ingestion_passes_params_through() -> None:
     dispatcher = TaskDispatcher(redis_client)
     file_id = str(uuid.uuid4())
     task_id = str(uuid.uuid4())
+    outbox_id = str(uuid.uuid4())
     trace_ctx = {"traceparent": "00-test"}
 
     await dispatcher.enqueue_ingestion(
         file_id=file_id,
         task_id=task_id,
         trace_context=trace_ctx,
+        outbox_id=outbox_id,
+        message_id=outbox_id,
     )
 
     message = _decode_lpush_message(redis_client)
     assert message["task_name"] == TASK_INGESTION
-    assert message["args"] == [file_id, task_id, trace_ctx]
+    assert message["task_id"] == outbox_id
+    assert message["args"] == [file_id, task_id, trace_ctx, outbox_id]
 
 
-@pytest.mark.asyncio
 async def test_enqueue_repo_analysis_passes_params_through() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
@@ -155,7 +234,6 @@ async def test_enqueue_repo_analysis_passes_params_through() -> None:
     assert message["args"] == [run_id, task_id, trace_ctx]
 
 
-@pytest.mark.asyncio
 async def test_wait_result_timeout_raises_timeout_error() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
@@ -166,7 +244,6 @@ async def test_wait_result_timeout_raises_timeout_error() -> None:
         await dispatcher._wait_result("test-task-id", timeout=0.2)
 
 
-@pytest.mark.asyncio
 async def test_wait_result_is_err_raises_runtime_error() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
@@ -187,7 +264,6 @@ async def test_wait_result_is_err_raises_runtime_error() -> None:
         await dispatcher._wait_result("test-task-id", timeout=10)
 
 
-@pytest.mark.asyncio
 async def test_send_task_redis_push_error_propagates() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
@@ -199,7 +275,6 @@ async def test_send_task_redis_push_error_propagates() -> None:
         await dispatcher._send_task("test_task", "arg1")
 
 
-@pytest.mark.asyncio
 async def test_task_name_constants_match_expected() -> None:
     """Ensure task name constants are not accidentally changed."""
     assert TASK_STREAM == "generate_llm_stream"

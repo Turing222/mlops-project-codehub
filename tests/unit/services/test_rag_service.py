@@ -12,8 +12,6 @@ import pytest
 from backend.core.exceptions import app_service_error
 from backend.services.rag_service import RAGService, select_rerank_fallback_candidates
 
-pytestmark = pytest.mark.asyncio
-
 
 def _build_service(reranker: object = None) -> RAGService:
     return RAGService(

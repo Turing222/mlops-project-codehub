@@ -7,8 +7,11 @@
 
 import logging
 import uuid
+from dataclasses import asdict
 
+from backend.application.knowledge.ingestion_heartbeat import IngestionLeaseHeartbeat
 from backend.application.knowledge.ingestion_workflow import KnowledgeRAGWorkflow
+from backend.application.knowledge.outbox_relay import KnowledgeOutboxRelayService
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
 from backend.core.exceptions import (
@@ -16,7 +19,10 @@ from backend.core.exceptions import (
     app_service_error,
     app_validation_error,
 )
+from backend.infra.redis import redis_client
 from backend.infra.task_broker import broker
+from backend.infra.task_dispatcher import TaskDispatcher
+from backend.models.orm.task import TaskStatus
 from backend.observability.trace_utils import (
     set_span_attributes,
     trace_span,
@@ -45,13 +51,19 @@ async def safe_mark_failed(
     uow: SQLAlchemyUnitOfWork,
     task_service: TaskService,
     task_id: uuid.UUID | None,
+    expected_attempt: int | None,
     error_log: str,
 ) -> None:
-    if task_id is None:
+    if task_id is None or expected_attempt is None:
         return
     try:
         async with uow:
-            await task_service.mark_failed(task_id=task_id, error_log=error_log)
+            await task_service.fail_kb_ingestion(
+                task_id=task_id,
+                expected_attempt=expected_attempt,
+                expected_statuses=(TaskStatus.PROCESSING,),
+                error_log=error_log,
+            )
     except Exception:
         logger.exception("TaskIQ 任务失败状态回写异常: task_id=%s", task_id)
 
@@ -61,10 +73,15 @@ async def ingest_knowledge_file_task(
     file_id: str,
     task_id: str | None = None,
     trace_context: dict[str, str] | None = None,
+    outbox_id: str | None = None,
 ) -> None:
     """TaskIQ 入口：恢复 trace context 后执行知识文件入库。"""
     with use_trace_context(trace_context):
-        await _ingest_knowledge_file_task(file_id=file_id, task_id=task_id)
+        await _ingest_knowledge_file_task(
+            file_id=file_id,
+            task_id=task_id,
+            outbox_id=outbox_id,
+        )
 
 
 @broker.task(
@@ -77,28 +94,65 @@ async def ingest_knowledge_file_task(
     ],
 )
 async def recover_stale_knowledge_ingestions_task() -> dict[str, int]:
-    """TaskIQ 入口：标记长期卡住的知识文件入库任务为失败。"""
+    """TaskIQ 入口：逐对收敛 Knowledge File/Task/Outbox 状态。"""
     uow = SQLAlchemyUnitOfWork(get_worker_session_factory())
     service = KnowledgeIngestionRecoveryService(uow)
     with trace_span("taskiq.knowledge.recover_stale_ingestions", {}) as span:
-        async with uow:
-            result = await service.recover_stale_ingestions()
-            set_span_attributes(
-                span,
-                {
-                    "knowledge.recovery.failed_file_count": result.failed_file_count,
-                    "knowledge.recovery.failed_task_count": result.failed_task_count,
-                },
-            )
-    return {
-        "failed_file_count": result.failed_file_count,
-        "failed_task_count": result.failed_task_count,
-    }
+        result = await service.recover_stale_ingestions()
+        set_span_attributes(
+            span,
+            {
+                "knowledge.recovery.scanned_task_count": result.scanned_task_count,
+                "knowledge.recovery.created_outbox_count": (
+                    result.created_outbox_count
+                ),
+                "knowledge.recovery.retried_task_count": result.retried_task_count,
+                "knowledge.recovery.completed_task_count": (
+                    result.completed_task_count
+                ),
+                "knowledge.recovery.failed_file_count": result.failed_file_count,
+                "knowledge.recovery.failed_task_count": result.failed_task_count,
+                "knowledge.recovery.conflict_count": result.conflict_count,
+            },
+        )
+    return asdict(result)
+
+
+@broker.task(
+    task_name="relay_knowledge_ingestion_outbox",
+    schedule=[
+        {
+            "cron": "* * * * *",
+            "schedule_id": "relay_knowledge_ingestion_outbox_every_minute",
+        }
+    ],
+)
+async def relay_knowledge_ingestion_outbox_task() -> dict[str, int]:
+    """TaskIQ 入口：发布一批到期 Knowledge outbox 事件。"""
+    redis_connection = await redis_client.init()
+    service = KnowledgeOutboxRelayService(
+        uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
+        dispatcher=TaskDispatcher(redis_connection),
+    )
+    with trace_span("taskiq.knowledge.relay_outbox", {}) as span:
+        result = await service.relay_due()
+        set_span_attributes(
+            span,
+            {
+                "knowledge.outbox.claimed_count": result.claimed_count,
+                "knowledge.outbox.published_count": result.published_count,
+                "knowledge.outbox.retry_count": result.retry_count,
+                "knowledge.outbox.dead_count": result.dead_count,
+                "knowledge.outbox.conflict_count": result.conflict_count,
+            },
+        )
+    return asdict(result)
 
 
 async def _ingest_knowledge_file_task(
     file_id: str,
     task_id: str | None = None,
+    outbox_id: str | None = None,
 ) -> None:
     logger.info("TaskIQ 开始处理知识库文件: file_id=%s task_id=%s", file_id, task_id)
     embedding_profile = get_llm_model_config().resolve_embedding_profile(
@@ -137,25 +191,81 @@ async def _ingest_knowledge_file_task(
             knowledge_service=knowledge_service,
             chunking_service=chunking_service,
             vector_index_service=vector_index_service,
+            task_service=task_service,
         )
 
     task_uuid: uuid.UUID | None = None
+    claimed_attempt: int | None = None
     try:
         file_uuid = uuid.UUID(file_id)
-        task_uuid = uuid.UUID(task_id) if task_id else None
+        if task_id is None:
+            raise ValueError("task_id is required")
+        task_uuid = uuid.UUID(task_id)
+        if outbox_id is not None:
+            uuid.UUID(outbox_id)
 
         with trace_span(
             "taskiq.knowledge.ingest.run",
             {"rag.file_id": file_uuid, "task.id": task_uuid},
         ) as span:
-            if task_uuid:
-                async with uow:
-                    await task_service.mark_processing(task_id=task_uuid, progress=5)
+            async with uow:
+                claimed_attempt = await task_service.claim_kb_ingestion(
+                    task_id=task_uuid,
+                    file_id=file_uuid,
+                )
+            if claimed_attempt is None:
+                if await _is_duplicate_delivery(
+                    uow=uow,
+                    task_id=task_uuid,
+                    file_id=file_uuid,
+                ):
+                    logger.info(
+                        "Knowledge duplicate delivery acknowledged",
+                        extra={
+                            "event": "knowledge_ingestion_duplicate_delivery",
+                            "file_id": str(file_uuid),
+                            "task_id": str(task_uuid),
+                            "outbox_id": outbox_id,
+                        },
+                    )
+                    return
+                raise app_validation_error(
+                    "知识入库任务身份或状态无效",
+                    code="KNOWLEDGE_TASK_CLAIM_REJECTED",
+                )
 
-            await workflow.ingest_file(file_id=file_uuid)
-            if task_uuid:
-                async with uow:
-                    await task_service.mark_completed(task_id=task_uuid, progress=100)
+            heartbeat = IngestionLeaseHeartbeat(
+                uow_factory=lambda: SQLAlchemyUnitOfWork(get_worker_session_factory()),
+                task_id=task_uuid,
+                expected_attempt=claimed_attempt,
+            )
+            if not await heartbeat.start():
+                raise app_validation_error(
+                    "知识入库任务租约已失效",
+                    code="KNOWLEDGE_TASK_LEASE_LOST",
+                )
+            try:
+                await workflow.ingest_file(
+                    file_id=file_uuid,
+                    task_id=task_uuid,
+                    expected_attempt=claimed_attempt,
+                )
+            finally:
+                await heartbeat.stop()
+
+            async with uow:
+                completed = await task_service.complete_kb_ingestion(
+                    task_id=task_uuid,
+                    expected_attempt=claimed_attempt,
+                )
+            if not completed and not await _task_is_completed(
+                uow=uow,
+                task_id=task_uuid,
+            ):
+                raise app_validation_error(
+                    "知识入库任务终态提交被租约拒绝",
+                    code="KNOWLEDGE_TASK_TERMINAL_REJECTED",
+                )
             set_span_attributes(span, {"task.status": "completed"})
     except ValueError as exc:
         logger.warning(
@@ -167,6 +277,7 @@ async def _ingest_knowledge_file_task(
             uow=uow,
             task_service=task_service,
             task_id=task_uuid,
+            expected_attempt=claimed_attempt,
             error_log="任务参数非法: file_id/task_id 必须为 UUID",
         )
         raise app_validation_error(
@@ -178,6 +289,7 @@ async def _ingest_knowledge_file_task(
             uow=uow,
             task_service=task_service,
             task_id=task_uuid,
+            expected_attempt=claimed_attempt,
             error_log=str(exc),
         )
         logger.warning(
@@ -192,6 +304,7 @@ async def _ingest_knowledge_file_task(
             uow=uow,
             task_service=task_service,
             task_id=task_uuid,
+            expected_attempt=claimed_attempt,
             error_log="知识文件处理失败，请稍后重试",
         )
         logger.exception(
@@ -205,3 +318,36 @@ async def _ingest_knowledge_file_task(
         ) from exc
 
     logger.info("TaskIQ 完成知识库文件处理: file_id=%s task_id=%s", file_id, task_id)
+
+
+async def _is_duplicate_delivery(
+    *,
+    uow: SQLAlchemyUnitOfWork,
+    task_id: uuid.UUID,
+    file_id: uuid.UUID,
+) -> bool:
+    async with uow.read_context():
+        task = await uow.task_repo.get(task_id)
+    if task is None:
+        return False
+    return (
+        task.action_type == "KB_INGESTION"
+        and task.knowledge_file_id == file_id
+        and TaskStatus(task.status)
+        in {
+            TaskStatus.PROCESSING,
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELED,
+        }
+    )
+
+
+async def _task_is_completed(
+    *,
+    uow: SQLAlchemyUnitOfWork,
+    task_id: uuid.UUID,
+) -> bool:
+    async with uow.read_context():
+        task = await uow.task_repo.get(task_id)
+    return task is not None and TaskStatus(task.status) == TaskStatus.COMPLETED

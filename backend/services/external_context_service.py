@@ -102,7 +102,14 @@ class TavilyExternalContextProvider(AbstractExternalContextProvider):
         try:
             await self._circuit.acquire()
         except AppException as exc:
-            logger.warning("Tavily 外部上下文检索熔断中，降级为空结果: %s", exc)
+            logger.warning(
+                "External context circuit is open; using empty results",
+                extra={
+                    "event": "external_context_degraded",
+                    "error_code": exc.code,
+                    "error_type": type(exc).__name__,
+                },
+            )
             return []
 
         try:
@@ -131,7 +138,14 @@ class TavilyExternalContextProvider(AbstractExternalContextProvider):
                 set_span_attributes(span, {"external_context.hit_count": len(chunks)})
         except Exception as exc:
             await self._circuit.on_failure()
-            logger.warning("Tavily 外部上下文检索失败，降级为空结果: %s", exc)
+            logger.warning(
+                "External context retrieval failed; using empty results",
+                extra={
+                    "event": "external_context_degraded",
+                    "error_code": "EXTERNAL_CONTEXT_RETRIEVAL_FAILED",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return []
         await self._circuit.on_success()
         return chunks

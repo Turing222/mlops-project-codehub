@@ -112,7 +112,7 @@ async def test_bifrost_rerank_rejects_whitespace_only_document() -> None:
         await service.rerank(query_text="query", documents=["   "], top_k=1)
 
 
-# ── _post_rerank error paths ──────────────────────────────────────────
+# _post_rerank error paths
 
 
 def test_post_rerank_raises_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -189,7 +189,7 @@ def test_parse_rankings_raises_missing_results() -> None:
     assert exc_info.value.code == "BIFROST_RERANK_MISSING_RESULTS"
 
 
-# ── 断路器（与 rag_service 降级叠加：熔断快速失败 + 降级兜底） ──────────
+# 断路器（与 rag_service 降级叠加：熔断快速失败 + 降级兜底）
 
 
 class FailingBifrostRerankService(BifrostRerankService):

@@ -12,8 +12,6 @@ import pytest
 
 from backend.repositories.user_repo import UserCreateData, UserRepository
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture
 def repo_ctx() -> tuple[UserRepository, AsyncMock]:

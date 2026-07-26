@@ -8,11 +8,13 @@ GuardrailDecision.scan_result 字段。
 from backend.services.chat_safety_metadata import (
     GuardrailDecision,
     GuardrailReason,
+    ResponseOutcome,
+    build_safety_metadata,
     evaluate_input_guardrail,
 )
 from backend.services.safety_scanner import SafetyCategory
 
-# ── GuardrailDecision.scan_result field ──────────────────────────────
+# GuardrailDecision.scan_result field
 
 
 class TestGuardrailDecisionScanResult:
@@ -25,7 +27,7 @@ class TestGuardrailDecisionScanResult:
         assert decision.scan_result is None
 
 
-# ── Phase 1: original intent+target check (unchanged) ───────────────
+# Phase 1: original intent+target check (unchanged)
 
 
 class TestOriginalIntentTargetCheck:
@@ -43,7 +45,7 @@ class TestOriginalIntentTargetCheck:
         assert decision.triggered is False
 
 
-# ── Phase 2: injection risk ──────────────────────────────────────────
+# Phase 2: injection risk
 
 
 class TestInjectionRisk:
@@ -60,7 +62,7 @@ class TestInjectionRisk:
         assert decision.reason == GuardrailReason.INJECTION_RISK.value
 
 
-# ── Phase 2: sensitive data — secrets block ──────────────────────────
+# Phase 2: sensitive data — secrets block
 
 
 class TestSensitiveSecretsBlock:
@@ -76,7 +78,7 @@ class TestSensitiveSecretsBlock:
         assert decision.triggered is True
 
 
-# ── Phase 2: sensitive data — phone/email allow ──────────────────────
+# Phase 2: sensitive data — phone/email allow
 
 
 class TestSensitivePhoneEmailAllow:
@@ -96,3 +98,36 @@ class TestSensitivePhoneEmailAllow:
         decision = evaluate_input_guardrail("请问知识库有哪些文档？")
         assert decision.triggered is False
         assert decision.scan_result is None
+
+
+def test_unsafe_output_metadata_contains_only_safe_summary() -> None:
+    unsafe_marker = "password=SecretValue123 email=person@example.com"
+
+    metadata = build_safety_metadata(
+        response_outcome=ResponseOutcome.REFUSED,
+        output_decision=GuardrailDecision(True, GuardrailReason.UNSAFE_OUTPUT.value),
+        original_unsafe_output=unsafe_marker,
+    )
+
+    output_metadata = metadata["guardrail"]["output"]
+    assert set(output_metadata["unsafe_summary"]) == {
+        "sha256",
+        "category",
+        "matched_rules",
+        "redacted_summary",
+    }
+    assert unsafe_marker not in repr(metadata)
+    assert "person@example.com" not in repr(metadata)
+
+
+def test_answered_metadata_does_not_copy_ordinary_output() -> None:
+    output_marker = "ordinary-output-synthetic-secret"
+
+    metadata = build_safety_metadata(
+        response_outcome=ResponseOutcome.ANSWERED,
+        output_decision=GuardrailDecision(False),
+        original_unsafe_output=output_marker,
+    )
+
+    assert metadata["guardrail"]["output"]["unsafe_summary"] is None
+    assert output_marker not in repr(metadata)

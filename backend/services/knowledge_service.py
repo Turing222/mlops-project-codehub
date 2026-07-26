@@ -261,6 +261,16 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
         await self.uow.knowledge_repo.delete_chunks_for_file(file_id)
         await self.uow.knowledge_repo.delete_file_record(file_id)
 
+    async def delete_stored_object(self, *, file_obj: File) -> None:
+        """Delete only the object represented by a File snapshot.
+
+        Used after a surrounding DB transaction rolls back; it intentionally
+        does not mutate repository state.
+        """
+        stored_obj = self._stored_object_from_file(file_obj)
+        if stored_obj is not None:
+            await self.storage.delete(stored_obj)
+
     @staticmethod
     def _sanitize_filename(filename: str) -> str:
         return safe_storage_filename(filename)

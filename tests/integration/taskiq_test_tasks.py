@@ -1,3 +1,5 @@
+"""TaskIQ integration test task definitions (helper, not a test module)."""
+
 from __future__ import annotations
 
 import redis.asyncio as redis
@@ -13,7 +15,10 @@ _TEST_BROKER = ListQueueBroker(
     url=settings.taskiq_redis_url,
     queue_name=_TEST_QUEUE_NAME,
 ).with_result_backend(
-    RedisAsyncResultBackend(redis_url=settings.taskiq_redis_url),
+    RedisAsyncResultBackend(
+        redis_url=settings.taskiq_redis_url,
+        result_ex_time=settings.TASKIQ_RESULT_TTL_SECONDS,
+    ),
 )
 
 

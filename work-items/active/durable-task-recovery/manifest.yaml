@@ -1,0 +1,76 @@
+slug: durable-task-recovery
+title: Durable Task Recovery and Redis Isolation
+status: done
+
+goal: Make accepted Chat and Knowledge work converge after dispatch, Redis, and worker failures through domain-specific durable state, bounded recovery, and an isolated persistent task broker.
+
+completion_chain:
+  - Chat and Knowledge failure boundaries, recovery budgets, terminal policies, and stale-attempt fencing are explicit and covered by regression tests.
+  - A Chat reconciler handles due PREPARED and QUEUED requests through CAS while expired RUNNING work reaches a bounded recoverable failure instead of being replayed blindly.
+  - Knowledge upload persists its business record, TaskJob, and TaskOutbox atomically, then relays and claims work idempotently with structured reconciliation.
+  - Evictable cache traffic is separated from a noeviction, AOF-backed, volume-persisted task broker and result backend with an explicit result TTL.
+  - Dispatch gaps, duplicate delivery, full Redis restart, and worker termination converge to one business terminal outcome without duplicate Credits settlement or chunk writes.
+  - Structured recovery events and identifiers required by T1-5 are recorded without implementing the alerting platform in this work item.
+
+workstreams:
+  - id: 1
+    title: Freeze T1-4 recovery contracts and characterize the current crash windows.
+    status: done
+    kind: blocking
+    deps: []
+  - id: 2
+    title: Add failing boundary tests for Chat, Knowledge, and Redis recovery.
+    status: done
+    kind: serial
+    deps: [1]
+  - id: 3
+    title: Implement Chat CAS recovery and the generation-request reconciler.
+    status: done
+    kind: serial
+    deps: [2]
+  - id: 4
+    title: Implement Knowledge durable ingestion, outbox relay, and conditional claim.
+    status: done
+    kind: serial
+    deps: [3]
+  - id: 5
+    title: Isolate cache Redis from the persistent task broker and result backend.
+    status: done
+    kind: serial
+    deps: [4]
+  - id: 6
+    title: Validate restart, duplicate-delivery, and worker-termination convergence.
+    status: done
+    kind: serial
+    deps: [3, 4, 5]
+  - id: 7
+    title: Record the T1-5 observability handoff and close T1-4.
+    status: done
+    kind: serial
+    deps: [6]
+
+current_checkpoint:
+  name: t1-4-validated
+  state: validated
+  summary: >-
+    T1-4 is validated. Chat recovery, Knowledge durable ingestion, isolated
+    persistent TaskIQ Redis, and the six-case disposable fault matrix all pass.
+    WS7 records stable recovery and heartbeat events, error codes, durable
+    diagnostic fields, trace counters, and CAS replay boundaries for T1-5; five
+    log-contract assertions prevent silent field drift. Alert configuration,
+    operator tooling, production drills, and RPO/RTO evidence remain T1-5 scope.
+
+open_decisions: []
+
+next_choices:
+  - id: A
+    label: Start T1-5
+    note: Create the alerting and recovery-evidence work item from the recorded WS7 signal contract.
+  - id: B
+    label: Reopen T1-4
+    note: Reopen only if a durable recovery contract or the validated fault matrix regresses.
+
+attached_artifacts:
+  task_plan: task-plan.md
+  reviews: []
+  debug: []

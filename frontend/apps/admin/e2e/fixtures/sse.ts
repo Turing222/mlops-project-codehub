@@ -15,6 +15,7 @@ export function buildChatSSEBody(options: {
   sessionId?: string;
   sessionTitle?: string;
   chunks?: string[];
+  meta?: Record<string, unknown>;
 } = {}) {
   const {
     sessionId = 'session-1',
@@ -22,7 +23,11 @@ export function buildChatSSEBody(options: {
     chunks = ['Hello', ' from', ' AI', ' assistant', '.'],
   } = options;
   const events = [
-    metaEvent({ session_id: sessionId, session_title: sessionTitle }),
+    metaEvent({
+      session_id: sessionId,
+      session_title: sessionTitle,
+      ...options.meta,
+    }),
     ...chunks.map((c) => chunkEvent(c)),
   ];
   return buildSSEBody(events);
@@ -65,6 +70,20 @@ export async function mockSessionsRoute(
         skip: 0,
         limit: 50,
       }),
+    });
+  });
+}
+
+export async function mockSessionDetailRoute(
+  page: Page,
+  sessionId: string,
+  detail: Record<string, unknown> | (() => Record<string, unknown>),
+) {
+  await page.route(`**/api/v1/chat/sessions/${sessionId}**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(typeof detail === 'function' ? detail() : detail),
     });
   });
 }

@@ -71,8 +71,11 @@ x-infra-env: &infra-env
   POSTGRES_USER: ${POSTGRES_USER:-admin}
   POSTGRES_DB: ${POSTGRES_DB:-postgres}
   POSTGRES_SERVER: ${POSTGRES_SERVER:-postgres}
-  REDIS_HOST: ${REDIS_HOST:-redis}
+  REDIS_HOST: ${REDIS_HOST:-redis-cache}
   REDIS_PORT: ${REDIS_PORT:-6379}
+  TASKIQ_REDIS_HOST: ${TASKIQ_REDIS_HOST:-redis-taskiq}
+  TASKIQ_REDIS_PORT: ${TASKIQ_REDIS_PORT:-6379}
+  TASKIQ_RESULT_TTL_SECONDS: ${TASKIQ_RESULT_TTL_SECONDS:-3600}
   STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
   LOCAL_STORAGE_ROOT: ${LOCAL_STORAGE_ROOT:-/data/knowledge_files}
   S3_BUCKET: ${S3_BUCKET:-knowledge-files}
@@ -159,7 +162,7 @@ services:
     ports:
       - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:5432:5432"
 
-  redis:
+  redis-cache:
     image: redis:7.4.9-alpine
     secrets:
       - REDIS_PASSWORD
@@ -172,6 +175,31 @@ services:
     logging: *default-logging
     command: >
       sh -c 'umask 077 && printf "maxmemory 384mb\nmaxmemory-policy allkeys-lru\nrequirepass %s\n" "$$(cat /run/secrets/REDIS_PASSWORD)" > /tmp/redis.conf && exec redis-server /tmp/redis.conf'
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/REDIS_PASSWORD)\" ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      default:
+        aliases:
+          - redis
+
+  redis-taskiq:
+    image: redis:7.4.9-alpine
+    secrets:
+      - REDIS_PASSWORD
+    ports:
+      - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:${TASKIQ_REDIS_HOST_PORT:-6380}:6379"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging: *default-logging
+    command: >
+      sh -c 'umask 077 && printf "appendonly yes\nappendfsync everysec\nmaxmemory 384mb\nmaxmemory-policy noeviction\nrequirepass %s\n" "$$(cat /run/secrets/REDIS_PASSWORD)" > /tmp/redis.conf && exec redis-server /tmp/redis.conf'
+    volumes:
+      - taskiq_redis_data_test:/data
     healthcheck:
       test: [ "CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/REDIS_PASSWORD)\" ping" ]
       interval: 10s
@@ -268,7 +296,7 @@ services:
     ports:
       - "${LOCAL_BIND_ADDRESS:-127.0.0.1}:${BIFROST_PORT:-18080}:8080"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- --header=\"x-bf-vk: $$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" http://localhost:8080/v1/models >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- --header=\"x-bf-vk: $$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" http://127.0.0.1:8080/v1/models >/dev/null || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -307,7 +335,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      redis-cache:
+        condition: service_healthy
+      redis-taskiq:
         condition: service_healthy
       db_migrator:
         condition: service_completed_successfully
@@ -337,7 +367,7 @@ services:
       <<: [ *infra-env, *feature-env, *secret-file-env ]
       BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-info}
       TASKIQ_HEALTH_MIN_PROCESSES: "2"
-      TASKIQ_MODULES: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks"
+      TASKIQ_MODULES: "backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks backend.worker.tasks.credit_tasks backend.worker.tasks.chat_recovery_tasks backend.worker.tasks.operability_tasks"
       TASKIQ_WORKERS: "2"
       TASKIQ_WAIT_TASKS_TIMEOUT: "105"
       TASKIQ_SHUTDOWN_TIMEOUT: "10"
@@ -349,7 +379,9 @@ services:
       start_period: 20s
     restart: "no"
     depends_on:
-      redis:
+      redis-cache:
+        condition: service_healthy
+      redis-taskiq:
         condition: service_healthy
       postgres:
         condition: service_healthy
@@ -518,11 +550,11 @@ services:
     secrets:
       - REDIS_PASSWORD
     environment:
-      - REDIS_ADDR=redis:6379
+      - REDIS_ADDR=redis-cache:6379
     command: >
       sh -c 'export REDIS_PASSWORD="$$(cat /run/secrets/REDIS_PASSWORD)"; exec /redis_exporter'
     depends_on:
-      redis:
+      redis-cache:
         condition: service_healthy
     deploy:
       resources:
@@ -565,6 +597,8 @@ volumes:
     name: minio_data
   bifrost_data:
     name: bifrost_data
+  taskiq_redis_data_test:
+    name: taskiq_redis_data_test
 
 secrets:
   SECRET_KEY:

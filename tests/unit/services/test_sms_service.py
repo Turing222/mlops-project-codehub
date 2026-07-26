@@ -14,8 +14,6 @@ import pytest
 from backend.core.exceptions import AppException
 from backend.services.sms_service import LUA_VERIFY_CODE, SMSService
 
-pytestmark = pytest.mark.asyncio
-
 
 def _make_redis_mock() -> SimpleNamespace:
     """Build a mock Redis instance returned by redis_client.init()."""

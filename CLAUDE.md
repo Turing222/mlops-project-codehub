@@ -28,6 +28,7 @@ This file is the lightweight routing index for Claude Code. Dewflow is a monorep
 
 - For broad implementation work, prefer Claude Code built-in `/plan`; use `task-plan` when you need to create/update `work-items/` artifacts or sync approved planning conclusions.
 - For review or debug requests, load the named skill and any project reference it asks for.
+- Route fix / troubleshooting / review ambiguity per the Fix & Troubleshooting Routing rules in `.codex/skills/project/references/task-mode.md`.
 - After `write` or `edit`, consider `add-tests` if behavior changed or coverage gaps exist.
 - Simple tasks may skip `task-plan` and proceed directly to the smallest execution skill.
 - Keep this file short; move durable details into `.codex/skills/project/references/` instead of expanding it.
