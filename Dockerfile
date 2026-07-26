@@ -9,7 +9,7 @@
 #   worker → task_worker         (base + ai + worker extras)
 # ==========================================
 
-FROM ghcr.io/astral-sh/uv:0.10.7 AS uv-bin
+FROM ghcr.io/astral-sh/uv:0.10.12 AS uv-bin
 
 # ──────────────────────────────────────────
 # Stage 1: Base builder —— 只装共享依赖
