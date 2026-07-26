@@ -9,12 +9,12 @@
 #   worker → task_worker         (base + ai + worker extras)
 # ==========================================
 
-FROM ghcr.io/astral-sh/uv:0.10.7 AS uv-bin
+FROM ghcr.io/astral-sh/uv:0.11.32 AS uv-bin
 
 # ──────────────────────────────────────────
 # Stage 1: Base builder —— 只装共享依赖
 # ──────────────────────────────────────────
-FROM python:3.12-slim AS builder-base
+FROM python:3.14-slim AS builder-base
 
 COPY --from=uv-bin /uv /bin/
 
@@ -58,7 +58,7 @@ COPY backend/ ./backend/
 # ──────────────────────────────────────────
 # Stage 3a: Web Runtime (api + migrator)
 # ──────────────────────────────────────────
-FROM python:3.12-slim AS web
+FROM python:3.14-slim AS web
 
 RUN apt-get update \
     && apt-get -y upgrade --no-install-recommends \
@@ -101,7 +101,7 @@ CMD ["sh", "-c", "exec uvicorn backend.main:app \
 # ──────────────────────────────────────────
 # Stage 3b: Worker Runtime (taskiq)
 # ──────────────────────────────────────────
-FROM python:3.12-slim AS worker
+FROM python:3.14-slim AS worker
 
 RUN apt-get update \
     && apt-get -y upgrade --no-install-recommends \
