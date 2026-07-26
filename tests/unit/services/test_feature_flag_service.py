@@ -35,6 +35,33 @@ async def test_get_system_features_default(
     assert features["enable-password-login"] is False
 
 
+@pytest.mark.parametrize(
+    ("app_env", "expected"),
+    [
+        ("local", True),
+        ("smoke", True),
+        ("test", True),
+        ("prod", False),
+        ("production", False),
+    ],
+)
+async def test_public_registration_default_fails_closed_in_production(
+    app_env: str, expected: bool
+) -> None:
+    """验证云端未定义该 flag 时，只有生产环境默认关闭公开注册。"""
+    service = FeatureFlagService(
+        growthbook_api_host="https://cdn.growthbook.io",
+        growthbook_sdk_key="sdk-dummy-key-for-development",
+        app_env=app_env,
+        beta_user_email_whitelist=set(),
+        beta_user_phone_whitelist=set(),
+    )
+
+    features = await service.get_system_features()
+
+    assert features["enable-public-registration"] is expected
+
+
 async def test_get_user_features_regular_user(
     feature_flag_service: FeatureFlagService,
 ) -> None:

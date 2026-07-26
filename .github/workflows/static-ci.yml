@@ -60,6 +60,9 @@ jobs:
       - name: Alembic check
         run: make qa-alembic-check
 
+      - name: Sensitive value check
+        run: make qa-no-sensitive-values
+
       - name: Fast standards audit
         run: make qa-standards-fast
 
@@ -68,6 +71,31 @@ jobs:
 
       - name: Component tests
         run: make qa-test-component
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # 全量历史扫描：仓库公开，凭据一旦进入任一 commit 就必须视为已泄漏。
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.0
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Scan repository history for credentials
+        run: gitleaks git --redact --no-banner --exit-code 1
 
   frontend-static:
     name: Frontend static

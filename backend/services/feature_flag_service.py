@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 from growthbook import GrowthBook
 
+from backend.config.web_settings import is_production_app_env
 from backend.core.circuit_breaker import CircuitBreaker
 from backend.core.exceptions import AppException
 from backend.models.orm.user import User
@@ -112,8 +113,12 @@ class FeatureFlagService:
         gb = GrowthBook(attributes=attributes, features=features_dict)
 
         result: dict[str, bool] = {
+            # 云端未定义该 flag 时生产 fail-closed：缺配置不应等于对公网开放注册。
             "enable-public-registration": self._eval_flag(
-                gb, "enable-public-registration", features_dict, True
+                gb,
+                "enable-public-registration",
+                features_dict,
+                not is_production_app_env(self._app_env),
             ),
             "enable-closed-beta-login": self._eval_flag(
                 gb, "enable-closed-beta-login", features_dict, False

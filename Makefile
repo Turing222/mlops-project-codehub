@@ -98,7 +98,7 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-skill-check qa-serena-smoke qa-docs qa-standards-fast qa-claude-fast qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
+	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-no-sensitive-values qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-skill-check qa-serena-smoke qa-docs qa-standards-fast qa-claude-fast qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	frontend-lint frontend-typecheck frontend-test frontend-test-coverage frontend-build frontend-bundle-check frontend-build-pages-check frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all release-check-clean image-build-release frontend-image-build-release image-build-all-release release-image-env release-tag \
 	docker-prune-stale-infra \
@@ -126,6 +126,7 @@ help:
 			'  qa-alembic-check     Validate migration chain integrity' \
 			'  qa-config-check      Validate config/env for deployment contexts' \
 			'  qa-no-while-true     Reject bare Python while True loops' \
+			'  qa-no-sensitive-values  Reject real deployment identifiers in tracked files' \
 			'  qa-test-markers      Audit pytest dependency markers' \
 			'  qa-test-unit         Run unit tests (UNIT_TARGETS=...)' \
 			'  qa-test-component    Run component tests (COMPONENT_TARGETS=...)' \
@@ -234,6 +235,9 @@ qa-config-check:
 
 qa-no-while-true:
 	uv run python scripts/qa/check_no_while_true.py
+
+qa-no-sensitive-values:
+	uv run python scripts/qa/check_no_sensitive_values.py
 
 qa-test-markers:
 	uv run python scripts/qa/check_test_markers.py
