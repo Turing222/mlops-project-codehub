@@ -13,6 +13,16 @@
       "$type": "color",
       "$value": { "light": "rgba(22, 119, 255, 0.15)", "dark": "rgba(22, 119, 255, 0.15)" }
     },
+    "primary-active": {
+      "$type": "color",
+      "$value": { "light": "#1262d1", "dark": "#1262d1" },
+      "$description": "Web derives per-brand: color-mix(in srgb, primary 82%, #000). Listed value is the default-blue result."
+    },
+    "primary-border": {
+      "$type": "color",
+      "$value": { "light": "rgba(22, 119, 255, 0.35)", "dark": "rgba(22, 119, 255, 0.35)" },
+      "$description": "Web derives per-brand: color-mix(in srgb, primary 35%, transparent)."
+    },
     "bg-page": {
       "$type": "color",
       "$value": { "light": "#fafbfc", "dark": "#141414" }

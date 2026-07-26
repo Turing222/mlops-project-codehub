@@ -347,7 +347,7 @@
 }
 
 .generated-key-box code {
-    font-family: 'Courier New', Courier, monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
     font-weight: 700;
     color: var(--color-primary);
@@ -426,7 +426,7 @@
 }
 
 .key-card-string {
-    font-family: monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     color: var(--color-text-desc);
 }

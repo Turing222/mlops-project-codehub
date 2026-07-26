@@ -488,7 +488,7 @@
   font-weight: 700;
   display: inline-flex;
   align-items: center;
-  font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   min-width: 102px;
   justify-content: center;

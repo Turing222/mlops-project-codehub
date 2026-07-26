@@ -16,7 +16,7 @@
 }
 
 .token-digits {
-    font-family: monospace;
+    font-family: var(--font-mono);
     color: var(--color-text-main);
     flex-shrink: 0;
 }
