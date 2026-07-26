@@ -33,6 +33,12 @@ export default defineConfig({
       workers: 1,
       timeout: 60_000,
     },
+    {
+      // 基线截图 harness（无断言），不进 CI；见 screens/screenshot-baseline.spec.ts
+      name: 'screens',
+      testDir: './screens',
+      timeout: 60_000,
+    },
   ],
   webServer: useLocalServer
     ? {

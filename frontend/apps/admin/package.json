@@ -15,6 +15,7 @@
     "test:e2e": "pnpm run test:e2e:mock",
     "test:e2e:mock": "playwright test --project=mock -c e2e/playwright.config.ts",
     "test:e2e:smoke": "E2E_SMOKE=1 playwright test --project=smoke -c e2e/playwright.config.ts",
+    "test:e2e:screens": "playwright test --project=screens -c e2e/playwright.config.ts",
     "test:e2e:ui": "playwright test --project=mock -c e2e/playwright.config.ts --ui",
     "preview": "vite preview"
   },
