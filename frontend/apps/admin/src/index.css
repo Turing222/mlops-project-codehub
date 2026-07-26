@@ -9,11 +9,13 @@
 }
 
 :root {
-  /* Dynamic Palette Custom Properties (Managed dynamically by JS theme store, fallbacks declared here) */
+  /* 品牌色由 [data-brand] 切换(见文件末尾的品牌块);其余 primary 系全部派生 */
   --color-primary: #1677ff;
-  --color-primary-hover: #4096ff;
-  --color-primary-shadow: rgba(22, 119, 255, 0.15);
-  
+  --color-primary-gradient-end: #722ed1;
+  --color-primary-hover: color-mix(in srgb, var(--color-primary) 80%, transparent);
+  --color-primary-shadow: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  --color-primary-subtle: color-mix(in srgb, var(--color-primary) 15%, transparent);
+
   --color-bg-page: #fafbfc;
   --color-bg-container: #ffffff;
   --color-bg-subtle: #fafafa;
@@ -104,6 +106,14 @@
   --layout-modal-profile-height: 520px;
   --layout-modal-sidebar-width: 200px;
 
+  /* sidebar(A0 决策:中性底,品牌只出现在选中态) */
+  --color-sidebar-bg: var(--color-bg-subtle);
+  --color-sidebar-border: var(--color-border);
+  --color-sidebar-hover: rgba(0, 0, 0, 0.05);
+  --color-sidebar-active: var(--color-primary-subtle);
+  --color-sidebar-text: var(--color-text-main);
+  --color-sidebar-text-muted: var(--color-text-desc);
+
   /* scrollbar(跟随主题) */
   --scrollbar-thumb: #d9d9d9;
   --scrollbar-thumb-hover: #bfbfbf;
@@ -139,8 +149,31 @@
 
   --color-coin: #fbbf24;
 
+  --color-sidebar-hover: rgba(255, 255, 255, 0.08);
+
   --scrollbar-thumb: #424242;
   --scrollbar-thumb-hover: #555555;
+}
+
+/* 品牌预设(与 src/theme/brand.ts 一一对应;blue 即 :root 默认) */
+[data-brand='indigo'] {
+  --color-primary: #4f46e5;
+  --color-primary-gradient-end: #9333ea;
+}
+
+[data-brand='purple'] {
+  --color-primary: #722ed1;
+  --color-primary-gradient-end: #db2777;
+}
+
+[data-brand='teal'] {
+  --color-primary: #0d9488;
+  --color-primary-gradient-end: #0284c7;
+}
+
+[data-brand='orange'] {
+  --color-primary: #ea580c;
+  --color-primary-gradient-end: #e11d48;
 }
 
 body {
@@ -162,15 +195,6 @@ a {
 
 a:hover {
   color: var(--color-primary-hover);
-}
-
-/* Antd overrides */
-.ant-btn-primary {
-  box-shadow: 0 1px 3px var(--color-primary-shadow) !important;
-}
-
-.ant-spin-dot-item {
-  background-color: var(--color-primary) !important;
 }
 
 /* Scrollbar styling */

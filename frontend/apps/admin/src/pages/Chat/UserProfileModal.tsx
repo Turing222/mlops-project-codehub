@@ -7,6 +7,7 @@ import { useAuth } from '../../context/useAuth';
 import { useUpdateProfileMutation } from '../../query/hooks/auth';
 import { useThemeStore } from '../../stores/theme-store';
 import { changeAppLanguage } from '../../lib/i18n';
+import { BRAND_PRESETS } from '../../theme/brand';
 import styles from './UserProfileModal.module.css';
 
 interface UserProfileModalProps {
@@ -15,14 +16,6 @@ interface UserProfileModalProps {
 }
 
 type TabType = 'profile' | 'preferences';
-
-const BRAND_PRESETS = [
-    { key: 'blue', value: '#1677ff' },
-    { key: 'indigo', value: '#4f46e5' },
-    { key: 'purple', value: '#722ed1' },
-    { key: 'teal', value: '#0d9488' },
-    { key: 'orange', value: '#ea580c' },
-];
 
 const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose }) => {
     const { t, i18n } = useTranslation();

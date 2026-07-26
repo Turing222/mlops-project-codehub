@@ -29,28 +29,28 @@
     font-weight: 500;
     background: var(--color-sidebar-active, var(--color-primary)) !important;
     border-color: var(--color-sidebar-border, var(--color-primary)) !important;
-    color: var(--color-text-light) !important;
+    color: var(--color-sidebar-text) !important;
 }
 
 .new-chat-btn:hover {
     background: var(--color-sidebar-hover, var(--color-primary-hover)) !important;
     border-color: var(--color-sidebar-border, var(--color-primary-hover)) !important;
-    color: var(--color-text-light) !important;
+    color: var(--color-sidebar-text) !important;
 }
 
 .toggle-btn {
-    color: rgba(255, 255, 255, 0.74) !important;
+    color: var(--color-sidebar-text-muted) !important;
     padding: 4px !important;
     border-radius: 8px !important;
 }
 
 .toggle-btn:hover {
     background: var(--color-sidebar-hover, var(--color-bg-page)) !important;
-    color: var(--color-text-light) !important;
+    color: var(--color-sidebar-text) !important;
 }
 
 .collapsed-action-btn {
-    color: rgba(255, 255, 255, 0.74) !important;
+    color: var(--color-sidebar-text-muted) !important;
     width: 40px !important;
     height: 40px !important;
     border-radius: 10px !important;
@@ -61,18 +61,18 @@
 
 .collapsed-action-btn:hover {
     background: var(--color-sidebar-hover, var(--color-primary-shadow)) !important;
-    color: var(--color-text-light) !important;
+    color: var(--color-sidebar-text) !important;
 }
 
 .sidebar-text-btn,
 .sidebar-icon-btn {
-    color: rgba(255, 255, 255, 0.74) !important;
+    color: var(--color-sidebar-text-muted) !important;
 }
 
 .sidebar-text-btn:hover,
 .sidebar-icon-btn:hover {
     background: var(--color-sidebar-hover, var(--color-bg-page)) !important;
-    color: var(--color-text-light) !important;
+    color: var(--color-sidebar-text) !important;
 }
 
 .sidebar-section-title {
@@ -81,7 +81,7 @@
     gap: 6px;
     padding: 6px 20px;
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.74);
+    color: var(--color-sidebar-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-weight: 600;
@@ -113,12 +113,12 @@
 }
 
 .session-item.active .session-title {
-    color: var(--color-text-light);
+    color: var(--color-sidebar-text);
     font-weight: 500;
 }
 
 .session-icon {
-    color: rgba(255, 255, 255, 0.74);
+    color: var(--color-sidebar-text-muted);
     margin-top: 3px;
     flex-shrink: 0;
 }
@@ -130,7 +130,7 @@
 
 .session-title {
     font-size: 13px;
-    color: var(--color-text-light);
+    color: var(--color-sidebar-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -153,7 +153,7 @@
     padding: 32px 16px;
     text-align: center;
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.74);
+    color: var(--color-sidebar-text-muted);
 }
 
 .sidebar-hint-icon {
@@ -183,7 +183,7 @@
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    color: rgba(255, 255, 255, 0.74) !important;
+    color: var(--color-sidebar-text-muted) !important;
     width: 38px !important;
     height: 38px !important;
     border-radius: 10px !important;
@@ -194,7 +194,7 @@
 
 .sidebar-footer-btn:hover {
     background-color: var(--color-sidebar-hover, rgba(255, 255, 255, 0.14)) !important;
-    color: var(--color-text-light) !important;
+    color: var(--color-sidebar-text) !important;
 }
 
 .lang-toggle-text {

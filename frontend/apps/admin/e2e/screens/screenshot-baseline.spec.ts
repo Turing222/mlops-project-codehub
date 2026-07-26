@@ -44,7 +44,7 @@ async function seedClientState(page: Page, theme: (typeof THEMES)[number]) {
       authKey: 'auth-storage',
       themeKey: 'dewflow-theme-settings',
       themeVal: JSON.stringify({
-        state: { theme, brandColor: '#1677ff' },
+        state: { theme, brandColor: process.env.SCREENS_BRAND ?? '#1677ff' },
         version: 0,
       }),
     },
