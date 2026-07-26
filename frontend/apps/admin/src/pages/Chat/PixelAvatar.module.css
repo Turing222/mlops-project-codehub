@@ -6,7 +6,7 @@
     height: 100%;
     cursor: pointer;
     user-select: none;
-    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    transition: transform var(--duration-fast) cubic-bezier(0.175, 0.885, 0.32, 1.275);
     
     /* Pixel Art Color Tokens */
     --avatar-skin-color: #FFE5D9;
@@ -33,13 +33,13 @@
 /* Hair bound to system primary theme color! */
 .hair-theme {
     fill: var(--color-primary, #1677FF);
-    transition: fill 0.3s ease;
+    transition: fill var(--duration-enter) ease;
 }
 
 .blush-pixel {
     fill: #FF8B9E;
     opacity: 0.4;
-    transition: opacity 0.3s ease;
+    transition: opacity var(--duration-enter) ease;
 }
 
 /* --- STATE: IDLE (Gentle floating, blinking and ear twitching) --- */
@@ -128,12 +128,12 @@
 
 .typing .left-ear {
     transform-origin: 7px 5px;
-    animation: ear-fan-left 0.4s infinite alternate ease-in-out;
+    animation: ear-fan-left var(--duration-page) infinite alternate ease-in-out;
 }
 
 .typing .right-ear {
     transform-origin: 25px 5px;
-    animation: ear-fan-right 0.4s infinite alternate ease-in-out;
+    animation: ear-fan-right var(--duration-page) infinite alternate ease-in-out;
 }
 
 @keyframes ear-fan-left {
@@ -149,7 +149,7 @@
 
 /* --- STATE: THINKING (AI Speaking - dynamic mouth and focusing eyes) --- */
 .thinking {
-    animation: thinking-vibrate 0.15s infinite;
+    animation: thinking-vibrate var(--duration-micro) infinite;
 }
 
 @keyframes thinking-vibrate {
@@ -160,7 +160,7 @@
 /* Talking mouth movement */
 .bot-mouth-thinking {
     transform-origin: 16px 19px;
-    animation: speak 0.25s infinite ease-in-out;
+    animation: speak var(--duration-standard) infinite ease-in-out;
 }
 
 @keyframes speak {
@@ -199,12 +199,12 @@
 
 .dizzy .left-ear {
     transform-origin: 7px 5px;
-    animation: ear-scared-left 0.15s infinite alternate;
+    animation: ear-scared-left var(--duration-micro) infinite alternate;
 }
 
 .dizzy .right-ear {
     transform-origin: 25px 5px;
-    animation: ear-scared-right 0.15s infinite alternate;
+    animation: ear-scared-right var(--duration-micro) infinite alternate;
 }
 
 @keyframes ear-scared-left {

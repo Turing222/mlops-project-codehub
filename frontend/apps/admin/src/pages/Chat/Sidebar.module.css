@@ -216,7 +216,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    transition: all var(--duration-standard) cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all var(--duration-standard) var(--easing-standard);
     overflow: hidden;
 }
 

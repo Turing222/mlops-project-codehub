@@ -3,7 +3,7 @@
     height: 100vh;
     overflow: hidden;
     background: var(--color-bg-page);
-    animation: chatPageFadeIn var(--duration-page) cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: chatPageFadeIn var(--duration-page) var(--easing-enter) both;
 }
 
 .chat-workspace {
@@ -117,7 +117,7 @@
     align-items: center !important;
     background: var(--color-bg-subtle) !important;
     border: 1px solid var(--color-border) !important;
-    transition: all var(--duration-fast) cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transition: all var(--duration-fast) var(--easing-standard) !important;
 }
 
 .credit-btn:hover {
@@ -302,7 +302,7 @@
     align-items: center;
     gap: var(--space-1);
     cursor: pointer;
-    transition: all var(--duration-fast) cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all var(--duration-fast) var(--easing-standard);
 }
 
 .popover-section-title-link:hover {

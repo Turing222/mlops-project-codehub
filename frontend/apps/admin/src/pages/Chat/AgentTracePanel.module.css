@@ -7,21 +7,21 @@
     flex-direction: column;
     overflow: hidden;
     flex-shrink: 0;
-    transition: width 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+    transition: width var(--duration-fast) ease, background var(--duration-fast) ease, border-color var(--duration-fast) ease;
 }
 
 .collapsed-trace-panel {
     width: 56px !important;
     align-items: center;
-    padding-top: 12px;
-    gap: 16px;
+    padding-top: var(--space-3);
+    gap: var(--space-4);
 }
 
 .toggle-btn {
     color: var(--color-text-desc) !important;
-    padding: 4px !important;
-    border-radius: 8px !important;
-    transition: background 0.15s ease, color 0.15s ease;
+    padding: var(--space-1) !important;
+    border-radius: var(--radius-sm) !important;
+    transition: background var(--duration-micro) ease, color var(--duration-micro) ease;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -41,7 +41,7 @@
     align-items: center;
     justify-content: center;
     background: var(--color-bg-subtle);
-    transition: background 0.15s ease, color 0.15s ease;
+    transition: background var(--duration-micro) ease, color var(--duration-micro) ease;
 }
 
 .collapsed-icon-btn:hover {
@@ -53,12 +53,12 @@
     writing-mode: vertical-rl;
     text-orientation: mixed;
     color: var(--color-text-desc);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     letter-spacing: 2px;
     text-transform: uppercase;
     user-select: none;
-    margin-top: 12px;
+    margin-top: var(--space-3);
     opacity: 0.8;
     animation: traceStepFadeIn 0.35s ease-out both;
 }
@@ -69,7 +69,7 @@
     height: 56px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     padding: 0 16px;
     border-bottom: 1px solid var(--color-border);
     flex-shrink: 0;
@@ -77,7 +77,7 @@
 
 .trace-panel-title {
     font-weight: 600;
-    font-size: 15px;
+    font-size: var(--font-size-md);
     color: var(--color-text-main);
 }
 
@@ -91,7 +91,7 @@
 
 .trace-panel-empty {
     color: var(--color-text-desc);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     text-align: center;
     padding: 32px 0;
 }
@@ -106,14 +106,14 @@
 .trace-metrics-summary {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
 }
 
 .trace-metric-item {
     border: 1px solid var(--color-border);
-    border-radius: 8px;
-    padding: 8px;
+    border-radius: var(--radius-sm);
+    padding: var(--space-2);
     background: var(--color-bg-subtle);
     min-width: 0;
 }
@@ -121,7 +121,7 @@
 .trace-metric-label {
     display: block;
     color: var(--color-text-desc);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     line-height: 1.2;
     white-space: nowrap;
     overflow: hidden;
@@ -130,9 +130,9 @@
 
 .trace-metric-value {
     display: block;
-    margin-top: 4px;
+    margin-top: var(--space-1);
     color: var(--color-text-main);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     line-height: 1.2;
 }
@@ -140,7 +140,7 @@
 .trace-step {
     display: flex;
     align-items: flex-start;
-    gap: 12px;
+    gap: var(--space-3);
     padding: 8px 0;
     animation: traceStepFadeIn 0.35s ease-out both;
 }
@@ -159,7 +159,7 @@
     border-radius: 50%;
     background: var(--color-border);
     flex-shrink: 0;
-    transition: background 0.25s ease, box-shadow 0.25s ease;
+    transition: background var(--duration-standard) ease, box-shadow var(--duration-standard) ease;
 }
 
 .trace-step-line {
@@ -167,7 +167,7 @@
     flex: 1;
     min-height: 20px;
     background: var(--color-border);
-    transition: background 0.25s ease;
+    transition: background var(--duration-standard) ease;
 }
 
 .trace-step-content {
@@ -176,10 +176,10 @@
 }
 
 .trace-step-title {
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: var(--color-text-desc);
-    transition: color 0.25s ease;
+    transition: color var(--duration-standard) ease;
 }
 
 .trace-step-desc {
@@ -192,9 +192,9 @@
     display: flex;
     flex-wrap: wrap;
     gap: 4px 8px;
-    margin-top: 4px;
+    margin-top: var(--space-1);
     color: var(--color-text-desc);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
 }
 
@@ -327,22 +327,22 @@
 
 .rotated {
     transform: rotate(180deg);
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-fast) ease;
 }
 
 /* --- Citations Section --- */
 
 .trace-citations {
-    margin-top: 20px;
+    margin-top: var(--space-5);
     border-top: 1px solid var(--color-border);
-    padding-top: 16px;
+    padding-top: var(--space-4);
 }
 
 .trace-citations-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: var(--color-text-main);
     cursor: pointer;
@@ -355,10 +355,10 @@
 }
 
 .trace-citations-list {
-    margin-top: 8px;
+    margin-top: var(--space-2);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
 }
 
 .trace-citations-empty {
@@ -370,18 +370,18 @@
 .citation-card {
     background: var(--color-bg-subtle);
     border: 1px solid var(--color-border);
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     padding: 10px 12px;
-    animation: traceStepFadeIn 0.3s ease-out both;
+    animation: traceStepFadeIn var(--duration-enter) ease-out both;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
 }
 
 .citation-card-header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
 }
 
 .citation-icon-web {
@@ -401,7 +401,7 @@
 }
 
 .citation-card-name {
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--color-text-main);
     white-space: nowrap;
@@ -411,7 +411,7 @@
 }
 
 .citation-web-link {
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--color-primary) !important;
     white-space: nowrap;
@@ -419,7 +419,7 @@
     text-overflow: ellipsis;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     max-width: 100%;
 }
 
@@ -434,9 +434,9 @@
 .citation-card-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
-    margin-top: 4px;
+    margin-top: var(--space-1);
 }
 
 .citation-meta-badge {
@@ -451,7 +451,7 @@
 
 .citation-meta-location {
     color: var(--color-text-desc);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 500;
 }
 
@@ -466,7 +466,7 @@
 }
 
 .citation-card-section-path {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--color-text-desc);
     background: var(--color-bg-container);
     border: 1px solid var(--color-border);
@@ -476,7 +476,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 100%;
-    margin-top: 4px;
+    margin-top: var(--space-1);
     display: flex;
     align-items: center;
 }
@@ -494,10 +494,10 @@
 }
 
 .citation-card-snippet {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--color-text-main);
     margin-top: 6px;
-    line-height: 1.5;
+    line-height: var(--line-height-tight);
     background: rgba(0, 0, 0, 0.015);
     padding: 8px 10px;
     border-radius: 6px;
@@ -525,7 +525,7 @@
     flex: 1;
     background: var(--color-bg-subtle);
     padding: 3px;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--color-border);
     gap: 2px;
     align-items: center;
@@ -537,11 +537,11 @@
     background: transparent;
     padding: 5px 2px;
     border-radius: 6px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 500;
     color: var(--color-text-desc);
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all var(--duration-fast) var(--easing-standard);
     white-space: nowrap;
     text-align: center;
     outline: none;
@@ -564,7 +564,7 @@
 .clickable-header {
     cursor: pointer;
     user-select: none;
-    transition: background-color 0.15s ease, opacity 0.15s ease;
+    transition: background-color var(--duration-micro) ease, opacity var(--duration-micro) ease;
 }
 
 .clickable-header:hover {
@@ -580,7 +580,7 @@
     border-radius: 4px;
     background: transparent;
     color: var(--color-text-desc);
-    transition: background-color 0.15s ease, color 0.15s ease;
+    transition: background-color var(--duration-micro) ease, color var(--duration-micro) ease;
 }
 
 .clickable-header:hover .header-chevron-container {
@@ -589,26 +589,26 @@
 }
 
 .header-chevron {
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-fast) ease;
 }
 
 .expand-btn-wrapper {
     display: flex;
     justify-content: flex-end;
-    margin-top: 4px;
+    margin-top: var(--space-1);
 }
 
 .citation-expand-btn {
-    font-size: 11px !important;
+    font-size: var(--font-size-xs) !important;
     font-weight: 500 !important;
     padding: 2px 4px !important;
     height: auto !important;
     color: var(--color-primary) !important;
     display: flex !important;
     align-items: center !important;
-    gap: 4px !important;
+    gap: var(--space-1) !important;
     border-radius: 4px !important;
-    transition: all 0.2s ease !important;
+    transition: all var(--duration-fast) ease !important;
 }
 
 .citation-expand-btn:hover {
@@ -623,22 +623,22 @@
     border: 1px dashed var(--color-primary-border, var(--color-border));
     border-radius: 6px;
     padding: 8px 10px;
-    font-size: 11px;
-    animation: traceStepFadeIn 0.3s ease-out both;
+    font-size: var(--font-size-xs);
+    animation: traceStepFadeIn var(--duration-enter) ease-out both;
 }
 
 .trace-step-reason-header {
     font-weight: 600;
     color: var(--color-primary);
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
 }
 
 .trace-step-reason-content {
     color: var(--color-text-main);
-    line-height: 1.5;
+    line-height: var(--line-height-tight);
     white-space: pre-wrap;
     word-break: break-word;
     opacity: 0.9;
@@ -665,5 +665,5 @@
     font-weight: 600;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
 }
