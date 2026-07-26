@@ -8,10 +8,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from fastapi.routing import APIRoute
 
 from backend.api.v1.endpoint import auth_api
-from backend.models.schemas.user_schema import SMSSendRequest
+from backend.core.exceptions import AppException
+from backend.models.schemas.user_schema import SMSSendRequest, UserCreate
 
 
 async def test_sms_send_never_returns_mock_code() -> None:
@@ -48,3 +50,40 @@ async def test_google_callback_has_dedicated_rate_limiter() -> None:
     dependencies = _route_dependencies("/google/callback", "POST")
 
     assert auth_api.google_callback_limiter in dependencies
+
+
+def _registration_flags(*, public_registration: bool) -> SimpleNamespace:
+    return SimpleNamespace(
+        get_system_features=AsyncMock(
+            return_value={"enable-public-registration": public_registration}
+        )
+    )
+
+
+async def test_register_rejected_when_public_registration_disabled() -> None:
+    user_service = SimpleNamespace(user_register_with_personal_workspace=AsyncMock())
+
+    with pytest.raises(AppException) as exc_info:
+        await auth_api.register(
+            user_in=UserCreate(username="closed_beta_probe", password="Str0ngPass!23"),
+            user_service=user_service,
+            feature_flag_service=_registration_flags(public_registration=False),
+        )
+
+    assert exc_info.value.code == "REGISTRATION_CLOSED"
+    user_service.user_register_with_personal_workspace.assert_not_awaited()
+
+
+async def test_register_rejects_missing_password() -> None:
+    """公开注册不允许创建无密码账号，即使注册开关是开启状态。"""
+    user_service = SimpleNamespace(user_register_with_personal_workspace=AsyncMock())
+
+    with pytest.raises(AppException) as exc_info:
+        await auth_api.register(
+            user_in=UserCreate(username="passwordless_probe"),
+            user_service=user_service,
+            feature_flag_service=_registration_flags(public_registration=True),
+        )
+
+    assert exc_info.value.code == "REGISTRATION_PASSWORD_REQUIRED"
+    user_service.user_register_with_personal_workspace.assert_not_awaited()

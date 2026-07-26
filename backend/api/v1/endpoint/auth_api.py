@@ -76,10 +76,14 @@ async def register(
     feature_flag_service: FeatureFlagServiceDep,
 ) -> UserResponse:
     system_flags = await feature_flag_service.get_system_features()
-    if not system_flags.get("enable-public-registration", True):
+    if not system_flags.get("enable-public-registration", False):
         raise app_bad_request(
             "当前处于封闭内测阶段，暂不开放公开注册", code="REGISTRATION_CLOSED"
         )
+
+    # 公开注册必须自带密码；无密码账号只允许 SMS / Google / 管理员创建等已验证身份的路径。
+    if user_in.password is None:
+        raise app_bad_request("注册必须设置密码", code="REGISTRATION_PASSWORD_REQUIRED")
 
     async with user_service.write():
         user = await user_service.user_register_with_personal_workspace(user_in)
