@@ -2,6 +2,8 @@
 
 本文档定义 Dewflow 在 **单台 EC2** 上的手动部署入口，目标是先把人工部署流程标准化，后续再让 GitHub Actions / SSM 复用同一套命令实现自动 CD。
 
+**自动 CD 已落地**：日常发布走 [backend-cd-pipeline.md](backend-cd-pipeline.md)（tag → ECR → 审批 → SSM 执行下述同一套 `make deploy-ec2-*`）。本文继续作为命令语义说明与应急手动路径。
+
 **首次部署**：按可打勾清单执行 [deploy/CHECKLIST.md](../../deploy/CHECKLIST.md)。Tunnel 模板见 [deploy/cloudflare/README.md](../../deploy/cloudflare/README.md)；域名三根线见 [deploy/domains.env.example](../../deploy/domains.env.example)。EC2 栈可用 `make deploy-bootstrap-prod ARGS=ec2-stack` 编排。
 
 ## 适用范围

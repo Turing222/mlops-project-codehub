@@ -82,6 +82,7 @@ docs/
 | 文档 | 说明 |
 | --- | --- |
 | [deploy-ec2.md](platform/deploy-ec2.md) | EC2 手动部署与 CD 对接（**当前生产主路径**） |
+| [backend-cd-pipeline.md](platform/backend-cd-pipeline.md) | 后端 CD 流水线、生产环境构建与首次上线复盘 |
 | [frontend-delivery-and-edge-responsibilities.md](platform/frontend-delivery-and-edge-responsibilities.md) | Cloudflare Pages、API origin、容器 fallback 职责 |
 | [api-keys-and-degradation.md](platform/api-keys-and-degradation.md) | API Key 分层、功能映射、缺失/故障降级 |
 | [k8s-scaling-strategy.md](platform/k8s-scaling-strategy.md) | API / worker 扩缩容策略 |
