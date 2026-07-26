@@ -107,6 +107,7 @@ docs/
 
 | 文档 | 说明 |
 | --- | --- |
+| [2026-07-26-test-ci-consolidation.md](assessments/2026-07-26-test-ci-consolidation.md) | 治理周期后的测试/CI 时点整理：门禁 before/after、8 类实操问题与原则、遗留缺口清单 |
 | [2026-07-17-backend-consolidated-upgrade-roadmap.md](assessments/2026-07-17-backend-consolidated-upgrade-roadmap.md) | 汇总五份后端评估的三档升级路线、决策门、依赖、上线门槛与停止边界 |
 | [2026-07-17-identity-governance-test-ci-quality.md](assessments/2026-07-17-identity-governance-test-ci-quality.md) | 登录、Workspace RBAC、审计、Credits、Feature Flags 与测试/CI/代码质量时点评估 |
 | [2026-07-17-deployment-resilience-observability-security.md](assessments/2026-07-17-deployment-resilience-observability-security.md) | EC2 / Pages / K8s、Redis / TaskIQ、降级、告警、CSP、secret 与恢复能力时点评估 |

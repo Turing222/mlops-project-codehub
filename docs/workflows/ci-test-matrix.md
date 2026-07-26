@@ -64,7 +64,7 @@ flowchart TB
 | **开 PR 前本地预演（static + PR gate）** | `make flow-pr-preflight` | `static-ci.yml` + `pr-gate-ci.yml` | — |
 | 后端 integration（CI profile） | `make flow-ci` 内 `qa-test-ci` | `pr-gate-ci.yml` → PR gate | **是**（PR） |
 | 前端 e2e-mock | `make frontend-e2e-mock` | `pr-gate-ci.yml` → PR gate | **是**（PR） |
-| 镜像 build + Docker smoke 起栈 | `make image-build` + `env-smoke-up` | `smoke-ci.yml` → Docker smoke | **是**（main；PR 按 path） |
+| 镜像 build + Docker smoke 起栈 | `make image-build` + `env-smoke-up` | `smoke-ci.yml` → Docker smoke | **是**（main + 全 PR） |
 | 后端 HTTP smoke | `make verify-smoke` | `smoke-ci.yml` | 同上 |
 | integration pytest（smoke 栈） | `flow-local` 内 `run_with_smoke_env.sh pytest` | **计划并入** `smoke-ci.yml`（P2） | **是**（main，P2 后） |
 | seed 用户 | `make seed-dev` | `smoke-ci` / `frontend-e2e-smoke-ci`（已有 seed） | **是** |
@@ -95,7 +95,7 @@ flowchart TB
 | --- | --- | --- | --- |
 | `static-ci.yml` | Backend static / Frontend static | 全 PR + main push | lint、typecheck、单测、build、bundle-check、Pages 形态 build |
 | `pr-gate-ci.yml` | PR gate | PR（非 draft） | `qa-test-ci` + `frontend-e2e-mock` |
-| `smoke-ci.yml` | Docker smoke | main push；PR path 过滤 | Docker 全栈 + `verify-smoke` |
+| `smoke-ci.yml` | Docker smoke | main push + 全 PR（required check 不带路径过滤） | Docker 全栈 + `verify-smoke` |
 | `frontend-e2e-smoke-ci.yml` | Frontend e2e smoke (real backend) | PR + main push | uvicorn + worker + Playwright smoke |
 | `deploy-validate-ci.yml` | Validate deploy assets | PR path（deploy/**） | compose `config -q`、k8s、nginx |
 | `post-deploy-pages-verify.yml` | Verify Pages release | Pages deployment success / dispatch | `make verify-pages` |
