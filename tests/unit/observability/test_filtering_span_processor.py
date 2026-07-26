@@ -18,6 +18,7 @@ from backend.observability.filtering_span_processor import (
 
 # Helpers
 
+
 def _make_span(
     name: str,
     scope_name: str | None = None,
@@ -29,7 +30,9 @@ def _make_span(
     span.instrumentation_scope = scope
     return span
 
+
 # should_export_to_langfuse
+
 
 class TestShouldExportToLangfuse:
     """Unit tests for the span filter predicate."""
@@ -136,7 +139,9 @@ class TestShouldExportToLangfuse:
         span = _make_span("orphan.span", scope_name=None)
         assert should_export_to_langfuse(span) is False
 
+
 # FilteringSpanProcessor
+
 
 class TestFilteringSpanProcessor:
     """Unit tests for FilteringSpanProcessor."""

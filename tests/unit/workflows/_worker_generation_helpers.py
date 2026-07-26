@@ -31,7 +31,6 @@ class FakeRedis:
         self.deleted.append(key)
 
 
-
 class FakeRedisClient:
     def __init__(self, *connections: FakeRedis) -> None:
         self.connections = list(connections)
@@ -44,7 +43,6 @@ class FakeRedisClient:
         return self.connections[0]
 
 
-
 class RecordingConcurrencySlot:
     def __init__(self, calls: list[dict], attributes: dict | None) -> None:
         self.calls = calls
@@ -55,7 +53,6 @@ class RecordingConcurrencySlot:
 
     async def __aexit__(self, exc_type, exc, tb) -> bool:
         return False
-
 
 
 def install_llm_slot_recorder(monkeypatch) -> list[dict]:
@@ -75,7 +72,6 @@ def install_llm_slot_recorder(monkeypatch) -> list[dict]:
         fake_llm_concurrency_slot,
     )
     return calls
-
 
 
 class StreamingLLM:
@@ -105,14 +101,12 @@ class StreamingLLM:
             raise self.error
 
 
-
 class NonStreamingLLM:
     provider_name = "fake"
     model_name = "fake-model"
 
     def __init__(self, result: LLMResultDTO) -> None:
         self.generate_response = AsyncMock(return_value=result)
-
 
 
 class RecordingRAGService:
@@ -122,7 +116,6 @@ class RecordingRAGService:
         self.retrieve_fulltext = AsyncMock(return_value=hits)
         self.retrieve_hybrid = AsyncMock(return_value=hits)
         self.rerank = AsyncMock(return_value=hits)
-
 
 
 class RecordingRAGPlanner:
@@ -143,7 +136,6 @@ class RecordingRAGPlanner:
         return self.response_plan
 
 
-
 class StaticRAGOrchestrator:
     def __init__(self, prepared_context: PreparedGenerationContext) -> None:
         self.prepared_context = prepared_context
@@ -157,17 +149,13 @@ class StaticRAGOrchestrator:
         return self.prepared_context
 
 
-
 def without_step_events(
     published: list[tuple[str, str]],
 ) -> list[tuple[str, str]]:
     """Drop trace step events when asserting chunk/done Redis publish order."""
     return [
-        item
-        for item in published
-        if decode_stream_event(item[1]).get("type") != "step"
+        item for item in published if decode_stream_event(item[1]).get("type") != "step"
     ]
-
 
 
 def make_rerank_impl(

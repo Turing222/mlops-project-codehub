@@ -21,6 +21,7 @@ def mock_uow() -> AsyncMock:
     uow.knowledge_repo = AsyncMock()
     return uow
 
+
 @pytest.fixture
 def session_manager(mock_uow: AsyncMock) -> SessionManager:
     from backend.services.permission_service import PermissionService
@@ -28,9 +29,11 @@ def session_manager(mock_uow: AsyncMock) -> SessionManager:
     permission_service = MagicMock(spec=PermissionService)
     return SessionManager(mock_uow, permission_service)
 
+
 @pytest.fixture
 def message_updater(mock_uow: AsyncMock) -> ChatMessageUpdater:
     return ChatMessageUpdater(mock_uow)
+
 
 class TestSessionManagerEnsureSession:
     async def test_create_or_get_session_creates_new_when_no_session_id(
@@ -294,6 +297,7 @@ class TestSessionManagerEnsureSession:
         )
         assert result == existing_session
 
+
 class TestSessionManagerCreateMessages:
     async def test_create_user_message_returns_message(
         self, session_manager: SessionManager, mock_uow: AsyncMock
@@ -340,6 +344,7 @@ class TestSessionManagerCreateMessages:
         assert kwargs["client_request_id"] is None
         assert kwargs["search_context"] is None
 
+
 class TestSessionManagerQueries:
     async def test_get_user_sessions_returns_paginated_list(
         self, session_manager: SessionManager, mock_uow: AsyncMock
@@ -374,6 +379,7 @@ class TestSessionManagerQueries:
             skip=0,
             limit=100,
         )
+
 
 class TestChatMessageUpdater:
     async def test_update_as_success_sets_status_and_metrics(
