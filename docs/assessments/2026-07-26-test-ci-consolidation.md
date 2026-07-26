@@ -1,10 +1,10 @@
 # 测试与 CI 整理(2026-07-26 治理周期后)
 
-> 日期:2026-07-26
-> 范围:CI workflow、合并门禁、测试基建、依赖与安全扫描、bot(dependabot / Devin Review)
-> 性质:时点整理。基于当日 PR #53–#69 连续落地过程中实际暴露的故障与修复,不是理论审计
-> 证据基线:`main` @ 89e8335、`.github/workflows/`、`Makefile`、`pyproject.toml`、`frontend/apps/admin/vitest.config.ts`
-> 状态:快照;现行约定以 [ci-test-matrix.md](../workflows/ci-test-matrix.md) 与 workflow 文件为准
+> 日期：2026-07-26
+> 范围：CI workflow、合并门禁、测试基建、依赖与安全扫描、bot（dependabot / Devin Review）
+> 性质：时点整理。基于当日 PR #53–#69 连续落地过程中实际暴露的故障与修复，不是理论审计
+> 证据基线：`main` @ 89e8335、`.github/workflows/`、`Makefile`、`pyproject.toml`、`frontend/apps/admin/vitest.config.ts`
+> 状态：快照；现行约定以 [ci-test-matrix.md](../workflows/ci-test-matrix.md) 与 workflow 文件为准
 
 ## 1. 结论速览
 
