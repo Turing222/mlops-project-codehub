@@ -197,6 +197,8 @@ async def run_migrations_online() -> None:
         section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # 与运行时引擎一致：携带 SSL/timeout connect_args（RDS force_ssl 必需）
+        connect_args=settings.database_connect_args,
     )
     async with connectable.connect() as connection:
         # 💡 桥接点：将同步的迁移函数跑在异步连接上
