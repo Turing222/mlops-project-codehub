@@ -5,7 +5,7 @@ through the `awslogs` driver. The deploy stack uses these defaults:
 
 ```text
 log group: ${DEPLOY_CW_LOG_GROUP:-/dewflow/prod}
-region: ${DEPLOY_AWS_REGION:-us-east-1}
+region: ${DEPLOY_AWS_REGION:-us-west-2}
 stream prefix: ${DEPLOY_CW_LOG_STREAM_PREFIX:-dewflow}
 metric namespace: ${DEPLOY_CW_METRIC_NAMESPACE:-Dewflow/Logs}
 SNS topic: ${DEPLOY_ALERTS_SNS_TOPIC_NAME:-dewflow-prod-alerts}
@@ -119,7 +119,7 @@ Tail production logs:
 
 ```bash
 aws logs tail "${DEPLOY_CW_LOG_GROUP:-/dewflow/prod}" \
-  --region "${DEPLOY_AWS_REGION:-us-east-1}" \
+  --region "${DEPLOY_AWS_REGION:-us-west-2}" \
   --follow
 ```
 

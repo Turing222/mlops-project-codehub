@@ -53,6 +53,25 @@ def _deploy_control_env_value(
     return result.stdout.removesuffix("\n")
 
 
+def _load_deploy_aws_region(
+    tmp_path: Path,
+    env_file_content: str,
+    extra_env: dict[str, str] | None = None,
+) -> str:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(env_file_content, encoding="utf-8")
+
+    env = {"DEPLOY_ENV_FILE": str(env_file)}
+    if extra_env:
+        env.update(extra_env)
+
+    result = _run_common_bash(
+        "load_deploy_env; printenv DEPLOY_AWS_REGION",
+        env,
+    )
+    return result.stdout.removesuffix("\n")
+
+
 def test_deploy_env_file_wins_over_makefile_default_marker(tmp_path: Path) -> None:
     value = _deploy_control_env_value(
         tmp_path,
@@ -118,6 +137,32 @@ def test_env_file_value_falls_back_to_default_when_missing(tmp_path: Path) -> No
     )
 
     assert value == "200"
+
+
+def test_load_deploy_env_exports_default_region_when_missing(tmp_path: Path) -> None:
+    value = _load_deploy_aws_region(
+        tmp_path,
+        "APP_ENV=prod\n",
+        {
+            "DEPLOY_AWS_REGION": "us-west-2",
+            "DEPLOY_AWS_REGION_EXPLICIT": "",
+        },
+    )
+
+    assert value == "us-west-2"
+
+
+def test_load_deploy_env_exports_region_from_env_file(tmp_path: Path) -> None:
+    value = _load_deploy_aws_region(
+        tmp_path,
+        "DEPLOY_AWS_REGION=eu-central-1\n",
+        {
+            "DEPLOY_AWS_REGION": "us-west-2",
+            "DEPLOY_AWS_REGION_EXPLICIT": "",
+        },
+    )
+
+    assert value == "eu-central-1"
 
 
 def test_ensure_deploy_secret_file_sets_container_readable_permissions(

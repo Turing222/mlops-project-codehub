@@ -171,7 +171,7 @@ require_cloudwatch_log_group() {
     local log_group
     local existing_log_group
 
-    region="$(deploy_control_env_value "DEPLOY_AWS_REGION" "us-west-2")"
+    region="$DEPLOY_AWS_REGION"
     log_group="$(deploy_control_env_value "DEPLOY_CW_LOG_GROUP" "/dewflow/prod")"
 
     require_cmd aws

@@ -53,6 +53,25 @@ def test_cloudwatch_setup_contains_minimum_t1_lite_signal_set() -> None:
     assert "redis_restart_detected" in script
 
 
+def test_cloudwatch_assets_use_resolved_deploy_region() -> None:
+    for relative_path in (
+        "scripts/deploy/ec2-check.sh",
+        "deploy/monitoring/cloudwatch-setup.sh",
+        "deploy/monitoring/cloudwatch-verify-delivery.sh",
+    ):
+        script = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+        assert 'region="$DEPLOY_AWS_REGION"' in script
+
+    for relative_path in (
+        "deploy/docker-compose.yml",
+        "deploy/docker-compose.local-postgres.yml",
+    ):
+        compose = yaml.safe_load((PROJECT_ROOT / relative_path).read_text())
+        assert compose["x-logging"]["options"]["awslogs-region"] == (
+            "${DEPLOY_AWS_REGION:-us-west-2}"
+        )
+
+
 def test_delivery_verification_is_bounded_and_requires_confirmed_receiver() -> None:
     script = (
         PROJECT_ROOT / "deploy/monitoring/cloudwatch-verify-delivery.sh"

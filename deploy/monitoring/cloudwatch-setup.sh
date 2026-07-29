@@ -10,7 +10,7 @@ require_cmd aws
 require_deploy_env_file
 load_deploy_env
 
-region="$(deploy_control_env_value "DEPLOY_AWS_REGION" "us-east-1")"
+region="$DEPLOY_AWS_REGION"
 log_group="$(deploy_control_env_value "DEPLOY_CW_LOG_GROUP" "/dewflow/prod")"
 metric_namespace="$(deploy_control_env_value "DEPLOY_CW_METRIC_NAMESPACE" "Dewflow/Logs")"
 topic_name="$(deploy_control_env_value "DEPLOY_ALERTS_SNS_TOPIC_NAME" "dewflow-prod-alerts")"
