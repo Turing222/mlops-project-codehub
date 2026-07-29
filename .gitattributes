@@ -1,0 +1,19 @@
+# Normalize detected text files to LF in the repository and worktree.
+* text=auto eol=lf
+
+# Preserve Windows-native command scripts as CRLF in the worktree.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Keep binary assets out of line-ending conversion and text diffs.
+.coverage binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.woff binary
+*.woff2 binary
