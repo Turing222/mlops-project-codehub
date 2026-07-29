@@ -52,6 +52,7 @@ run_make() {
 
 bootstrap_ec2_stack() {
     local run_verify=false
+    local secret_source
 
     for arg in "$@"; do
         case "$arg" in
@@ -67,7 +68,19 @@ bootstrap_ec2_stack() {
     done
 
     log_section "Bootstrap EC2 application stack"
-    run_make deploy-ec2-secrets-prepare
+    secret_source="$(deploy_control_env_value "DEPLOY_SECRET_SOURCE" "files")"
+    case "$secret_source" in
+        files)
+            run_make deploy-ec2-secrets-prepare
+            ;;
+        aws)
+            run_make deploy-secrets-materialize
+            ;;
+        *)
+            log_error "Unsupported DEPLOY_SECRET_SOURCE: $secret_source"
+            exit 1
+            ;;
+    esac
 
     if [[ "${SKIP_CLOUDWATCH_SETUP:-}" != "1" ]]; then
         if command -v aws >/dev/null 2>&1; then

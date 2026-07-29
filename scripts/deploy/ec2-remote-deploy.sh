@@ -11,10 +11,24 @@ aws_region="${AWS_REGION:-us-west-2}"
 last_good_file="/opt/dewflow/last-good-tag"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$script_dir/../.."
+source "$script_dir/../lib/common.sh"
+cd "$PROJECT_ROOT"
 
 deploy_env_file="deploy/.env.ec2"
 test -f "$deploy_env_file" || { echo "missing $deploy_env_file on host" >&2; exit 1; }
+
+secret_source="$(deploy_control_env_value "DEPLOY_SECRET_SOURCE" "files")"
+case "$secret_source" in
+    files)
+        ;;
+    aws)
+        make deploy-secrets-materialize
+        ;;
+    *)
+        echo "unsupported DEPLOY_SECRET_SOURCE: $secret_source" >&2
+        exit 1
+        ;;
+esac
 
 aws ecr get-login-password --region "$aws_region" \
     | docker login --username AWS --password-stdin "$ecr_registry" >/dev/null

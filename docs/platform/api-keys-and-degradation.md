@@ -58,7 +58,11 @@ Secret 注入机制：`FOO_FILE` 指向的文件内容会在进程导入时被�
 
 ## 2. Key 分层（最小需求）
 
-Secret 文件位于 [secrets/ec2/](../../secrets/ec2)（EC2）或 [secrets/local-prod/](../../secrets/local-prod)（本地演练）。`make deploy-ec2-secrets-prepare` 会为 Tier 0 生成随机值、为其余创建空文件。
+Runtime secret 文件位于 `/run/dewflow-secrets`（EC2 使用 Secrets Manager 时）、
+[secrets/ec2/](../../secrets/ec2)（人工回退）或
+[secrets/local-prod/](../../secrets/local-prod)（本地演练）。
+`make deploy-secrets-materialize` 从 AWS bundle 生成兼容文件；
+`make deploy-ec2-secrets-prepare` 仅用于文件来源和回退路径。
 
 ### Tier 0 — 服务间凭证（启动必需，已自动生成）
 
@@ -81,7 +85,11 @@ Secret 文件位于 [secrets/ec2/](../../secrets/ec2)（EC2）或 [secrets/local
 
 `GROWTHBOOK_SDK_KEY`、`TAVILY_API_KEY`、`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`、`GITHUB_TOKEN`、Google 登录（`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_ALLOWED_REDIRECT_URIS`）、各 `*_API_KEY_2`、`COHERE_API_KEY`（仅 Bifrost 上游用）。
 
-> **smoke 与 ec2 是两份 secret**：smoke 测试读 `secrets/smoke/`，EC2 部署读 [secrets/ec2/](../../secrets/ec2)。在 smoke 里填了 key **不等于** EC2 也有。要用的 key 必须确认 `secrets/ec2/` 对应文件非空（见第 5 节坑）。
+> **smoke 与 ec2 是两份 secret**：smoke 测试读 `secrets/smoke/`；EC2
+> 根据 `DEPLOY_SECRET_SOURCE` 读取 materialize 后的 `/run/dewflow-secrets`
+> 或人工回退目录 [secrets/ec2/](../../secrets/ec2)。在 smoke 里填了 key
+> **不等于** EC2 也有；应设置 `DEPLOY_SECRET_DIR=<active-directory>` 后运行
+> `make deploy-secrets-status` 检查状态（见第 5 节坑）。
 
 ---
 

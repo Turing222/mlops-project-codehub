@@ -48,6 +48,8 @@ set_explicit_marker_default "DEPLOY_CHECK_FRONTEND_HEALTH"
 set_explicit_marker_default "DEPLOY_PULL_IMAGES"
 set_explicit_marker_default "DEPLOY_LOG_TAIL"
 set_explicit_marker_default "DEPLOY_SECRET_DIR"
+set_explicit_marker_default "DEPLOY_RUNTIME_SECRET_ID"
+set_explicit_marker_default "DEPLOY_AWS_REGION"
 set_explicit_marker_default "DEPLOY_SMOKE_PYTEST_TARGETS"
 set_explicit_marker_default "DOCKER_IMAGE_NAME_WEB"
 set_explicit_marker_default "DOCKER_IMAGE_NAME_AI"
@@ -478,6 +480,7 @@ load_deploy_env() {
     require_deploy_env_file
 
     DEPLOY_SECRET_DIR="$(deploy_control_env_value "DEPLOY_SECRET_DIR" "secrets/ec2")"
+    DEPLOY_AWS_REGION="$(deploy_control_env_value "DEPLOY_AWS_REGION" "us-west-2")"
     DEPLOY_EXTRA_COMPOSE_FILES="$(deploy_control_env_value "DEPLOY_EXTRA_COMPOSE_FILES" "")"
     DEPLOY_BASE_URL="$(deploy_control_env_value "DEPLOY_BASE_URL" "http://localhost")"
     # Keep the dynamic default outside deploy_control_env_value so env files can
@@ -525,6 +528,7 @@ load_deploy_env() {
     DEPLOY_TAVILY_API_KEY_FILE="$(deploy_secret_file_path "DEPLOY_TAVILY_API_KEY_FILE" "tavily_api_key.txt")"
 
     export DEPLOY_SECRET_DIR
+    export DEPLOY_AWS_REGION
     export DEPLOY_EXTRA_COMPOSE_FILES
     export DEPLOY_BASE_URL
     export DEPLOY_FRONTEND_BASE_URL

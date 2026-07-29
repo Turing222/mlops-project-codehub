@@ -208,9 +208,13 @@ FRONTEND_PUBLIC_PORT=8080
 
 ## Secret 文件
 
-EC2 部署使用 [secrets/ec2](../../secrets/ec2) 作为专用 secret 目录，`deploy/.env.ec2` 只保存非敏感配置和 secret 文件路径。
+EC2 部署保持“单目录 + 固定文件名”的 runtime contract。上游可以是人工文件，
+也可以是 AWS Secrets Manager；`deploy/.env.ec2` 只保存非敏感的来源、路径和
+Secret ID。
 
-首次部署前运行：
+### 文件来源（回退路径）
+
+首次部署或需要显式回退时使用：
 
 ```bash
 make deploy-ec2-secrets-prepare
@@ -224,6 +228,55 @@ make deploy-ec2-secrets-prepare
 - 将 secret 目录设为 `0700`，并将 secret 文件设为容器内 UID `10001` 可读；如果手工改过权限，重新运行该命令。
 
 真实 secret 文件不会提交到 Git。
+
+对应配置：
+
+```dotenv
+DEPLOY_SECRET_SOURCE=files
+DEPLOY_SECRET_DIR=secrets/ec2
+```
+
+### AWS Secrets Manager 来源
+
+生产 runtime bundle 使用 `dewflow-prod-runtime`。JSON key 与现有文件 basename
+一一对应，例如 `postgres_password` materialize 为
+`postgres_password.txt`。完整 allowlist 见
+[`deploy/runtime-secret-manifest.json`](../../deploy/runtime-secret-manifest.json)。
+
+先检查目录并 dry-run 导入；以下命令只打印 key name 和状态，不打印 value：
+
+```bash
+make deploy-secrets-status
+make deploy-secrets-aws-status
+make deploy-secrets-import \
+  ARGS="--ssm-override postgres_password=/dewflow/prod/postgres_password"
+```
+
+确认后才显式增加 `--apply`。如果目标 Secret 已存在，命令默认拒绝覆盖；
+`--update-existing` 只合并传入的非空 key，不删除已有 key。
+
+EC2 使用 instance role 读取明确授权的 runtime Secret。部署配置切换为：
+
+```dotenv
+DEPLOY_SECRET_SOURCE=aws
+DEPLOY_SECRET_DIR=/run/dewflow-secrets
+DEPLOY_RUNTIME_SECRET_ID=dewflow-prod-runtime
+DEPLOY_AWS_REGION=us-west-2
+```
+
+然后运行：
+
+```bash
+make deploy-secrets-materialize
+make deploy-ec2-check
+```
+
+materialize 会校验 JSON allowlist 和三个必需项，生成全部 24 个兼容文件，将目录
+设为 `0700`、文件设为 `0644`，并拒绝替换非本工具管理的非空目录。应用与 Compose
+仍只读取 `/run/secrets/*`，不会直接调用 Secrets Manager。
+
+迁移验证完成前保留 `secrets/ec2` 和现有 SSM 参数。尤其是数据库密码，只能在
+RDS 真实连接验证后确定权威来源；不要因为导入成功就删除旧值。
 
 > 各 key 对应哪个功能、缺失或上游故障时如何告警与降级，见 [api-keys-and-degradation.md](api-keys-and-degradation.md)。
 
@@ -324,8 +377,8 @@ docker push <registry>/dewflow-frontend:${IMAGE_TAG}
 POSTGRES_SERVER=<rds-endpoint>
 POSTGRES_PORT=5432
 POSTGRES_SSL_MODE=verify-full
-# 可选：如果镜像 / OS trust store 不包含当前 RDS CA，把 RDS CA bundle 挂载进容器后填写该路径。
-POSTGRES_SSL_ROOT_CERT_FILE=
+# Dewflow backend 镜像内置公开的 AWS RDS global CA bundle。
+POSTGRES_SSL_ROOT_CERT_FILE=/app/certs/rds-global-bundle.pem
 ```
 
 数据库密码仍写入 `secrets/ec2/postgres_password.txt`，不要写进 `.env.ec2`。`verify-full` 会校验服务端证书与 RDS endpoint 主机名，因此 `POSTGRES_SERVER` 必须填写 RDS 控制台给出的 endpoint 主机名（例如 `xxx.amazonaws.com`），**不要**填写 IP 地址；`make deploy-ec2-check` 会在 `verify-ca` / `verify-full` 下拦截 IPv4 字面量。RDS security group 需要允许 EC2 实例访问 5432；RDS backup retention / snapshot / PITR 策略在 AWS 侧配置和演练。
@@ -516,7 +569,7 @@ CloudWatch Logs 变量来自 `deploy/.env.ec2`：
 
 ```env
 DEPLOY_CW_LOG_GROUP=/dewflow/prod
-DEPLOY_AWS_REGION=us-east-1
+DEPLOY_AWS_REGION=us-west-2
 DEPLOY_CW_LOG_STREAM_PREFIX=dewflow
 DEPLOY_CW_METRIC_NAMESPACE=Dewflow/Logs
 DEPLOY_ALERTS_SNS_TOPIC_NAME=dewflow-prod-alerts
@@ -599,7 +652,7 @@ EMF、ADOT / CloudWatch exporter、AMP 或 AWS managed metrics。迁移清单见
 
 1. CI 负责 build / push images
 2. SSM 或远程执行负责调用：
-   - `make deploy-ec2-secrets-prepare`
+   - `make deploy-secrets-materialize`（`DEPLOY_SECRET_SOURCE=aws`）
    - `make deploy-ec2-check`
    - `make deploy-ec2-up`
    - `make deploy-ec2-wait`

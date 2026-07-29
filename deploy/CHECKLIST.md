@@ -36,8 +36,8 @@
 | 1.3 | RDS | `POSTGRES_SERVER` 为主机名，`POSTGRES_SSL_MODE=verify-full` | 非 IP、非 `change-me` |
 | 1.4 | S3 | `STORAGE_BACKEND=s3`、bucket/region | 非占位符 |
 | 1.5 | 本机 API URL | `DEPLOY_BASE_URL=http://127.0.0.1:8081` | 先本机验证 |
-| 1.6 | Secrets | `make deploy-ec2-secrets-prepare` | 必填 secret 非空 |
-| 1.7 | RDS 密码 | `secrets/ec2/postgres_password.txt` | 与 RDS 一致 |
+| 1.6 | Secrets | files: `make deploy-ec2-secrets-prepare`; aws: `make deploy-secrets-materialize` | 必填 secret 非空 |
+| 1.7 | RDS 密码 | `$DEPLOY_SECRET_DIR/postgres_password.txt` | 与 RDS 一致且不输出值 |
 | 1.8 | api-nginx | `API_NGINX_BIND=127.0.0.1` | 与模板一致 |
 
 Pages 域名确定前**先不要**填 `BACKEND_CORS_ORIGINS`。

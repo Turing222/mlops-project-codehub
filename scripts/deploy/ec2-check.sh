@@ -23,6 +23,27 @@ fi
 
 load_deploy_env
 
+secret_source="$(deploy_control_env_value "DEPLOY_SECRET_SOURCE" "files")"
+case "$secret_source" in
+    files)
+        ;;
+    aws)
+        if [[ "$DEPLOY_SECRET_DIR" != /* ]]; then
+            log_error "DEPLOY_SECRET_DIR must be absolute when DEPLOY_SECRET_SOURCE=aws"
+            exit 1
+        fi
+        if [[ ! -f "$DEPLOY_SECRET_DIR/.dewflow-secret-bundle" ]]; then
+            log_error "AWS secret bundle has not been materialized: $DEPLOY_SECRET_DIR"
+            log_info "Run 'make deploy-secrets-materialize' before deploy checks"
+            exit 1
+        fi
+        ;;
+    *)
+        log_error "Unsupported DEPLOY_SECRET_SOURCE: $secret_source"
+        exit 1
+        ;;
+esac
+
 raw_deploy_env_file_value() {
     local var_name="$1"
 
@@ -121,10 +142,14 @@ postgres_server_is_ip_address() {
 
 require_rds_hostname_for_verified_ssl() {
     local postgres_server="$1"
+    local postgres_ssl_root_cert_file
     local postgres_ssl_mode
 
     postgres_ssl_mode="$(deploy_control_env_value "POSTGRES_SSL_MODE" "verify-full")"
     postgres_ssl_mode="${postgres_ssl_mode,,}"
+    postgres_ssl_root_cert_file="$(
+        deploy_control_env_value "POSTGRES_SSL_ROOT_CERT_FILE" ""
+    )"
 
     if [[ "$postgres_ssl_mode" != "verify-full" && "$postgres_ssl_mode" != "verify-ca" ]]; then
         return 0
@@ -134,6 +159,11 @@ require_rds_hostname_for_verified_ssl() {
         log_info "verify-ca/verify-full validate the server certificate against the configured host name; do not use an IP address"
         exit 1
     fi
+    if [[ "${postgres_server,,}" == *.rds.amazonaws.com && -z "$postgres_ssl_root_cert_file" ]]; then
+        log_error "POSTGRES_SSL_ROOT_CERT_FILE is required for verified RDS TLS"
+        log_info "Dewflow backend images include /app/certs/rds-global-bundle.pem"
+        exit 1
+    fi
 }
 
 require_cloudwatch_log_group() {
@@ -141,7 +171,7 @@ require_cloudwatch_log_group() {
     local log_group
     local existing_log_group
 
-    region="$(deploy_control_env_value "DEPLOY_AWS_REGION" "us-east-1")"
+    region="$DEPLOY_AWS_REGION"
     log_group="$(deploy_control_env_value "DEPLOY_CW_LOG_GROUP" "/dewflow/prod")"
 
     require_cmd aws

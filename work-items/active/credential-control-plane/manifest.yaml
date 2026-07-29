@@ -1,0 +1,75 @@
+slug: credential-control-plane
+title: Credential Control Plane and File Compatibility
+status: active
+
+goal: Centralize Dewflow production credentials in AWS while preserving the existing file-based runtime contract and a reversible migration path.
+
+completion_chain:
+  - The current file and SSM credential sources are inventoried without exposing values.
+  - A versioned JSON bundle can be imported from and materialized to the existing allowlisted file layout.
+  - EC2 retrieves only the runtime bundle through an instance role and writes it to an ephemeral protected directory.
+  - Existing deploy checks and containers consume the materialized files without application changes.
+  - The AWS and local paths are validated before any legacy credential source is retired.
+
+workstreams:
+  - id: 1
+    title: Freeze the legacy file compatibility and migration contract.
+    status: done
+    kind: blocking
+    deps: []
+  - id: 2
+    title: Implement bundle import, status, and materialization tooling with tests.
+    status: done
+    kind: serial
+    deps: [1]
+  - id: 3
+    title: Wire the ephemeral deploy directory and document operator workflows.
+    status: done
+    kind: serial
+    deps: [2]
+  - id: 4
+    title: Provision the runtime AWS secret and least-privilege EC2 retrieval path.
+    status: done
+    kind: serial
+    deps: [2]
+  - id: 5
+    title: Validate cutover and reconcile legacy file and SSM sources.
+    status: in_progress
+    kind: serial
+    deps: [3, 4]
+
+current_checkpoint:
+  name: runtime-control-plane-validated
+  state: implemented
+  summary: Compatibility tooling and the read-only runtime retrieval path are validated; release deployment and source retirement remain deliberately pending.
+
+open_decisions:
+  - id: production-cutover-release
+    note: Publish the repository changes before setting DEPLOY_SECRET_SOURCE=aws on the production host; keep the file source as the explicit rollback path.
+  - id: legacy-source-retirement
+    note: Delete or reconcile legacy sources only after the AWS-backed path passes its cutover observation window and receives explicit approval.
+  - id: automation-secret-scope
+    note: Confirm the minimum infrastructure and edge-provider actions before changing CD or third-party automation identities.
+  - id: human-admin-key-hardening
+    note: Preserve broad emergency management capability while moving routine human access to SSO or short-lived role sessions.
+  - id: rds-ca-trust
+    note: Configure the production container to use the RDS CA bundle included in the backend images before relying on verify-full during cutover.
+
+next_choices:
+  - id: A
+    label: Publish and cut over runtime
+    note: Commit and deploy the validated tooling, configure the RDS CA, then switch the host to the ephemeral AWS-backed directory.
+  - id: B
+    label: Scope automation credentials
+    note: Decide whether CD should manage EC2/RDS lifecycle and which Cloudflare write actions are required, then extend or create narrowly scoped automation identities.
+  - id: C
+    label: Retire legacy sources
+    note: After the cutover observation window, rotate or remove the stale workstation file and redundant SSM value with explicit approval.
+  - id: D
+    label: Harden human AWS access
+    note: Configure SSO or a short-lived administrator role, verify CLI and Codex access, then rotate the current long-lived administrator key.
+
+attached_artifacts:
+  task_plan: task-plan.md
+  reviews: []
+  debug: []

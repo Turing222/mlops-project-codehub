@@ -34,6 +34,10 @@ DEPLOY_API_LIVE_PATH ?= /api/v1/health_check/live
 DEPLOY_API_READY_PATH ?= /api/v1/health_check/db_ready
 DEPLOY_ENABLE_BIFROST ?= false
 DEPLOY_LOG_TAIL ?= 200
+DEPLOY_SECRET_DIR ?= secrets/ec2
+DEPLOY_RUNTIME_SECRET_ID ?= dewflow-prod-runtime
+DEPLOY_AWS_REGION ?= us-west-2
+DEPLOY_POSTGRES_PARAMETER ?= /dewflow/prod/postgres_password
 DEPLOY_COMPOSE_FILE_EXPLICIT := $(call explicit_env_override,DEPLOY_COMPOSE_FILE)
 DEPLOY_EXTRA_COMPOSE_FILES_EXPLICIT := $(call explicit_env_override,DEPLOY_EXTRA_COMPOSE_FILES)
 DEPLOY_BASE_URL_EXPLICIT := $(call explicit_env_override,DEPLOY_BASE_URL)
@@ -47,6 +51,8 @@ DEPLOY_CHECK_FRONTEND_HEALTH_EXPLICIT := $(call explicit_env_override,DEPLOY_CHE
 DEPLOY_PULL_IMAGES_EXPLICIT := $(call explicit_env_override,DEPLOY_PULL_IMAGES)
 DEPLOY_LOG_TAIL_EXPLICIT := $(call explicit_env_override,DEPLOY_LOG_TAIL)
 DEPLOY_SECRET_DIR_EXPLICIT := $(call explicit_env_override,DEPLOY_SECRET_DIR)
+DEPLOY_RUNTIME_SECRET_ID_EXPLICIT := $(call explicit_env_override,DEPLOY_RUNTIME_SECRET_ID)
+DEPLOY_AWS_REGION_EXPLICIT := $(call explicit_env_override,DEPLOY_AWS_REGION)
 DEPLOY_SMOKE_PYTEST_TARGETS_EXPLICIT := $(call explicit_env_override,DEPLOY_SMOKE_PYTEST_TARGETS)
 LOCAL_PROD_DEPLOY_EXTRA_COMPOSE_FILES ?= deploy/docker-compose.local-postgres.yml deploy/docker-compose.local-s3.yml deploy/docker-compose.local-logging.yml
 LOCAL_PROD_DEPLOY_ENV := \
@@ -86,10 +92,12 @@ export DEPLOY_COMPOSE_FILE DEPLOY_ENV_FILE DEPLOY_BASE_URL
 export DEPLOY_EXTRA_COMPOSE_FILES
 export DEPLOY_FRONTEND_BASE_URL DEPLOY_FRONTEND_HEALTH_PATH DEPLOY_API_LIVE_PATH DEPLOY_API_READY_PATH
 export DEPLOY_ENABLE_BIFROST DEPLOY_LOG_TAIL
+export DEPLOY_SECRET_DIR DEPLOY_RUNTIME_SECRET_ID DEPLOY_AWS_REGION
 export DEPLOY_COMPOSE_FILE_EXPLICIT DEPLOY_EXTRA_COMPOSE_FILES_EXPLICIT DEPLOY_BASE_URL_EXPLICIT
 export DEPLOY_FRONTEND_BASE_URL_EXPLICIT DEPLOY_FRONTEND_HEALTH_PATH_EXPLICIT DEPLOY_API_LIVE_PATH_EXPLICIT DEPLOY_API_READY_PATH_EXPLICIT
 export DEPLOY_ENABLE_BIFROST_EXPLICIT DEPLOY_ENABLE_FRONTEND_FALLBACK_EXPLICIT DEPLOY_CHECK_FRONTEND_HEALTH_EXPLICIT
-export DEPLOY_PULL_IMAGES_EXPLICIT DEPLOY_LOG_TAIL_EXPLICIT DEPLOY_SECRET_DIR_EXPLICIT DEPLOY_SMOKE_PYTEST_TARGETS_EXPLICIT
+export DEPLOY_PULL_IMAGES_EXPLICIT DEPLOY_LOG_TAIL_EXPLICIT DEPLOY_SECRET_DIR_EXPLICIT
+export DEPLOY_RUNTIME_SECRET_ID_EXPLICIT DEPLOY_AWS_REGION_EXPLICIT DEPLOY_SMOKE_PYTEST_TARGETS_EXPLICIT
 export E2E_SMOKE_USER E2E_SMOKE_PASS
 export EVAL_DATASET EVAL_OUTPUT EVAL_API_OUTPUT EVAL_RETRIEVAL_OUTPUT
 export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
@@ -102,7 +110,7 @@ QA_STANDARDS_FAST_TARGETS ?= .codex docs work-items backend tests
 	frontend-lint frontend-typecheck frontend-test frontend-test-coverage frontend-build frontend-bundle-check frontend-build-pages-check frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all release-check-clean image-build-release frontend-image-build-release image-build-all-release release-image-env release-tag \
 	docker-prune-stale-infra \
-		deploy-ec2-secrets-prepare deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down deploy-cloudwatch-setup deploy-cloudwatch-verify-delivery deploy-bootstrap-prod \
+		deploy-ec2-secrets-prepare deploy-secrets-status deploy-secrets-aws-status deploy-secrets-import deploy-secrets-materialize deploy-secrets-compare-postgres deploy-ec2-check deploy-ec2-up deploy-ec2-wait deploy-ec2-verify deploy-ec2-logs deploy-ec2-down deploy-cloudwatch-setup deploy-cloudwatch-verify-delivery deploy-bootstrap-prod \
 	deploy-local-prod-secrets-prepare deploy-local-prod-check deploy-local-prod-up deploy-local-prod-wait deploy-local-prod-verify deploy-local-prod-logs deploy-local-prod-down \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-up-debug env-smoke-wait env-smoke-down env-smoke-logs \
 	set-llm seed-dev seed-prod-bootstrap \
@@ -169,6 +177,11 @@ help:
 		'  release-image-env    Print DOCKER_IMAGE_NAME_* values for deploy/.env.ec2' \
 		'  release-tag          Tag current commit v<VERSION> from configs/app/base.yaml' \
 		'  deploy-ec2-secrets-prepare  Create EC2 deploy secret files under secrets/ec2' \
+		'  deploy-secrets-status       Show file presence without printing values' \
+		'  deploy-secrets-aws-status   Show AWS bundle key presence without values' \
+		'  deploy-secrets-import       Dry-run runtime bundle import; pass ARGS=--apply explicitly' \
+		'  deploy-secrets-materialize  Fetch the configured AWS bundle into DEPLOY_SECRET_DIR' \
+		'  deploy-secrets-compare-postgres  Compare file and SSM DB passwords without values' \
 		'  deploy-ec2-check     Validate EC2 deploy env and compose config' \
 		'  deploy-ec2-up        Pull pinned infra images and start the EC2 deploy stack' \
 		'  deploy-ec2-wait      Wait until the EC2 deploy endpoints are reachable' \
@@ -388,6 +401,30 @@ release-tag: release-check-clean
 
 deploy-ec2-secrets-prepare:
 	bash scripts/deploy/ec2-secrets-prepare.sh
+
+deploy-secrets-status:
+	uv run --frozen python scripts/deploy/secret_bundle.py status \
+		--directory "$(DEPLOY_SECRET_DIR)"
+
+deploy-secrets-aws-status:
+	uv run --frozen python scripts/deploy/secret_bundle.py status-aws \
+		--secret-id "$(DEPLOY_RUNTIME_SECRET_ID)" \
+		--region "$(DEPLOY_AWS_REGION)"
+
+deploy-secrets-import:
+	uv run --frozen python scripts/deploy/secret_bundle.py import-directory \
+		--directory "$(DEPLOY_SECRET_DIR)" \
+		--secret-id "$(DEPLOY_RUNTIME_SECRET_ID)" \
+		--region "$(DEPLOY_AWS_REGION)" $(ARGS)
+
+deploy-secrets-materialize:
+	bash scripts/deploy/secrets-materialize.sh
+
+deploy-secrets-compare-postgres:
+	uv run --frozen python scripts/deploy/secret_bundle.py compare-ssm \
+		--secret-file "$(DEPLOY_SECRET_DIR)/postgres_password.txt" \
+		--parameter-name "$(DEPLOY_POSTGRES_PARAMETER)" \
+		--region "$(DEPLOY_AWS_REGION)"
 
 deploy-ec2-check:
 	bash scripts/deploy/ec2-check.sh
