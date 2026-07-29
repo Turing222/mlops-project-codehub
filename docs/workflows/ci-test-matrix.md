@@ -61,6 +61,7 @@ flowchart TB
 | 本地步骤 | Makefile / 脚本 | CI 归属（workflow） | 终态：是否 required on `main` |
 | --- | --- | --- | --- |
 | 静态 + 单测 + 前端 build/bundle | `make flow-fast` / `make frontend-check` | `static-ci.yml` → Backend static / Frontend static | **是** |
+| 公开内容快速检查 | `make qa-public-content` | `static-ci.yml` → Public content safety | **是** |
 | **开 PR 前本地预演（static + PR gate）** | `make flow-pr-preflight` | `static-ci.yml` + `pr-gate-ci.yml` | — |
 | 后端 integration（CI profile） | `make flow-ci` 内 `qa-test-ci` | `pr-gate-ci.yml` → PR gate | **是**（PR） |
 | 前端 e2e-mock | `make frontend-e2e-mock` | `pr-gate-ci.yml` → PR gate | **是**（PR） |
@@ -93,7 +94,7 @@ flowchart TB
 
 | Workflow 文件 | Job 名（GitHub Checks 显示名） | 触发 | 当前职责 |
 | --- | --- | --- | --- |
-| `static-ci.yml` | Backend static / Frontend static | 全 PR + main push | lint、typecheck、单测、build、bundle-check、Pages 形态 build |
+| `static-ci.yml` | Backend static / Frontend static / Public content safety | 全 PR + main push | 静态检查、测试、build、公开内容与完整 Git 历史 secret 扫描 |
 | `pr-gate-ci.yml` | PR gate | PR（非 draft） | `qa-test-ci` + `frontend-e2e-mock` |
 | `smoke-ci.yml` | Docker smoke | main push + 全 PR（required check 不带路径过滤） | Docker 全栈 + `verify-smoke` |
 | `frontend-e2e-smoke-ci.yml` | Frontend e2e smoke (real backend) | PR + main push | uvicorn + worker + Playwright smoke |
@@ -114,6 +115,7 @@ Cloudflare Pages **不等待** GitHub CI；合并到 `main` 时的 required chec
 | --- | --- | --- |
 | Backend static | static-ci | 已有 |
 | Frontend static | static-ci | 已有 |
+| Public content safety | static-ci | **公开内容门禁** |
 | PR gate | pr-gate-ci | 已有 |
 | Frontend e2e smoke (real backend) | frontend-e2e-smoke-ci | **P1 加入** |
 | Docker smoke | smoke-ci | **P1 加入** |
@@ -123,7 +125,7 @@ Cloudflare Pages **不等待** GitHub CI；合并到 `main` 时的 required chec
 | Check | 原因 |
 | --- | --- |
 | Local-prod rehearsal（P3） | 慢、资源重、易 flaky；改 weekly + 失败告警 |
-| Security CI 全量 | 已有独立节奏；可按 org 策略单独 required |
+| Security CI dependency/image 全量 | 已有独立节奏；可按 org 策略单独 required |
 | Post-deploy Pages verify | 发生在合并之后，不能挡合并 |
 
 ### 5.3 配置与审计同源
@@ -247,7 +249,7 @@ steps（示意）:
 - [ ] 本地跑通：`make flow-local`（需 Docker、Playwright chromium、`pnpm exec playwright install`）
 - [ ] 确认 GitHub Secrets：`E2E_SMOKE_USER`、`E2E_SMOKE_PASS`
 - [ ] 确认 Variables：`DEPLOY_FRONTEND_BASE_URL`、`DEPLOY_BASE_URL`（若已接 Pages 自动验证）
-- [ ] 确认 `main` branch protection 含 §5.1 五项（P1 后）
+- [ ] 确认 `main` branch protection 含 §5.1 六项
 
 ### 修改 seed 密码时
 
@@ -258,7 +260,7 @@ steps（示意）:
 ### 新增 required check 时
 
 - [ ] GitHub branch protection 添加 check 名
-- [ ] 更新 `guard-branch-protection.yml` 的 `expected`
+- [ ] 更新 [required_status_checks.txt](../../scripts/ci/required_status_checks.txt)
 - [ ] 更新 [deploy-ec2.md](../platform/deploy-ec2.md) 部署 gate 列表
 - [ ] 更新本文 §5.1 表格
 

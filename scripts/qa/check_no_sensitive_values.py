@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,11 +39,10 @@ SKIP_DIR_NAMES = frozenset(
         ".pytest_cache",
         ".ruff_cache",
         ".mypy_cache",
-        "snapshots",
     }
 )
 
-SKIP_SUFFIXES = frozenset({".lock", ".png", ".jpg", ".jpeg", ".svg", ".ico", ".woff2"})
+SKIP_SUFFIXES = frozenset({".lock", ".png", ".jpg", ".jpeg", ".ico", ".woff2"})
 
 # 本文件自身登记了模式与样例，扫描时跳过，避免自命中。
 SELF_PATH = Path(__file__).relative_to(REPO_ROOT)
@@ -53,6 +53,7 @@ class Rule:
     name: str
     pattern: re.Pattern[str]
     hint: str
+    value_group: int = 0
 
 
 RULES: tuple[Rule, ...] = (
@@ -63,9 +64,31 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "aws-account-id",
-        re.compile(r"\b\d{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com\b"),
+        re.compile(r"\b(\d{12})\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com\b"),
         "Use <AWS_ACCOUNT_ID>.dkr.ecr.<region>.amazonaws.com; real registry host "
         "belongs in repo variables.",
+        value_group=1,
+    ),
+    Rule(
+        "aws-account-id",
+        re.compile(r"\barn:aws(?:-[a-z]+)*:[a-z0-9-]*:[a-z0-9-]*:(\d{12}):"),
+        "Use <AWS_ACCOUNT_ID> inside example ARNs; the real account id belongs "
+        "in repo variables.",
+        value_group=1,
+    ),
+    Rule(
+        "aws-account-id",
+        re.compile(
+            r"(?i)\b(?:AWS_ACCOUNT_ID|account[_ -]?id)\s*[:=]\s*['\"]?(\d{12})\b"
+        ),
+        "Use <AWS_ACCOUNT_ID>; the real account id belongs in repo variables.",
+        value_group=1,
+    ),
+    Rule(
+        "aws-network-resource-id",
+        re.compile(r"\b(?:vpc|subnet|sg)-(?:[0-9a-f]{8}|[0-9a-f]{17})\b"),
+        "Use <VPC_ID>, <SUBNET_ID>, or <SECURITY_GROUP_ID>; real network ids "
+        "belong in repo variables.",
     ),
     Rule(
         "ec2-instance-id",
@@ -86,6 +109,15 @@ RULES: tuple[Rule, ...] = (
         "Use <TUNNEL_ID>.cfargotunnel.com; the real tunnel id stays in Cloudflare.",
     ),
     Rule(
+        "cloudflare-tunnel-id",
+        re.compile(
+            r"(?i)\b(?:CLOUDFLARE_)?TUNNEL_ID\s*[:=]\s*['\"]?"
+            r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b"
+        ),
+        "Use <TUNNEL_ID>; the real tunnel id stays in Cloudflare.",
+        value_group=1,
+    ),
+    Rule(
         "private-key-block",
         re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----"),
         "Private keys must never be committed.",
@@ -100,10 +132,10 @@ RULES: tuple[Rule, ...] = (
 # 只覆盖项目特有的部署标识符，避免与测试固件里的假密码相互误伤。
 
 
-def _tracked_files() -> list[Path]:
+def _tracked_files(repo_root: Path = REPO_ROOT) -> list[Path]:
     result = subprocess.run(
         ["git", "ls-files", "-z"],
-        cwd=REPO_ROOT,
+        cwd=repo_root,
         capture_output=True,
         text=True,
         check=True,
@@ -123,9 +155,9 @@ def _tracked_files() -> list[Path]:
     return paths
 
 
-def _violations_in(path: Path) -> list[str]:
+def _violations_in(repo_root: Path, path: Path) -> list[str]:
     try:
-        content = (REPO_ROOT / path).read_text(encoding="utf-8")
+        content = (repo_root / path).read_text(encoding="utf-8")
     except (UnicodeDecodeError, FileNotFoundError):
         return []
 
@@ -133,16 +165,21 @@ def _violations_in(path: Path) -> list[str]:
     for line_number, line in enumerate(content.splitlines(), start=1):
         for rule in RULES:
             for match in rule.pattern.finditer(line):
-                if match.group(0) in ALLOWED_SAMPLES:
+                if match.group(rule.value_group) in ALLOWED_SAMPLES:
                     continue
                 findings.append(f"{path}:{line_number}: [{rule.name}] {rule.hint}")
     return findings
 
 
-def main() -> int:
+def audit_paths(repo_root: Path, paths: Iterable[Path]) -> list[str]:
     findings = []
-    for path in _tracked_files():
-        findings.extend(_violations_in(path))
+    for path in paths:
+        findings.extend(_violations_in(repo_root, path))
+    return findings
+
+
+def main() -> int:
+    findings = audit_paths(REPO_ROOT, _tracked_files())
 
     if findings:
         print("Sensitive value check failed:", file=sys.stderr)

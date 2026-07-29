@@ -92,6 +92,7 @@ Pages GitHub 集成在 push 到 production branch 时**立即**构建部署，�
 2. 勾选 "Require status checks to pass"，required checks 至少包含（与 [scripts/ci/required_status_checks.txt](../../scripts/ci/required_status_checks.txt) 同源）：
    - `Backend static`
    - `Frontend static`
+   - `Public content safety`
    - `PR gate`
    - `Frontend e2e smoke (real backend)`
    - `Docker smoke`

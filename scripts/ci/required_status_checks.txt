@@ -2,6 +2,7 @@
 # Keep in sync with docs/workflows/ci-test-matrix.md §5.1 and docs/platform/deploy-ec2.md.
 Backend static
 Frontend static
+Public content safety
 PR gate
 Frontend e2e smoke (real backend)
 Docker smoke

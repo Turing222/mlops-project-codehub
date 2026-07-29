@@ -61,6 +61,7 @@ docs/
 | [backend-interface-style.md](standards/backend-interface-style.md) | 后端接口风格、层次边界和返回约定 |
 | [automation-standard.md](standards/automation-standard.md) | 自动化分层：Makefile、scripts、CI 约定 |
 | [api-review-checklist.md](standards/api-review-checklist.md) | API review 轻量检查清单 |
+| [public-content-safety.md](standards/public-content-safety.md) | 公开仓库内容脱敏、扫描门禁与误报处理规范 |
 
 ## workflows/ — 流程
 

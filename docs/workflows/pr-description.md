@@ -39,7 +39,11 @@
 
 ## Test plan
 - [ ] `make flow-fast`（或更窄的 targeted 命令）
+- [ ] `make qa-public-content`
 - [ ] （按需）`make security-scan-fast`
+
+## Public content
+- [ ] 文档、日志、截图、模板和示例不含真实 secret、生产标识符或未脱敏用户数据
 
 ## Deploy / migration
 - None
@@ -54,6 +58,7 @@
 - **Summary** 写「用户/运维能感知的结果」，不要堆文件名。
 - 有**新产品能力**（新 API + 新页面、新用户旅程）时，用 **User-visible / product** 或在大 PR 里单独一小节写清路径与范围边界，不要只写 CI/基础设施。
 - **Test plan** 写**实际跑过的**命令或 CI check 名；没跑过的不要勾选。
+- **Public content** 按 [公开内容安全规范](../standards/public-content-safety.md) 检查自动规则无法判断的上下文。
 - 没有迁移 / 新 env / 镜像变更时，**Deploy** 和 **Breaking** 写 `None`，不要省略章节（方便 reviewer 扫一眼）。
 
 ---
@@ -84,6 +89,10 @@
 
 ## 验证结果
 - [ ] （本地或 CI：列 check 名 / `make` 目标 + 结果）
+- [ ] `make qa-public-content`
+
+## Public content
+- [ ] 文档、日志、截图、模板和示例已经脱敏
 
 ## Breaking Changes
 - None
