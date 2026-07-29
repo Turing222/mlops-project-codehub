@@ -1,34 +1,7 @@
-# gitleaks 配置：在默认规则集上排除仓库内的既知假凭据。
+# gitleaks 配置：继承默认规则集，扫描所有已跟踪的公开内容。
 # 真实凭据只存在于 SSM 参数库、GitHub secrets 或部署主机的 secrets/<env>/*.txt。
-# 新增排除项前先确认该值确实是固件，不要为了让 CI 变绿而放行真实密钥。
+# 已确认的历史假凭据只通过 .gitleaksignore 的 commit-scoped fingerprint 放行。
+# 禁止用 path 或宽泛 regex 跳过整个 docs、tests、work-items、模板或示例目录。
 
 [extend]
 useDefault = true
-
-[[allowlists]]
-description = "测试固件与安全扫描器用例本身就包含刻意伪造的凭据"
-paths = [
-  '''^tests/''',
-  '''^frontend/apps/admin/e2e/''',
-  '''^evals/''',
-  '''^perf/''',
-]
-
-[[allowlists]]
-description = "文档与模板只允许占位符，历史快照同理"
-paths = [
-  '''^docs/''',
-  '''^work-items/''',
-  '''.*\.template$''',
-  '''.*\.example$''',
-  '''^deploy/.*\.example.*''',
-]
-
-[[allowlists]]
-description = "CI service 容器与本地演练使用的固定弱口令"
-regexes = [
-  '''(?i)^(postgres|redis|minio|minioadmin|admin|changeme|change-me|password)$''',
-  '''(?i)(test|dummy|fake|example|placeholder|sample|smoke|fault|local)[-_]''',
-  '''(?i)-(test|dummy|fake|example|placeholder|sample)(-|$)''',
-  '''AKIA1{16}''',
-]

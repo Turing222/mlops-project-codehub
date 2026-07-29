@@ -1,0 +1,17 @@
+# Commit-scoped false positives from deterministic CI and security-test fixtures.
+# Never add a path-global fingerprint; re-run the redacted full-history scan first.
+585a84b6664ab4227b4823412299142e4d67ac31:.github/workflows/pr-gate-ci.yml:generic-api-key:50
+585a84b6664ab4227b4823412299142e4d67ac31:tests/conftest.py:generic-api-key:25
+585a84b6664ab4227b4823412299142e4d67ac31:tests/integration/test_taskiq_integration.py:generic-api-key:84
+585a84b6664ab4227b4823412299142e4d67ac31:tests/unit/core/test_config.py:generic-api-key:17
+585a84b6664ab4227b4823412299142e4d67ac31:tests/unit/core/test_config.py:generic-api-key:18
+69c34819193f841ff3ef1b7b7eac91e8abc91116:.github/workflows/frontend-e2e-smoke-ci.yml:generic-api-key:55
+cc66e1b70b0ed6f424bf4b99398a978b30480816:tests/unit/services/test_chat_safety_metadata.py:generic-api-key:74
+cc66e1b70b0ed6f424bf4b99398a978b30480816:tests/unit/services/test_safety_scanner.py:generic-api-key:88
+cc66e1b70b0ed6f424bf4b99398a978b30480816:tests/unit/services/test_safety_scanner.py:generic-api-key:133
+cc66e1b70b0ed6f424bf4b99398a978b30480816:tests/unit/services/test_safety_scanner.py:generic-api-key:142
+cc66e1b70b0ed6f424bf4b99398a978b30480816:tests/unit/services/test_safety_scanner.py:generic-api-key:166
+cc66e1b70b0ed6f424bf4b99398a978b30480816:tests/unit/services/test_safety_scanner.py:generic-api-key:182
+d302e9a837bcf3a8fb7fa34a45f48f658d1df97c:docs/assessments/frontend-cicd-assessment-2026-06-14.md:generic-api-key:267
+d5871070c7db233cde03bd4e1c2f1c68f005f91a:tests/unit/workflows/test_worker_generation_rag.py:generic-api-key:711
+e5afe4dac76eb8b6b418722269f9e123f4f9b58a:tests/integration/test_t1_lite_operability_probe.py:generic-api-key:97
