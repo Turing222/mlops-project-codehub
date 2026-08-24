@@ -16,7 +16,7 @@ COPY frontend/apps/admin/ frontend/apps/admin/
 
 RUN pnpm --dir frontend --filter admin build
 
-FROM nginx:1.31.3-alpine
+FROM nginx:1.31.4-alpine
 
 RUN apk upgrade --no-cache libcrypto3 libssl3 libxml2 \
     && rm /etc/nginx/conf.d/default.conf \
